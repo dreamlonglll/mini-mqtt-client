@@ -4,16 +4,23 @@
       <span class="panel-title">
         <el-icon><ChatDotRound /></el-icon>
         消息列表
+        <el-tag size="small" type="info" effect="plain" v-if="messages.length > 0">
+          {{ messages.length }}
+        </el-tag>
       </span>
       <div class="header-actions">
-        <el-select v-model="formatType" size="small" style="width: 100px">
-          <el-option label="JSON" value="json" />
-          <el-option label="HEX" value="hex" />
-          <el-option label="纯文本" value="text" />
-        </el-select>
-        <el-button text size="small" :icon="Delete" @click="handleClear">
-          清空
-        </el-button>
+        <el-segmented
+          v-model="formatType"
+          :options="formatOptions"
+          size="small"
+        />
+        <el-divider direction="vertical" />
+        <el-tooltip content="清空消息" placement="top">
+          <el-button text size="small" :icon="Delete" @click="handleClear" />
+        </el-tooltip>
+        <el-tooltip content="导出消息" placement="top">
+          <el-button text size="small" :icon="Download" @click="handleExport" />
+        </el-tooltip>
       </div>
     </div>
 
@@ -29,21 +36,21 @@
             {{ msg.direction === 'publish' ? 'PUB' : 'RCV' }}
           </span>
           <span class="msg-topic text-ellipsis">{{ msg.topic }}</span>
-          <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
+          <div class="msg-meta">
+            <el-tag size="small" effect="plain">Q{{ msg.qos }}</el-tag>
+            <el-tag v-if="msg.retain" size="small" type="warning" effect="plain">
+              R
+            </el-tag>
+            <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
+          </div>
         </div>
         <div class="message-body">
-          <div class="code-block">{{ formatPayload(msg.payload) }}</div>
-        </div>
-        <div class="message-meta">
-          <el-tag size="small" effect="plain">QoS {{ msg.qos }}</el-tag>
-          <el-tag v-if="msg.retain" size="small" type="warning" effect="plain">
-            Retain
-          </el-tag>
+          <pre class="code-block">{{ formatPayload(msg.payload) }}</pre>
         </div>
       </div>
 
       <div v-if="messages.length === 0" class="empty-state">
-        <el-empty description="暂无消息" :image-size="80">
+        <el-empty description="暂无消息" :image-size="60">
           <template #description>
             <span>订阅 Topic 后，收到的消息将显示在这里</span>
           </template>
@@ -55,7 +62,10 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { ChatDotRound, Delete } from "@element-plus/icons-vue";
+import { ChatDotRound, Delete, Download } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
+
+type FormatType = "JSON" | "HEX" | "Text";
 
 interface Message {
   id: number;
@@ -67,8 +77,14 @@ interface Message {
   timestamp: Date;
 }
 
+const formatOptions = [
+  { label: "JSON", value: "JSON" },
+  { label: "HEX", value: "HEX" },
+  { label: "Text", value: "Text" },
+];
+
 const messages = ref<Message[]>([]);
-const formatType = ref<"json" | "hex" | "text">("json");
+const formatType = ref<FormatType>("JSON");
 const messageContainer = ref<HTMLElement>();
 
 const formatTime = (date: Date) => {
@@ -79,14 +95,14 @@ const formatTime = (date: Date) => {
   });
 };
 
-const formatPayload = (payload: string) => {
-  if (formatType.value === "json") {
+const formatPayload = (payload: string): string => {
+  if (formatType.value === "JSON") {
     try {
       return JSON.stringify(JSON.parse(payload), null, 2);
     } catch {
       return payload;
     }
-  } else if (formatType.value === "hex") {
+  } else if (formatType.value === "HEX") {
     return Array.from(new TextEncoder().encode(payload))
       .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
       .join(" ");
@@ -96,6 +112,12 @@ const formatPayload = (payload: string) => {
 
 const handleClear = () => {
   messages.value = [];
+  ElMessage.success("消息已清空");
+};
+
+const handleExport = () => {
+  // TODO: 实现消息导出功能
+  ElMessage.info("导出功能开发中");
 };
 
 // 暴露添加消息的方法给父组件
@@ -120,7 +142,7 @@ defineExpose({
 .message-list {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  height: 100%;
   min-height: 0;
 }
 
@@ -128,7 +150,7 @@ defineExpose({
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--app-border-color);
   flex-shrink: 0;
 }
@@ -151,23 +173,17 @@ defineExpose({
 .message-container {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .message-item {
-  padding: 12px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
   background-color: var(--sidebar-bg);
   border: 1px solid var(--app-border-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-
-  &:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  }
 
   &.publish {
     border-left: 3px solid var(--msg-publish);
@@ -181,35 +197,37 @@ defineExpose({
 .message-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
 .msg-topic {
   flex: 1;
-  font-size: 13px;
+  font-size: 12px;
   font-family: "Fira Code", "Consolas", monospace;
   color: var(--app-text-color);
 }
 
+.msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .msg-time {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--app-text-secondary);
 }
 
 .message-body {
-  margin-bottom: 8px;
-
   .code-block {
-    max-height: 200px;
+    max-height: 150px;
     overflow-y: auto;
     font-size: 12px;
+    margin: 0;
+    padding: 8px 10px;
   }
-}
-
-.message-meta {
-  display: flex;
-  gap: 6px;
 }
 
 .empty-state {

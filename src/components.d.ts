@@ -26,8 +26,9 @@ declare module 'vue' {
     ElIcon: typeof import('element-plus/es')['ElIcon']
     ElInput: typeof import('element-plus/es')['ElInput']
     ElOption: typeof import('element-plus/es')['ElOption']
-    ElRadio: typeof import('element-plus/es')['ElRadio']
+    ElRadioButton: typeof import('element-plus/es')['ElRadioButton']
     ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']
+    ElSegmented: typeof import('element-plus/es')['ElSegmented']
     ElSelect: typeof import('element-plus/es')['ElSelect']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
@@ -35,6 +36,7 @@ declare module 'vue' {
     MainContent: typeof import('./components/mqtt/MainContent.vue')['default']
     MessageList: typeof import('./components/mqtt/MessageList.vue')['default']
     PublishPanel: typeof import('./components/mqtt/PublishPanel.vue')['default']
+    ServerInfoBar: typeof import('./components/mqtt/ServerInfoBar.vue')['default']
     Sidebar: typeof import('./components/layout/Sidebar.vue')['default']
     SubscriptionPanel: typeof import('./components/mqtt/SubscriptionPanel.vue')['default']
   }

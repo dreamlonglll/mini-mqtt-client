@@ -1,61 +1,97 @@
 <template>
   <div class="subscription-panel app-card">
-    <div class="panel-content">
-      <div class="panel-header">
-        <span class="panel-title">
-          <el-icon><Collection /></el-icon>
-          订阅列表
-        </span>
-        <el-button type="primary" size="small" :icon="Plus" @click="handleAddSubscription">
-          订阅
-        </el-button>
-      </div>
-      
-      <div class="subscription-list">
-        <el-tag
-          v-for="sub in subscriptions"
-          :key="sub.id"
-          closable
-          size="default"
-          effect="plain"
-          class="sub-tag"
-          @close="handleUnsubscribe(sub.id)"
-        >
-          <span class="sub-topic">{{ sub.topic }}</span>
-          <span class="sub-qos">Q{{ sub.qos }}</span>
-        </el-tag>
-        
-        <span v-if="subscriptions.length === 0" class="empty-hint">
-          暂无订阅
-        </span>
-      </div>
+    <div class="panel-header">
+      <span class="panel-title">
+        <el-icon><Collection /></el-icon>
+        订阅列表
+      </span>
+      <el-button type="primary" size="small" :icon="Plus" @click="handleAddSubscription">
+        新增
+      </el-button>
     </div>
-    
-    <!-- 添加订阅对话框 -->
+
+    <div class="subscription-list">
+      <div
+        v-for="sub in subscriptions"
+        :key="sub.id"
+        class="subscription-item"
+        :class="{ active: sub.id === activeSubscriptionId }"
+        @click="handleSelectSubscription(sub.id)"
+      >
+        <div class="sub-main">
+          <span class="sub-topic text-ellipsis">{{ sub.topic }}</span>
+          <el-tag size="small" effect="plain" class="sub-qos">
+            QoS {{ sub.qos }}
+          </el-tag>
+        </div>
+        <div class="sub-actions">
+          <el-button
+            text
+            size="small"
+            :icon="Edit"
+            @click.stop="handleEditSubscription(sub)"
+          />
+          <el-button
+            text
+            size="small"
+            type="danger"
+            :icon="Delete"
+            @click.stop="handleDeleteSubscription(sub.id)"
+          />
+        </div>
+      </div>
+
+      <el-empty
+        v-if="subscriptions.length === 0"
+        description="暂无订阅"
+        :image-size="60"
+      >
+        <el-button type="primary" size="small" @click="handleAddSubscription">
+          添加订阅
+        </el-button>
+      </el-empty>
+    </div>
+
+    <!-- 添加/编辑订阅对话框 -->
     <el-dialog
-      v-model="showAddDialog"
-      title="添加订阅"
+      v-model="showDialog"
+      :title="isEditing ? '编辑订阅' : '添加订阅'"
       width="420px"
       :close-on-click-modal="false"
     >
-      <el-form :model="newSubscription" label-width="80px">
+      <el-form :model="formData" label-width="80px">
         <el-form-item label="Topic">
           <el-input
-            v-model="newSubscription.topic"
-            placeholder="例如: sensor/+/temperature"
-          />
+            v-model="formData.topic"
+            placeholder="例如: sensor/+/temperature 或 device/#"
+          >
+            <template #suffix>
+              <el-tooltip placement="top">
+                <template #content>
+                  <div style="max-width: 250px">
+                    <p><strong>通配符说明：</strong></p>
+                    <p><code>+</code> 单层通配符，匹配一个层级</p>
+                    <p><code>#</code> 多层通配符，匹配多个层级</p>
+                  </div>
+                </template>
+                <el-icon style="cursor: help"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item label="QoS">
-          <el-radio-group v-model="newSubscription.qos">
-            <el-radio :value="0">QoS 0</el-radio>
-            <el-radio :value="1">QoS 1</el-radio>
-            <el-radio :value="2">QoS 2</el-radio>
+          <el-radio-group v-model="formData.qos">
+            <el-radio-button :value="0">QoS 0</el-radio-button>
+            <el-radio-button :value="1">QoS 1</el-radio-button>
+            <el-radio-button :value="2">QoS 2</el-radio-button>
           </el-radio-group>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleConfirmSubscribe">确定</el-button>
+        <el-button @click="showDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleConfirm">
+          {{ isEditing ? '保存' : '订阅' }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -63,7 +99,14 @@
 
 <script setup lang="ts">
 import { ref, reactive } from "vue";
-import { Collection, Plus } from "@element-plus/icons-vue";
+import {
+  Collection,
+  Plus,
+  Edit,
+  Delete,
+  QuestionFilled,
+} from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 
 interface Subscription {
   id: number;
@@ -72,36 +115,81 @@ interface Subscription {
 }
 
 const subscriptions = ref<Subscription[]>([]);
-const showAddDialog = ref(false);
-const newSubscription = reactive({
+const activeSubscriptionId = ref<number | null>(null);
+const showDialog = ref(false);
+const isEditing = ref(false);
+const editingId = ref<number | null>(null);
+
+const formData = reactive({
   topic: "",
   qos: 0,
 });
 
 let nextId = 1;
 
-const handleAddSubscription = () => {
-  newSubscription.topic = "";
-  newSubscription.qos = 0;
-  showAddDialog.value = true;
+const handleSelectSubscription = (id: number) => {
+  activeSubscriptionId.value = id;
 };
 
-const handleConfirmSubscribe = () => {
-  if (newSubscription.topic.trim()) {
+const handleAddSubscription = () => {
+  isEditing.value = false;
+  editingId.value = null;
+  formData.topic = "";
+  formData.qos = 0;
+  showDialog.value = true;
+};
+
+const handleEditSubscription = (sub: Subscription) => {
+  isEditing.value = true;
+  editingId.value = sub.id;
+  formData.topic = sub.topic;
+  formData.qos = sub.qos;
+  showDialog.value = true;
+};
+
+const handleDeleteSubscription = async (id: number) => {
+  try {
+    await ElMessageBox.confirm("确定要取消此订阅吗？", "确认", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+
+    const index = subscriptions.value.findIndex((s) => s.id === id);
+    if (index !== -1) {
+      subscriptions.value.splice(index, 1);
+      ElMessage.success("订阅已取消");
+    }
+  } catch {
+    // 用户取消
+  }
+};
+
+const handleConfirm = () => {
+  if (!formData.topic.trim()) {
+    ElMessage.warning("请输入 Topic");
+    return;
+  }
+
+  if (isEditing.value && editingId.value !== null) {
+    // 编辑模式
+    const sub = subscriptions.value.find((s) => s.id === editingId.value);
+    if (sub) {
+      sub.topic = formData.topic;
+      sub.qos = formData.qos;
+      ElMessage.success("订阅已更新");
+    }
+  } else {
+    // 新增模式
     subscriptions.value.push({
       id: nextId++,
-      topic: newSubscription.topic,
-      qos: newSubscription.qos,
+      topic: formData.topic,
+      qos: formData.qos,
     });
-    showAddDialog.value = false;
+    ElMessage.success("订阅成功");
   }
-};
 
-const handleUnsubscribe = (id: number) => {
-  const index = subscriptions.value.findIndex((s) => s.id === id);
-  if (index !== -1) {
-    subscriptions.value.splice(index, 1);
-  }
+  showDialog.value = false;
 };
 </script>
 
@@ -109,19 +197,15 @@ const handleUnsubscribe = (id: number) => {
 .subscription-panel {
   display: flex;
   flex-direction: column;
-}
-
-.panel-content {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 16px;
+  height: 100%;
 }
 
 .panel-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-border-color);
   flex-shrink: 0;
 }
 
@@ -132,49 +216,58 @@ const handleUnsubscribe = (id: number) => {
   font-size: 14px;
   font-weight: 600;
   color: var(--app-text-color);
-  white-space: nowrap;
 }
 
 .subscription-list {
   flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  overflow-x: auto;
-  min-height: 32px;
+  overflow-y: auto;
+  padding: 8px;
+}
 
-  &::-webkit-scrollbar {
-    height: 4px;
+.subscription-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: var(--sidebar-hover);
+
+    .sub-actions {
+      opacity: 1;
+    }
+  }
+
+  &.active {
+    background-color: var(--sidebar-active);
   }
 }
 
-.sub-tag {
+.sub-main {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 280px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .sub-topic {
+  font-size: 13px;
   font-family: "Fira Code", "Consolas", monospace;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--app-text-color);
 }
 
 .sub-qos {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--app-text-secondary);
-  background: var(--app-bg-color);
-  padding: 1px 4px;
-  border-radius: 3px;
+  align-self: flex-start;
 }
 
-.empty-hint {
-  font-size: 13px;
-  color: var(--app-text-secondary);
+.sub-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 </style>
