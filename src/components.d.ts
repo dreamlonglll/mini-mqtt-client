@@ -52,6 +52,7 @@ declare module 'vue' {
     ScheduledPublishDialog: typeof import('./components/mqtt/ScheduledPublishDialog.vue')['default']
     ServerFormDialog: typeof import('./components/mqtt/ServerFormDialog.vue')['default']
     ServerInfoBar: typeof import('./components/mqtt/ServerInfoBar.vue')['default']
+    SettingsDialog: typeof import('./components/settings/SettingsDialog.vue')['default']
     Sidebar: typeof import('./components/layout/Sidebar.vue')['default']
     TemplateDialog: typeof import('./components/template/TemplateDialog.vue')['default']
     TemplateDrawer: typeof import('./components/template/TemplateDrawer.vue')['default']

@@ -5,6 +5,7 @@ mod mqtt;
 use commands::mqtt::*;
 use commands::publish::*;
 use commands::server::*;
+use commands::settings::*;
 use commands::subscription::*;
 use commands::template::*;
 use db::Storage;
@@ -15,6 +16,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 初始化存储
             let storage =
@@ -61,6 +63,10 @@ pub fn run() {
             export_templates,
             import_templates,
             duplicate_template,
+            // 设置命令
+            get_data_path,
+            migrate_data_path,
+            select_data_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

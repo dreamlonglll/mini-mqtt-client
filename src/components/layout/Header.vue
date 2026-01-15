@@ -191,8 +191,12 @@ const handleDisconnect = async () => {
   }
 };
 
+const emit = defineEmits<{
+  settings: []
+}>();
+
 const handleSettings = () => {
-  console.log("Open settings");
+  emit("settings");
 };
 </script>
 

@@ -1,5 +1,5 @@
 <template>
-  <AppLayout @open-templates="handleOpenTemplates">
+  <AppLayout @open-templates="handleOpenTemplates" @settings="handleOpenSettings">
     <!-- 消息调试视图 -->
     <MainContent 
       :scheduled-publish-running="isScheduledPublishRunning"
@@ -39,6 +39,9 @@
     :server-id="activeServerId ?? 0"
     @running-change="handleScheduledPublishRunningChange"
   />
+
+  <!-- 系统设置对话框 -->
+  <SettingsDialog v-model:visible="showSettingsDialog" />
 </template>
 
 <script setup lang="ts">
@@ -48,6 +51,7 @@ import MainContent from "@/components/mqtt/MainContent.vue";
 import TemplateDrawer from "@/components/template/TemplateDrawer.vue";
 import TemplateDialog from "@/components/template/TemplateDialog.vue";
 import ScheduledPublishDialog from "@/components/mqtt/ScheduledPublishDialog.vue";
+import SettingsDialog from "@/components/settings/SettingsDialog.vue";
 import { useAppStore } from "@/stores/app";
 import { useMqttStore } from "@/stores/mqtt";
 import { useServerStore } from "@/stores/server";
@@ -72,6 +76,9 @@ const templateToSave = ref<CommandTemplate | null>(null);
 // 定时发布对话框
 const showScheduledPublishDialog = ref(false);
 const isScheduledPublishRunning = ref(false);
+
+// 系统设置对话框
+const showSettingsDialog = ref(false);
 
 onMounted(() => {
   // 初始化主题
@@ -147,6 +154,11 @@ function handleScheduledPublish() {
 // 定时发布运行状态变化
 function handleScheduledPublishRunningChange(running: boolean) {
   isScheduledPublishRunning.value = running;
+}
+
+// 打开系统设置
+function handleOpenSettings() {
+  showSettingsDialog.value = true;
 }
 </script>
 

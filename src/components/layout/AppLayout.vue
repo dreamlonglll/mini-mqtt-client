@@ -2,7 +2,7 @@
   <div class="app-layout">
     <Sidebar class="app-sidebar" />
     <div class="app-main">
-      <Header class="app-header" />
+      <Header class="app-header" @settings="handleSettings" />
       <div class="app-content">
         <slot />
       </div>
@@ -18,10 +18,15 @@ import CommandBar from "./CommandBar.vue";
 
 const emit = defineEmits<{
   openTemplates: []
+  settings: []
 }>();
 
 function handleOpenTemplates() {
   emit("openTemplates");
+}
+
+function handleSettings() {
+  emit("settings");
 }
 </script>
 

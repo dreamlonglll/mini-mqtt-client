@@ -1,0 +1,303 @@
+<template>
+  <el-dialog
+    v-model="dialogVisible"
+    title="系统设置"
+    width="500px"
+    :close-on-click-modal="false"
+    @open="loadSettings"
+  >
+    <div class="settings-content">
+      <!-- 主题设置 -->
+      <div class="setting-section">
+        <div class="setting-header">
+          <el-icon><Sunny /></el-icon>
+          <span class="setting-title">主题设置</span>
+        </div>
+        <div class="setting-body">
+          <el-radio-group v-model="currentTheme" @change="(val: string | number | boolean | undefined) => handleThemeChange(val as Theme)">
+            <el-radio value="light">
+              <el-icon><Sunny /></el-icon>
+              亮色模式
+            </el-radio>
+            <el-radio value="dark">
+              <el-icon><Moon /></el-icon>
+              暗色模式
+            </el-radio>
+          </el-radio-group>
+        </div>
+      </div>
+
+      <!-- 数据存储设置 -->
+      <div class="setting-section">
+        <div class="setting-header">
+          <el-icon><FolderOpened /></el-icon>
+          <span class="setting-title">数据存储</span>
+        </div>
+        <div class="setting-body">
+          <div class="data-path-info">
+            <span class="label">当前路径：</span>
+            <el-tooltip :content="currentDataPath" placement="top">
+              <code class="path">{{ truncatePath(currentDataPath) }}</code>
+            </el-tooltip>
+          </div>
+          <div class="data-path-actions">
+            <el-button size="small" :icon="FolderOpened" @click="handleSelectFolder">
+              更改位置
+            </el-button>
+            <el-button size="small" :icon="CopyDocument" @click="handleCopyPath">
+              复制路径
+            </el-button>
+          </div>
+          <el-alert
+            v-if="newDataPath"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="migrate-alert"
+          >
+            <template #title>
+              <span>将迁移数据到新位置：</span>
+              <code>{{ truncatePath(newDataPath) }}</code>
+            </template>
+          </el-alert>
+        </div>
+      </div>
+    </div>
+
+    <template #footer>
+      <el-button @click="handleClose">取消</el-button>
+      <el-button 
+        type="primary" 
+        :loading="saving"
+        :disabled="!hasChanges"
+        @click="handleSave"
+      >
+        保存
+      </el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { Sunny, Moon, FolderOpened, CopyDocument } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { invoke } from '@tauri-apps/api/core'
+import { useAppStore, type Theme } from '@/stores/app'
+
+const props = defineProps<{
+  visible: boolean
+}>()
+
+const emit = defineEmits<{
+  'update:visible': [value: boolean]
+}>()
+
+const appStore = useAppStore()
+
+const dialogVisible = computed({
+  get: () => props.visible,
+  set: (val) => emit('update:visible', val)
+})
+
+// 状态
+const saving = ref(false)
+const currentTheme = ref<Theme>('light')
+const originalTheme = ref<Theme>('light')
+const currentDataPath = ref('')
+const newDataPath = ref('')
+
+// 是否有更改
+const hasChanges = computed(() => {
+  return currentTheme.value !== originalTheme.value || newDataPath.value !== ''
+})
+
+// 加载设置
+async function loadSettings() {
+  currentTheme.value = appStore.theme
+  originalTheme.value = appStore.theme
+  newDataPath.value = ''
+  
+  try {
+    currentDataPath.value = await invoke<string>('get_data_path')
+  } catch (e) {
+    console.error('获取数据路径失败:', e)
+  }
+}
+
+// 主题变化
+function handleThemeChange(theme: Theme) {
+  appStore.setTheme(theme)
+}
+
+// 选择文件夹
+async function handleSelectFolder() {
+  try {
+    const path = await invoke<string | null>('select_data_folder')
+    if (path) {
+      newDataPath.value = path
+    }
+  } catch (e) {
+    ElMessage.error(`选择文件夹失败: ${e}`)
+  }
+}
+
+// 复制路径
+async function handleCopyPath() {
+  try {
+    await navigator.clipboard.writeText(currentDataPath.value)
+    ElMessage.success('路径已复制到剪贴板')
+  } catch (e) {
+    ElMessage.error('复制失败')
+  }
+}
+
+// 截断路径显示
+function truncatePath(path: string): string {
+  if (!path) return ''
+  const maxLen = 40
+  if (path.length <= maxLen) return path
+  
+  // 显示开头和结尾
+  const start = path.substring(0, 15)
+  const end = path.substring(path.length - 20)
+  return `${start}...${end}`
+}
+
+// 保存设置
+async function handleSave() {
+  saving.value = true
+  
+  try {
+    // 如果有新的数据路径
+    if (newDataPath.value) {
+      const action = await ElMessageBox.confirm(
+        '是否将现有数据迁移到新位置？',
+        '更改数据存储位置',
+        {
+          confirmButtonText: '迁移数据',
+          cancelButtonText: '仅更改路径',
+          distinguishCancelAndClose: true,
+          type: 'info',
+        }
+      ).then(() => 'migrate').catch((action: string) => action)
+      
+      if (action === 'close') {
+        saving.value = false
+        return
+      }
+      
+      const shouldMigrate = action === 'migrate'
+      await invoke('migrate_data_path', { newPath: newDataPath.value, migrate: shouldMigrate })
+      
+      if (shouldMigrate) {
+        ElMessage.success('数据迁移完成，请重启应用')
+      } else {
+        ElMessage.success('存储位置已更改，请重启应用')
+      }
+    }
+    
+    dialogVisible.value = false
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error(`保存设置失败: ${e}`)
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+// 关闭对话框
+function handleClose() {
+  // 如果主题已更改但未保存，恢复原始主题
+  if (currentTheme.value !== originalTheme.value && !saving.value) {
+    appStore.setTheme(originalTheme.value)
+  }
+  dialogVisible.value = false
+}
+</script>
+
+<style scoped lang="scss">
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.setting-section {
+  background-color: var(--sidebar-bg);
+  border: 1px solid var(--app-border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.setting-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background-color: var(--card-bg);
+  border-bottom: 1px solid var(--app-border-color);
+  
+  .setting-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text-color);
+  }
+}
+
+.setting-body {
+  padding: 16px;
+}
+
+.data-path-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  
+  .label {
+    font-size: 13px;
+    color: var(--app-text-secondary);
+    flex-shrink: 0;
+  }
+  
+  .path {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    color: var(--app-text-color);
+    background-color: var(--sidebar-hover);
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    
+    &:hover {
+      background-color: var(--primary-light);
+    }
+  }
+}
+
+.data-path-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.migrate-alert {
+  margin-top: 12px;
+  
+  code {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 11px;
+    display: block;
+    margin-top: 4px;
+  }
+}
+
+:deep(.el-radio) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 24px;
+}
+</style>

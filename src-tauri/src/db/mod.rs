@@ -24,6 +24,12 @@ pub struct AppData {
     next_template_id: i64,
 }
 
+/// 应用配置（用于存储自定义数据路径等）
+#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
+pub struct AppConfig {
+    pub data_path: Option<String>,
+}
+
 pub struct Storage {
     data: RwLock<AppData>,
     file_path: PathBuf,
@@ -38,7 +44,30 @@ impl Storage {
 
         fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
 
-        let file_path = app_dir.join("data.yaml");
+        // 检查是否有自定义配置
+        let config_path = app_dir.join("config.yaml");
+        let file_path = if config_path.exists() {
+            if let Ok(content) = fs::read_to_string(&config_path) {
+                if let Ok(config) = serde_yaml::from_str::<AppConfig>(&content) {
+                    if let Some(custom_path) = config.data_path {
+                        let custom_path = PathBuf::from(custom_path);
+                        if custom_path.exists() || custom_path.parent().map(|p| p.exists()).unwrap_or(false) {
+                            custom_path
+                        } else {
+                            app_dir.join("data.yaml")
+                        }
+                    } else {
+                        app_dir.join("data.yaml")
+                    }
+                } else {
+                    app_dir.join("data.yaml")
+                }
+            } else {
+                app_dir.join("data.yaml")
+            }
+        } else {
+            app_dir.join("data.yaml")
+        };
 
         let data = if file_path.exists() {
             let content = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
@@ -51,6 +80,11 @@ impl Storage {
             data: RwLock::new(data),
             file_path,
         })
+    }
+    
+    /// 获取当前数据文件路径
+    pub fn get_file_path(&self) -> &PathBuf {
+        &self.file_path
     }
 
     fn save(&self) -> Result<(), String> {
