@@ -4,6 +4,7 @@
     :title="isEdit ? '编辑 Server' : '新增 Server'"
     width="580px"
     destroy-on-close
+    :close-on-click-modal="false"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form
