@@ -41,6 +41,9 @@
 - 支持周期性循环发送
 - 灵活的时间间隔设置
 
+<!-- 定时发布截图 -->
+![定时发布](docs/screenshots/scheduled-publish.png)
+
 ### 预处理脚本
 - JavaScript 脚本引擎
 - 发送前预处理：消息加密、格式转换
