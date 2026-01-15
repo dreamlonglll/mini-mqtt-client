@@ -588,15 +588,18 @@ function handleClose() {
 
 .status-indicator {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   font-size: 16px;
   font-weight: 500;
   color: var(--status-connected);
   margin-bottom: 16px;
+  white-space: nowrap;
 
   .spinning {
     animation: spin 1s linear infinite;
+    flex-shrink: 0;
   }
 }
 
@@ -614,12 +617,15 @@ function handleClose() {
 
 .info-row {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 
   .label {
     font-size: 13px;
     color: var(--app-text-secondary);
+    flex-shrink: 0;
   }
 
   .value {
@@ -642,6 +648,8 @@ function handleClose() {
     background-color: var(--sidebar-hover);
     padding: 2px 6px;
     border-radius: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

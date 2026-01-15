@@ -1,26 +1,19 @@
 <template>
   <div class="main-content">
-    <!-- 上部：Server 信息和状态栏 -->
-    <ServerInfoBar class="server-info-bar" />
+    <!-- 消息列表 -->
+    <MessageList class="message-list" />
 
-    <!-- 消息区域 -->
-    <div class="content-body">
-      <!-- 消息列表 -->
-      <MessageList class="message-list" />
-
-      <!-- 发布消息 -->
-      <PublishPanel 
-        class="publish-panel" 
-        @save-template="handleSaveTemplate" 
-        @open-templates="handleOpenTemplates"
-        @scheduled-publish="handleScheduledPublish"
-      />
-    </div>
+    <!-- 发布消息 -->
+    <PublishPanel 
+      class="publish-panel" 
+      @save-template="handleSaveTemplate" 
+      @open-templates="handleOpenTemplates"
+      @scheduled-publish="handleScheduledPublish"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import ServerInfoBar from "./ServerInfoBar.vue";
 import MessageList from "./MessageList.vue";
 import PublishPanel from "./PublishPanel.vue";
 
@@ -58,19 +51,6 @@ function handleScheduledPublish() {
   height: 100%;
   gap: 12px;
   padding: 12px 16px;
-  overflow: hidden;
-}
-
-.server-info-bar {
-  flex-shrink: 0;
-}
-
-.content-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
   overflow: hidden;
 }
 
