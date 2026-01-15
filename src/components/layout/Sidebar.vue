@@ -32,7 +32,9 @@
             <div class="server-info">
               <span class="server-name text-ellipsis">{{ serverState.server.name }}</span>
               <span class="server-host text-ellipsis">
-                {{ serverState.server.host }}:{{ serverState.server.port }}
+                {{ serverState.server.port === 1883 
+                  ? serverState.server.host 
+                  : `${serverState.server.host}:${serverState.server.port}` }}
               </span>
             </div>
             <el-dropdown trigger="click" @command="(cmd: string) => handleServerAction(cmd, serverState.server)">

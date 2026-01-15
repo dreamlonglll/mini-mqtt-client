@@ -7,7 +7,9 @@
         <div class="server-details">
           <span class="server-name">{{ activeServer.server.name }}</span>
           <span class="server-address">
-            {{ activeServer.server.host }}:{{ activeServer.server.port }}
+            {{ activeServer.server.port === 1883 
+              ? activeServer.server.host 
+              : `${activeServer.server.host}:${activeServer.server.port}` }}
           </span>
         </div>
         <el-tag
