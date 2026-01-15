@@ -92,7 +92,7 @@
             </el-form-item>
           </el-form>
           <div class="form-actions">
-            <el-button @click="handleCancel">取消</el-button>
+            <el-button :icon="Document" @click="showFunctionList = true">查看可用函数</el-button>
             <el-button type="primary" :loading="saving" @click="handleSave">
               保存
             </el-button>
@@ -108,11 +108,65 @@
       <el-button @click="dialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
+
+  <!-- 可用函数列表弹框 -->
+  <el-dialog
+    v-model="showFunctionList"
+    title="可用函数列表"
+    width="600px"
+    :append-to-body="true"
+  >
+    <div class="function-list">
+      <div class="function-category">
+        <h4>基础函数</h4>
+        <el-table :data="basicFunctions" size="small">
+          <el-table-column prop="name" label="函数" width="200" />
+          <el-table-column prop="desc" label="说明" />
+        </el-table>
+      </div>
+      
+      <div class="function-category">
+        <h4>编码转换</h4>
+        <el-table :data="encodingFunctions" size="small">
+          <el-table-column prop="name" label="函数" width="250" />
+          <el-table-column prop="desc" label="说明" />
+        </el-table>
+      </div>
+      
+      <div class="function-category">
+        <h4>哈希函数</h4>
+        <el-table :data="hashFunctions" size="small">
+          <el-table-column prop="name" label="函数" width="250" />
+          <el-table-column prop="desc" label="说明" />
+        </el-table>
+      </div>
+      
+      <div class="function-category">
+        <h4>AES 加解密</h4>
+        <el-table :data="aesFunctions" size="small">
+          <el-table-column prop="name" label="函数" width="320" />
+          <el-table-column prop="desc" label="说明" />
+        </el-table>
+      </div>
+      
+      <div class="function-category">
+        <h4>其他工具</h4>
+        <el-table :data="otherFunctions" size="small">
+          <el-table-column prop="name" label="函数" width="200" />
+          <el-table-column prop="desc" label="说明" />
+        </el-table>
+      </div>
+    </div>
+
+    <template #footer>
+      <el-button @click="showFunctionList = false">关闭</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Plus, Delete } from '@element-plus/icons-vue'
+import { Plus, Delete, Document } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useScriptStore, type Script, type ScriptType } from '@/stores/script'
 
@@ -138,6 +192,47 @@ const scripts = computed(() => scriptStore.scripts)
 const selectedScript = ref<Script | null>(null)
 const isAdding = ref(false)
 const saving = ref(false)
+const showFunctionList = ref(false)
+
+// 可用函数列表数据
+const basicFunctions = [
+  { name: 'JSON.parse(str)', desc: '解析 JSON 字符串' },
+  { name: 'JSON.stringify(obj)', desc: '对象转 JSON 字符串' },
+  { name: 'console.log(...args)', desc: '输出日志（调试用）' },
+  { name: 'btoa(str)', desc: 'Base64 编码' },
+  { name: 'atob(str)', desc: 'Base64 解码' },
+]
+
+const encodingFunctions = [
+  { name: 'crypto.stringToBytes(str)', desc: '字符串转 Uint8Array' },
+  { name: 'crypto.bytesToString(bytes)', desc: 'Uint8Array 转字符串' },
+  { name: 'crypto.bytesToBase64(bytes)', desc: 'Uint8Array 转 Base64' },
+  { name: 'crypto.base64ToBytes(str)', desc: 'Base64 转 Uint8Array' },
+  { name: 'crypto.bytesToHex(bytes)', desc: 'Uint8Array 转十六进制' },
+  { name: 'crypto.hexToBytes(hex)', desc: '十六进制转 Uint8Array' },
+]
+
+const hashFunctions = [
+  { name: 'await crypto.sha256(data)', desc: 'SHA-256 哈希（返回十六进制）' },
+  { name: 'await crypto.sha1(data)', desc: 'SHA-1 哈希（返回十六进制）' },
+  { name: 'crypto.md5(data)', desc: 'MD5 哈希（返回十六进制）' },
+  { name: 'await crypto.hmacSha256(key, data)', desc: 'HMAC-SHA256' },
+]
+
+const aesFunctions = [
+  { name: 'await crypto.aesGcmEncrypt(text, key, nonce?)', desc: 'AES-GCM 加密，nonce 可选' },
+  { name: 'await crypto.aesGcmDecrypt(cipher, key)', desc: 'AES-GCM 解密' },
+  { name: 'await crypto.aesCbcEncrypt(text, key, iv?)', desc: 'AES-CBC 加密，iv 可选' },
+  { name: 'await crypto.aesCbcDecrypt(cipher, key)', desc: 'AES-CBC 解密' },
+]
+
+const otherFunctions = [
+  { name: 'crypto.generateKey(bits)', desc: '生成随机密钥（Base64）' },
+  { name: 'crypto.generateIv(length)', desc: '生成随机 IV（Base64）' },
+  { name: 'crypto.randomBytes(length)', desc: '生成随机字节' },
+  { name: 'crypto.xor(data, key)', desc: 'XOR 加解密' },
+  { name: 'crypto.crc32(data)', desc: 'CRC32 校验' },
+]
 
 const formData = ref({
   name: '',
@@ -169,26 +264,17 @@ function resetForm() {
 // 获取默认代码
 function getDefaultCode(type: ScriptType): string {
   if (type === 'before_publish') {
-    return `// 发送前处理脚本
-// payload: 待发送的消息内容 (字符串)
-// 返回值: 处理后的消息内容 (字符串)
-// 注意: 必须定义 process 函数，系统会自动调用
+    return `// 定义 process 函数处理 payload，点击"查看可用函数"查看更多
 
-function process(payload) {
+async function process(payload) {
   // 在这里处理 payload
-  // 例如: return payload + '_suffix';
   return payload;
 }`
   } else {
-    return `// 接收后处理脚本
-// payload: 接收到的消息内容 (字符串)
-// topic: 消息主题 (字符串)
-// 返回值: 处理后的消息内容 (字符串)
-// 注意: 必须定义 process 函数，系统会自动调用
+    return `// 定义 process 函数处理 payload，点击"查看可用函数"查看更多
 
-function process(payload, topic) {
+async function process(payload, topic) {
   // 在这里处理接收到的消息
-  // 例如: return JSON.stringify(JSON.parse(payload), null, 2);
   return payload;
 }`
   }
@@ -211,15 +297,6 @@ function handleAdd() {
   selectedScript.value = null
   isAdding.value = true
   resetForm()
-}
-
-// 取消编辑
-function handleCancel() {
-  if (isAdding.value) {
-    isAdding.value = false
-  } else if (selectedScript.value) {
-    handleSelect(selectedScript.value)
-  }
 }
 
 // 保存脚本
@@ -434,5 +511,27 @@ watch(() => formData.value.script_type, (newType) => {
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.function-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.function-category {
+  margin-bottom: 20px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+  
+  h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text-color);
+    border-left: 3px solid var(--el-color-primary);
+    padding-left: 8px;
+  }
 }
 </style>
