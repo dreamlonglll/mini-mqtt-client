@@ -13,6 +13,7 @@
         class="publish-panel" 
         @save-template="handleSaveTemplate" 
         @open-templates="handleOpenTemplates"
+        @scheduled-publish="handleScheduledPublish"
       />
     </div>
   </div>
@@ -34,6 +35,7 @@ interface SaveTemplateData {
 const emit = defineEmits<{
   saveTemplate: [data: SaveTemplateData]
   openTemplates: []
+  scheduledPublish: []
 }>();
 
 function handleSaveTemplate(data: SaveTemplateData) {
@@ -42,6 +44,10 @@ function handleSaveTemplate(data: SaveTemplateData) {
 
 function handleOpenTemplates() {
   emit('openTemplates');
+}
+
+function handleScheduledPublish() {
+  emit('scheduledPublish');
 }
 </script>
 

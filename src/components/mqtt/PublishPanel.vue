@@ -14,6 +14,9 @@
             :value="opt.value"
           />
         </el-select>
+        <el-button size="small" :icon="Timer" @click="handleScheduledPublish">
+          定时发布
+        </el-button>
       </div>
     </div>
 
@@ -77,7 +80,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from "vue";
-import { Promotion, Position, Star, FolderOpened } from "@element-plus/icons-vue";
+import { Promotion, Position, Star, FolderOpened, Timer } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { useServerStore } from "@/stores/server";
 import { useMessageStore } from "@/stores/message";
@@ -157,11 +160,17 @@ const payloadPlaceholder = computed(() => {
 const emit = defineEmits<{
   saveTemplate: [data: { topic: string; payload: string; qos: number; retain: boolean; payloadType: string }]
   openTemplates: []
+  scheduledPublish: []
 }>();
 
 // 打开模板管理
 const handleOpenTemplates = () => {
   emit("openTemplates");
+};
+
+// 打开定时发布
+const handleScheduledPublish = () => {
+  emit("scheduledPublish");
 };
 
 const handleSaveTemplate = () => {

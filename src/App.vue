@@ -4,6 +4,7 @@
     <MainContent 
       @save-template="handleSaveTemplate" 
       @open-templates="handleOpenTemplates"
+      @scheduled-publish="handleScheduledPublish"
     />
   </AppLayout>
 
@@ -30,6 +31,12 @@
     :categories="templateCategories"
     @saved="handleTemplateSaved"
   />
+
+  <!-- 定时发布对话框 -->
+  <ScheduledPublishDialog
+    v-model:visible="showScheduledPublishDialog"
+    :server-id="activeServerId ?? 0"
+  />
 </template>
 
 <script setup lang="ts">
@@ -38,6 +45,7 @@ import AppLayout from "@/components/layout/AppLayout.vue";
 import MainContent from "@/components/mqtt/MainContent.vue";
 import TemplateDrawer from "@/components/template/TemplateDrawer.vue";
 import TemplateDialog from "@/components/template/TemplateDialog.vue";
+import ScheduledPublishDialog from "@/components/mqtt/ScheduledPublishDialog.vue";
 import { useAppStore } from "@/stores/app";
 import { useMqttStore } from "@/stores/mqtt";
 import { useServerStore } from "@/stores/server";
@@ -58,6 +66,9 @@ const showTemplateDrawer = ref(false);
 // 保存模板对话框
 const showSaveTemplateDialog = ref(false);
 const templateToSave = ref<CommandTemplate | null>(null);
+
+// 定时发布对话框
+const showScheduledPublishDialog = ref(false);
 
 onMounted(() => {
   // 初始化主题
@@ -119,6 +130,15 @@ function handleUseTemplate(template: CommandTemplate) {
   // 关闭抽屉
   showTemplateDrawer.value = false;
   ElMessage.success(`已加载: ${template.name}`);
+}
+
+// 打开定时发布对话框
+function handleScheduledPublish() {
+  if (!activeServerId.value) {
+    ElMessage.warning("请先选择一个服务器");
+    return;
+  }
+  showScheduledPublishDialog.value = true;
 }
 </script>
 
