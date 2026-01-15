@@ -34,9 +34,9 @@
         <el-tooltip content="清空消息" placement="top">
           <el-button text size="small" :icon="Delete" @click="handleClear" />
         </el-tooltip>
-        <el-tooltip content="导出消息" placement="top">
+        <!-- <el-tooltip content="导出消息" placement="top">
           <el-button text size="small" :icon="Download" @click="handleExport" />
-        </el-tooltip>
+        </el-tooltip> -->
       </div>
     </div>
 
@@ -166,7 +166,6 @@ import { ref, computed } from "vue";
 import {
   ChatDotRound,
   Delete,
-  Download,
   Top,
   Bottom,
   ArrowDown,
@@ -310,11 +309,14 @@ function getFormatLabel(format: PayloadFormat): string {
 const formatTime = (timestamp?: string) => {
   if (!timestamp) return "";
   const date = new Date(timestamp);
-  return date.toLocaleTimeString("zh-CN", {
+  const timeStr = date.toLocaleTimeString("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
+  // 添加毫秒
+  const ms = date.getMilliseconds().toString().padStart(3, "0");
+  return `${timeStr}.${ms}`;
 };
 
 const formatFullTime = (timestamp?: string) => {
@@ -340,11 +342,6 @@ const handleClear = async () => {
   } catch {
     // 用户取消
   }
-};
-
-const handleExport = () => {
-  // TODO: 实现消息导出功能
-  ElMessage.info("导出功能开发中");
 };
 
 function showDetail(message: MqttMessage) {

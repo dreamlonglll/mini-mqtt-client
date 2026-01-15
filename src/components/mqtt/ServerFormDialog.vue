@@ -11,7 +11,7 @@
       ref="formRef"
       :model="formData"
       :rules="rules"
-      label-width="100px"
+      label-width="110px"
       label-position="right"
     >
       <el-tabs v-model="activeTab">
@@ -82,18 +82,12 @@
 
         <!-- 高级配置 -->
         <el-tab-pane label="高级" name="advanced">
-          <el-row :gutter="16">
-            <el-col :span="12">
-              <el-form-item label="Keep Alive" prop="keep_alive">
-                <el-input-number v-model="formData.keep_alive" :min="0" :max="65535" style="width: 100%" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="Clean Session">
-                <el-switch v-model="formData.clean_session" />
-              </el-form-item>
-            </el-col>
-          </el-row>
+          <el-form-item label="Keep Alive" prop="keep_alive">
+            <el-input-number v-model="formData.keep_alive" :min="0" :max="65535" />
+          </el-form-item>
+          <el-form-item label="Clean Session">
+            <el-switch v-model="formData.clean_session" />
+          </el-form-item>
 
           <el-form-item label="TLS/SSL" v-if="formData.protocol === 'mqtts' || formData.protocol === 'wss'">
             <el-switch v-model="formData.use_tls" disabled />
