@@ -9,14 +9,27 @@
         </el-tag>
       </span>
       <div class="header-actions">
-        <el-select v-model="formatType" size="small" style="width: 90px">
-          <el-option
-            v-for="opt in formatOptions"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
-          />
-        </el-select>
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索消息..."
+          :prefix-icon="Search"
+          size="small"
+          style="width: 160px"
+          clearable
+        />
+        <el-dropdown @command="handleFilterCommand">
+          <el-button size="small">
+            {{ filterLabel }}
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="all">全部</el-dropdown-item>
+              <el-dropdown-item command="publish">仅发布</el-dropdown-item>
+              <el-dropdown-item command="receive">仅接收</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-divider direction="vertical" />
         <el-tooltip content="清空消息" placement="top">
           <el-button text size="small" :icon="Delete" @click="handleClear" />
@@ -29,17 +42,28 @@
 
     <div class="message-container" ref="messageContainer">
       <div
-        v-for="msg in messages"
+        v-for="msg in filteredMessages"
         :key="msg.id || msg.timestamp"
         class="message-item"
         :class="msg.direction"
+        @click="showDetail(msg)"
       >
         <div class="message-header">
           <span class="msg-direction" :class="msg.direction">
-            {{ msg.direction === 'publish' ? 'PUB' : 'RCV' }}
+            <el-icon v-if="msg.direction === 'publish'"><Top /></el-icon>
+            <el-icon v-else><Bottom /></el-icon>
+            {{ msg.direction === "publish" ? "PUB" : "RCV" }}
           </span>
           <span class="msg-topic text-ellipsis">{{ msg.topic }}</span>
           <div class="msg-meta">
+            <el-tag
+              size="small"
+              effect="plain"
+              :type="getFormatTagType(detectPayloadFormat(msg.payload))"
+              class="format-tag"
+            >
+              {{ getFormatLabel(detectPayloadFormat(msg.payload)) }}
+            </el-tag>
             <el-tag size="small" effect="plain">Q{{ msg.qos }}</el-tag>
             <el-tag v-if="msg.retain" size="small" type="warning" effect="plain">
               R
@@ -48,42 +72,114 @@
           </div>
         </div>
         <div class="message-body">
-          <pre class="code-block">{{ formatPayload(msg) }}</pre>
+          <MessagePayload :payload="msg.payload" :preview="true" />
         </div>
       </div>
 
-      <div v-if="messages.length === 0" class="empty-state">
+      <div v-if="filteredMessages.length === 0" class="empty-state">
         <el-empty description="暂无消息" :image-size="60">
           <template #description>
-            <span>订阅 Topic 后，收到的消息将显示在这里</span>
+            <span v-if="messages.length === 0">
+              订阅 Topic 后，收到的消息将显示在这里
+            </span>
+            <span v-else>没有匹配的消息</span>
           </template>
         </el-empty>
       </div>
     </div>
+
+    <!-- 消息详情对话框 -->
+    <el-dialog
+      v-model="showDetailDialog"
+      :title="selectedMessage?.topic || '消息详情'"
+      width="700px"
+      class="message-detail-dialog"
+    >
+      <div v-if="selectedMessage" class="message-detail">
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="方向">
+            <span class="msg-direction" :class="selectedMessage.direction">
+              {{ selectedMessage.direction === "publish" ? "发布" : "接收" }}
+            </span>
+          </el-descriptions-item>
+          <el-descriptions-item label="QoS">
+            {{ selectedMessage.qos }}
+          </el-descriptions-item>
+          <el-descriptions-item label="Retain">
+            {{ selectedMessage.retain ? "是" : "否" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="格式">
+            <el-tag
+              size="small"
+              :type="getFormatTagType(detectPayloadFormat(selectedMessage.payload))"
+            >
+              {{ getFormatLabel(detectPayloadFormat(selectedMessage.payload)) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="时间" :span="2">
+            {{ formatFullTime(selectedMessage.timestamp) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="主题" :span="3">
+            <code class="topic-code">{{ selectedMessage.topic }}</code>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="payload-section">
+          <div class="payload-header">
+            <span class="section-title">消息内容</span>
+            <div class="payload-actions">
+              <el-button size="small" text :icon="CopyDocument" @click="copyPayload">
+                复制内容
+              </el-button>
+              <el-button
+                size="small"
+                text
+                :icon="Promotion"
+                @click="copyToPublish"
+              >
+                复制到发布
+              </el-button>
+            </div>
+          </div>
+          <MessagePayload :payload="selectedMessage.payload" :preview="false" />
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { ChatDotRound, Delete, Download } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import {
+  ChatDotRound,
+  Delete,
+  Download,
+  Top,
+  Bottom,
+  ArrowDown,
+  Search,
+  CopyDocument,
+  Promotion,
+} from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { useServerStore } from "@/stores/server";
 import { useMqttStore } from "@/stores/mqtt";
+import { useAppStore } from "@/stores/app";
+import MessagePayload from "./MessagePayload.vue";
 import type { MqttMessage } from "@/types/mqtt";
 
-type FormatType = "JSON" | "HEX" | "Text";
-
-const formatOptions = [
-  { label: "JSON", value: "JSON" },
-  { label: "HEX", value: "HEX" },
-  { label: "Text", value: "Text" },
-];
+type PayloadFormat = "json" | "binary" | "text";
+type DirectionFilter = "all" | "publish" | "receive";
 
 const serverStore = useServerStore();
 const mqttStore = useMqttStore();
+const appStore = useAppStore();
 
-const formatType = ref<FormatType>("JSON");
 const messageContainer = ref<HTMLElement>();
+const searchKeyword = ref("");
+const directionFilter = ref<DirectionFilter>("all");
+const showDetailDialog = ref(false);
+const selectedMessage = ref<MqttMessage | null>(null);
 
 // 从 MQTT Store 获取消息
 const messages = computed(() => {
@@ -91,6 +187,111 @@ const messages = computed(() => {
   if (!serverId) return [];
   return mqttStore.getServerMessages(serverId);
 });
+
+// 过滤后的消息
+const filteredMessages = computed(() => {
+  let result = messages.value;
+
+  // 方向过滤
+  if (directionFilter.value !== "all") {
+    result = result.filter((m) => m.direction === directionFilter.value);
+  }
+
+  // 关键词搜索
+  if (searchKeyword.value.trim()) {
+    const keyword = searchKeyword.value.toLowerCase();
+    result = result.filter((m) => {
+      const payloadStr = getPayloadString(m.payload);
+      return (
+        m.topic.toLowerCase().includes(keyword) ||
+        payloadStr.toLowerCase().includes(keyword)
+      );
+    });
+  }
+
+  return result;
+});
+
+// 过滤标签
+const filterLabel = computed(() => {
+  const labels: Record<DirectionFilter, string> = {
+    all: "全部",
+    publish: "仅发布",
+    receive: "仅接收",
+  };
+  return labels[directionFilter.value];
+});
+
+// 获取 payload 字符串
+function getPayloadString(payload: string | Uint8Array | undefined): string {
+  if (!payload) return "";
+  if (payload instanceof Uint8Array) {
+    return new TextDecoder().decode(payload);
+  }
+  return String(payload);
+}
+
+// 检测 payload 格式
+function detectPayloadFormat(payload: string | Uint8Array | undefined): PayloadFormat {
+  if (!payload) return "text";
+
+  const str = getPayloadString(payload);
+  const bytes =
+    payload instanceof Uint8Array ? payload : new TextEncoder().encode(payload);
+
+  // 尝试检测 JSON
+  if (str.trim()) {
+    const trimmed = str.trim();
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        JSON.parse(trimmed);
+        return "json";
+      } catch {
+        // 不是有效的 JSON
+      }
+    }
+  }
+
+  // 检测二进制数据
+  if (bytes.length > 0) {
+    let nonPrintableCount = 0;
+    for (const byte of bytes) {
+      if ((byte < 32 || byte > 126) && byte !== 9 && byte !== 10 && byte !== 13) {
+        nonPrintableCount++;
+      }
+    }
+    if (nonPrintableCount / bytes.length > 0.1) {
+      return "binary";
+    }
+  }
+
+  return "text";
+}
+
+// 获取格式标签类型
+function getFormatTagType(
+  format: PayloadFormat
+): "info" | "success" | "warning" {
+  const types: Record<PayloadFormat, "info" | "success" | "warning"> = {
+    json: "success",
+    binary: "warning",
+    text: "info",
+  };
+  return types[format];
+}
+
+// 获取格式标签文本
+function getFormatLabel(format: PayloadFormat): string {
+  const labels: Record<PayloadFormat, string> = {
+    json: "JSON",
+    binary: "BIN",
+    text: "TEXT",
+  };
+  return labels[format];
+}
 
 const formatTime = (timestamp?: string) => {
   if (!timestamp) return "";
@@ -102,43 +303,28 @@ const formatTime = (timestamp?: string) => {
   });
 };
 
-const formatPayload = (msg: MqttMessage): string => {
-  // 处理 Uint8Array 类型的 payload
-  let payload: string;
-  if (msg.payload instanceof Uint8Array) {
-    payload = new TextDecoder().decode(msg.payload);
-  } else if (typeof msg.payload === "string") {
-    payload = msg.payload;
-  } else if (msg.payload) {
-    payload = String(msg.payload);
-  } else {
-    payload = "";
-  }
-
-  if (formatType.value === "JSON") {
-    try {
-      return JSON.stringify(JSON.parse(payload), null, 2);
-    } catch {
-      return payload;
-    }
-  } else if (formatType.value === "HEX") {
-    if (msg.payload instanceof Uint8Array) {
-      return Array.from(msg.payload)
-        .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-        .join(" ");
-    }
-    return Array.from(new TextEncoder().encode(payload))
-      .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-      .join(" ");
-  }
-  return payload;
+const formatFullTime = (timestamp?: string) => {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  return date.toLocaleString("zh-CN");
 };
 
-const handleClear = () => {
+function handleFilterCommand(command: string) {
+  directionFilter.value = command as DirectionFilter;
+}
+
+const handleClear = async () => {
   const serverId = serverStore.activeServerId;
-  if (serverId) {
+  if (!serverId) return;
+
+  try {
+    await ElMessageBox.confirm("确定要清空所有消息记录吗？", "确认清空", {
+      type: "warning",
+    });
     mqttStore.clearMessages(serverId);
     ElMessage.success("消息已清空");
+  } catch {
+    // 用户取消
   }
 };
 
@@ -146,6 +332,33 @@ const handleExport = () => {
   // TODO: 实现消息导出功能
   ElMessage.info("导出功能开发中");
 };
+
+function showDetail(message: MqttMessage) {
+  selectedMessage.value = message;
+  showDetailDialog.value = true;
+}
+
+function copyPayload() {
+  if (selectedMessage.value) {
+    const payload = getPayloadString(selectedMessage.value.payload);
+    navigator.clipboard.writeText(payload);
+    ElMessage.success("已复制到剪贴板");
+  }
+}
+
+function copyToPublish() {
+  if (selectedMessage.value) {
+    const payload = getPayloadString(selectedMessage.value.payload);
+    appStore.setCopyToPublish({
+      topic: selectedMessage.value.topic,
+      payload: payload,
+      qos: selectedMessage.value.qos,
+      retain: selectedMessage.value.retain,
+    });
+    ElMessage.success("已复制到发布面板");
+    showDetailDialog.value = false;
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -191,9 +404,16 @@ const handleExport = () => {
 
 .message-item {
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   background-color: var(--sidebar-bg);
   border: 1px solid var(--app-border-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background-color: var(--sidebar-hover);
+    transform: translateX(2px);
+  }
 
   &.publish {
     border-left: 3px solid var(--msg-publish);
@@ -208,7 +428,32 @@ const handleExport = () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.msg-direction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+
+  .el-icon {
+    font-size: 10px;
+  }
+
+  &.publish {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: var(--msg-publish);
+  }
+
+  &.receive {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: var(--msg-receive);
+  }
 }
 
 .msg-topic {
@@ -216,6 +461,7 @@ const handleExport = () => {
   font-size: 12px;
   font-family: "Fira Code", "Consolas", monospace;
   color: var(--app-text-color);
+  min-width: 0;
 }
 
 .msg-meta {
@@ -225,19 +471,21 @@ const handleExport = () => {
   flex-shrink: 0;
 }
 
+.format-tag {
+  font-size: 10px;
+  padding: 0 6px;
+  height: 18px;
+  line-height: 18px;
+}
+
 .msg-time {
   font-size: 11px;
   color: var(--app-text-secondary);
+  margin-left: 4px;
 }
 
 .message-body {
-  .code-block {
-    max-height: 150px;
-    overflow-y: auto;
-    font-size: 12px;
-    margin: 0;
-    padding: 8px 10px;
-  }
+  margin-top: 6px;
 }
 
 .empty-state {
@@ -245,5 +493,43 @@ const handleExport = () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+// 消息详情弹窗样式
+.message-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.payload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.payload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--app-text-color);
+}
+
+.payload-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.topic-code {
+  font-family: "Fira Code", "Consolas", monospace;
+  background-color: var(--sidebar-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 </style>
