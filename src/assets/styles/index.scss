@@ -1,0 +1,167 @@
+@use "./variables.scss";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--app-bg-color);
+  color: var(--app-text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--app-border-color);
+  border-radius: 3px;
+
+  &:hover {
+    background-color: var(--app-text-secondary);
+  }
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+// 选中文本样式
+::selection {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+// Element Plus 覆盖样式
+.el-button--primary {
+  --el-button-bg-color: var(--primary-color);
+  --el-button-border-color: var(--primary-color);
+  --el-button-hover-bg-color: var(--primary-hover);
+  --el-button-hover-border-color: var(--primary-hover);
+}
+
+// 卡片通用样式
+.app-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--app-border-color);
+  border-radius: 8px;
+  box-shadow: var(--card-shadow);
+}
+
+// 连接状态指示器
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+
+  &.connected {
+    background-color: var(--status-connected);
+    box-shadow: 0 0 6px var(--status-connected);
+  }
+
+  &.disconnected {
+    background-color: var(--status-disconnected);
+  }
+
+  &.connecting {
+    background-color: var(--status-connecting);
+    animation: pulse 1.5s infinite;
+  }
+
+  &.error {
+    background-color: var(--status-error);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+// 消息方向标签
+.msg-direction {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+
+  &.publish {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: var(--msg-publish);
+  }
+
+  &.receive {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: var(--msg-receive);
+  }
+}
+
+// 代码/Payload 显示样式
+.code-block {
+  font-family: "Fira Code", "JetBrains Mono", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background-color: var(--sidebar-bg);
+  border: 1px solid var(--app-border-color);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+// 过渡动画
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateY(-10px);
+  opacity: 0;
+}
+
+// 工具类
+.text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}

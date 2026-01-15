@@ -1,0 +1,56 @@
+// MQTT Client 主题变量
+// 基于 Developer Tool 配色方案
+
+:root {
+  // 布局尺寸
+  --sidebar-width: 280px;
+  --header-height: 56px;
+  --command-bar-height: 48px;
+  
+  // 浅色主题
+  --app-bg-color: #f8fafc;
+  --app-text-color: #1e293b;
+  --app-text-secondary: #64748b;
+  --app-border-color: #e2e8f0;
+  
+  // 侧边栏
+  --sidebar-bg: #ffffff;
+  --sidebar-hover: #f1f5f9;
+  --sidebar-active: #e0f2fe;
+  
+  // 卡片
+  --card-bg: #ffffff;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  
+  // 连接状态颜色
+  --status-connected: #22c55e;
+  --status-disconnected: #94a3b8;
+  --status-connecting: #f59e0b;
+  --status-error: #ef4444;
+  
+  // 消息方向颜色
+  --msg-publish: #3b82f6;
+  --msg-receive: #22c55e;
+  
+  // 主题色
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-light: #dbeafe;
+}
+
+// 深色主题
+html.dark {
+  --app-bg-color: #0f172a;
+  --app-text-color: #f1f5f9;
+  --app-text-secondary: #94a3b8;
+  --app-border-color: #334155;
+  
+  --sidebar-bg: #1e293b;
+  --sidebar-hover: #334155;
+  --sidebar-active: #1e3a5f;
+  
+  --card-bg: #1e293b;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  
+  --primary-light: #1e3a5f;
+}
