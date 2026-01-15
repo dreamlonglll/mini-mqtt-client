@@ -6,11 +6,14 @@
         发布消息
       </span>
       <div class="header-actions">
-        <el-segmented
-          v-model="payloadFormat"
-          :options="formatOptions"
-          size="small"
-        />
+        <el-select v-model="payloadFormat" size="small" style="width: 90px">
+          <el-option
+            v-for="opt in formatOptions"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
+        </el-select>
       </div>
     </div>
 

@@ -9,11 +9,14 @@
         </el-tag>
       </span>
       <div class="header-actions">
-        <el-segmented
-          v-model="formatType"
-          :options="formatOptions"
-          size="small"
-        />
+        <el-select v-model="formatType" size="small" style="width: 90px">
+          <el-option
+            v-for="opt in formatOptions"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
+        </el-select>
         <el-divider direction="vertical" />
         <el-tooltip content="清空消息" placement="top">
           <el-button text size="small" :icon="Delete" @click="handleClear" />
