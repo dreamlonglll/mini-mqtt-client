@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="isEdit ? '编辑 Server' : '新增 Server'"
-    width="580px"
+    width="600px"
     destroy-on-close
     :close-on-click-modal="false"
     @update:model-value="$emit('update:visible', $event)"
@@ -21,11 +21,29 @@
             <el-input v-model="formData.name" placeholder="给这个连接起个名字" />
           </el-form-item>
 
-          <el-form-item label="服务器地址" prop="address">
-            <el-input
-              v-model="formData.address"
-              placeholder="例如: broker.emqx.io:1883"
-            />
+          <!-- 服务器地址：协议 + 主机 + 端口 -->
+          <el-form-item label="服务器地址" required>
+            <div class="address-input">
+              <el-select v-model="formData.protocol" class="protocol-select">
+                <el-option label="mqtt://" value="mqtt" />
+                <el-option label="mqtts://" value="mqtts" />
+                <el-option label="ws://" value="ws" />
+                <el-option label="wss://" value="wss" />
+              </el-select>
+              <el-form-item prop="host" class="host-input" style="margin-bottom: 0">
+                <el-input v-model="formData.host" placeholder="主机地址" />
+              </el-form-item>
+              <span class="separator">:</span>
+              <el-form-item prop="port" class="port-input" style="margin-bottom: 0">
+                <el-input-number
+                  v-model="formData.port"
+                  :min="1"
+                  :max="65535"
+                  :controls="false"
+                  placeholder="端口"
+                />
+              </el-form-item>
+            </div>
           </el-form-item>
 
           <el-form-item label="协议版本" prop="protocol_version">
@@ -77,17 +95,18 @@
             </el-col>
           </el-row>
 
-          <el-form-item label="启用 TLS">
-            <el-switch v-model="formData.use_tls" />
+          <el-form-item label="TLS/SSL" v-if="formData.protocol === 'mqtts' || formData.protocol === 'wss'">
+            <el-switch v-model="formData.use_tls" disabled />
+            <span class="form-hint">已根据协议自动启用</span>
           </el-form-item>
 
-          <template v-if="formData.use_tls">
+          <template v-if="formData.protocol === 'mqtts' || formData.protocol === 'wss'">
             <el-form-item label="CA 证书" prop="ca_cert">
               <el-input
                 v-model="formData.ca_cert"
                 type="textarea"
                 :rows="3"
-                placeholder="PEM 格式证书内容"
+                placeholder="PEM 格式证书内容（可选）"
               />
             </el-form-item>
 
@@ -147,11 +166,13 @@ const saving = ref(false);
 
 const isEdit = computed(() => !!props.server?.id);
 
-// 表单数据，使用 address 字段代替 host + port
+// 表单数据
 interface FormData {
   id?: number;
   name: string;
-  address: string; // host:port 格式
+  protocol: "mqtt" | "mqtts" | "ws" | "wss";
+  host: string;
+  port: number;
   protocol_version: "3.1.1" | "5.0";
   username?: string;
   password?: string;
@@ -166,7 +187,9 @@ interface FormData {
 
 const formData = reactive<FormData>({
   name: "",
-  address: "",
+  protocol: "mqtt",
+  host: "",
+  port: 1883,
   protocol_version: "5.0",
   username: "",
   password: "",
@@ -179,44 +202,38 @@ const formData = reactive<FormData>({
   client_key: "",
 });
 
-// 解析地址
-const parseAddress = (address: string): { host: string; port: number } => {
-  const parts = address.split(":");
-  if (parts.length === 2) {
-    const port = parseInt(parts[1], 10);
-    if (!isNaN(port) && port > 0 && port <= 65535) {
-      return { host: parts[0], port };
-    }
+// 协议变化时自动更新端口和TLS
+watch(() => formData.protocol, (newProtocol) => {
+  switch (newProtocol) {
+    case "mqtt":
+      formData.port = 1883;
+      formData.use_tls = false;
+      break;
+    case "mqtts":
+      formData.port = 8883;
+      formData.use_tls = true;
+      break;
+    case "ws":
+      formData.port = 8083;
+      formData.use_tls = false;
+      break;
+    case "wss":
+      formData.port = 8084;
+      formData.use_tls = true;
+      break;
   }
-  // 默认端口 1883
-  return { host: address, port: 1883 };
-};
-
-// 验证地址格式
-const validateAddress = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
-  if (!value) {
-    callback(new Error("请输入服务器地址"));
-    return;
-  }
-  const { host, port } = parseAddress(value);
-  if (!host) {
-    callback(new Error("主机地址不能为空"));
-    return;
-  }
-  if (port < 1 || port > 65535) {
-    callback(new Error("端口范围应为 1-65535"));
-    return;
-  }
-  callback();
-};
+});
 
 const rules: FormRules = {
   name: [
     { required: true, message: "请输入名称", trigger: "blur" },
     { min: 1, max: 50, message: "名称长度在 1-50 个字符", trigger: "blur" },
   ],
-  address: [
-    { required: true, validator: validateAddress, trigger: "blur" },
+  host: [
+    { required: true, message: "请输入主机地址", trigger: "blur" },
+  ],
+  port: [
+    { required: true, message: "请输入端口", trigger: "blur" },
   ],
 };
 
@@ -226,12 +243,11 @@ watch(
     if (val) {
       activeTab.value = "basic";
       if (props.server) {
-        // 编辑模式：将 host:port 组合成 address（默认端口1883时不显示）
+        // 编辑模式
         formData.id = props.server.id;
         formData.name = props.server.name;
-        formData.address = props.server.port === 1883
-          ? props.server.host
-          : `${props.server.host}:${props.server.port}`;
+        formData.host = props.server.host;
+        formData.port = props.server.port;
         formData.protocol_version = props.server.protocol_version;
         formData.username = props.server.username || "";
         formData.password = props.server.password || "";
@@ -242,11 +258,15 @@ watch(
         formData.ca_cert = props.server.ca_cert || "";
         formData.client_cert = props.server.client_cert || "";
         formData.client_key = props.server.client_key || "";
+        // 根据 use_tls 推断协议
+        formData.protocol = props.server.use_tls ? "mqtts" : "mqtt";
       } else {
         // 新增模式：重置表单
         formData.id = undefined;
         formData.name = "";
-        formData.address = "";
+        formData.protocol = "mqtt";
+        formData.host = "";
+        formData.port = 1883;
         formData.protocol_version = "5.0";
         formData.username = "";
         formData.password = "";
@@ -271,13 +291,11 @@ const handleSave = async () => {
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) return;
 
-  const { host, port } = parseAddress(formData.address);
-
   const serverData: MqttServer = {
     id: formData.id,
     name: formData.name,
-    host,
-    port,
+    host: formData.host,
+    port: formData.port,
     protocol_version: formData.protocol_version,
     username: formData.username || undefined,
     password: formData.password || undefined,
@@ -312,5 +330,37 @@ const handleSave = async () => {
 <style scoped lang="scss">
 :deep(.el-tabs__content) {
   padding-top: 16px;
+}
+
+.address-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.protocol-select {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.host-input {
+  flex: 1;
+}
+
+.separator {
+  color: var(--app-text-secondary);
+  font-weight: 500;
+}
+
+.port-input {
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.form-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
 }
 </style>
