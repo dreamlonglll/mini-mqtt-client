@@ -1,14 +1,43 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+mod commands;
+mod db;
+mod mqtt;
+
+use commands::mqtt::*;
+use commands::server::*;
+use db::Database;
+use mqtt::MqttManager;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .setup(|app| {
+            // 初始化数据库
+            let db = Database::new(&app.handle())?;
+            app.manage(db);
+
+            // 初始化 MQTT 管理器
+            let mqtt_manager = MqttManager::new(app.handle().clone());
+            app.manage(mqtt_manager);
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            // Server 命令
+            get_servers,
+            get_server,
+            create_server,
+            update_server,
+            delete_server,
+            // MQTT 命令
+            mqtt_connect,
+            mqtt_disconnect,
+            mqtt_publish,
+            mqtt_subscribe,
+            mqtt_unsubscribe,
+            mqtt_is_connected,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
