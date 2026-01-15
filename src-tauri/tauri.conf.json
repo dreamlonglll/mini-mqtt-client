@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "mini-mqtt-client",
+  "productName": "Mini MQTT Client",
   "version": "0.1.0",
   "identifier": "com.tauri-app.mini-mqtt-client",
   "build": {
@@ -12,9 +12,15 @@
   "app": {
     "windows": [
       {
-        "title": "mini-mqtt-client",
-        "width": 800,
-        "height": 600
+        "title": "Mini MQTT Client",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "center": true,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false
       }
     ],
     "security": {
