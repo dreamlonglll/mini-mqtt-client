@@ -21,17 +21,18 @@ pub struct MqttServer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandTemplate {
+pub struct Subscription {
     pub id: Option<i64>,
     pub server_id: i64,
-    pub name: String,
     pub topic: String,
-    pub payload: Option<String>,
     pub qos: i32,
-    pub retain: bool,
-    pub category: Option<String>,
+    #[serde(default = "default_true")]
+    pub is_active: bool,
     pub created_at: Option<String>,
-    pub updated_at: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,39 +42,11 @@ pub struct MessageHistory {
     pub direction: String, // "publish" or "receive"
     pub topic: String,
     pub payload: Option<String>,
+    #[serde(default)]
     pub payload_format: Option<String>, // "text", "json", "hex"
     pub qos: i32,
     pub retain: bool,
     pub created_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewMessageHistory {
-    pub server_id: i64,
-    pub topic: String,
-    pub payload: String,
-    pub payload_format: String,
-    pub direction: String,
-    pub qos: i32,
-    pub retain: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Subscription {
-    pub id: Option<i64>,
-    pub server_id: i64,
-    pub topic: String,
-    pub qos: i32,
-    pub is_active: bool,
-    pub created_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewSubscription {
-    pub server_id: i64,
-    pub topic: String,
-    pub qos: i32,
-    pub is_active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

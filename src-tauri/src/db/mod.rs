@@ -1,280 +1,191 @@
 pub mod models;
 
-use models::{MessageHistory, NewMessageHistory, NewSubscription, Subscription};
-use rusqlite::{params, Connection, Result};
-use std::sync::Mutex;
+use models::{MessageHistory, MqttServer, Subscription};
+use parking_lot::RwLock;
+use std::fs;
+use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri::Manager;
 
-pub struct Database {
-    pub conn: Mutex<Connection>,
+#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
+pub struct AppData {
+    pub servers: Vec<MqttServer>,
+    pub subscriptions: Vec<Subscription>,
+    pub messages: Vec<MessageHistory>,
+    #[serde(default)]
+    next_server_id: i64,
+    #[serde(default)]
+    next_subscription_id: i64,
+    #[serde(default)]
+    next_message_id: i64,
 }
 
-impl Database {
-    pub fn new(app_handle: &AppHandle) -> Result<Self> {
+pub struct Storage {
+    data: RwLock<AppData>,
+    file_path: PathBuf,
+}
+
+impl Storage {
+    pub fn new(app_handle: &AppHandle) -> Result<Self, String> {
         let app_dir = app_handle
             .path()
             .app_data_dir()
-            .expect("Failed to get app data dir");
+            .map_err(|e| e.to_string())?;
 
-        std::fs::create_dir_all(&app_dir).expect("Failed to create app data dir");
+        fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
 
-        let db_path = app_dir.join("mqtt_client.db");
-        let conn = Connection::open(db_path)?;
+        let file_path = app_dir.join("data.yaml");
 
-        let db = Self {
-            conn: Mutex::new(conn),
+        let data = if file_path.exists() {
+            let content = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
+            serde_yaml::from_str(&content).unwrap_or_default()
+        } else {
+            AppData::default()
         };
 
-        db.init_tables()?;
-        Ok(db)
+        Ok(Self {
+            data: RwLock::new(data),
+            file_path,
+        })
     }
 
-    fn init_tables(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-
-        conn.execute_batch(
-            "
-            -- MQTT Server 配置表
-            CREATE TABLE IF NOT EXISTS mqtt_servers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                host TEXT NOT NULL,
-                port INTEGER DEFAULT 1883,
-                protocol_version TEXT DEFAULT '5.0',
-                username TEXT,
-                password TEXT,
-                client_id TEXT,
-                keep_alive INTEGER DEFAULT 60,
-                clean_session INTEGER DEFAULT 1,
-                use_tls INTEGER DEFAULT 0,
-                ca_cert TEXT,
-                client_cert TEXT,
-                client_key TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-
-            -- 命令模板表
-            CREATE TABLE IF NOT EXISTS command_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                topic TEXT NOT NULL,
-                payload TEXT,
-                qos INTEGER DEFAULT 0,
-                retain INTEGER DEFAULT 0,
-                category TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (server_id) REFERENCES mqtt_servers(id) ON DELETE CASCADE
-            );
-
-            -- 历史消息表
-            CREATE TABLE IF NOT EXISTS message_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id INTEGER NOT NULL,
-                direction TEXT NOT NULL,
-                topic TEXT NOT NULL,
-                payload TEXT,
-                payload_format TEXT DEFAULT 'text',
-                qos INTEGER DEFAULT 0,
-                retain INTEGER DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (server_id) REFERENCES mqtt_servers(id) ON DELETE CASCADE
-            );
-
-            -- 订阅记录表
-            CREATE TABLE IF NOT EXISTS subscriptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id INTEGER NOT NULL,
-                topic TEXT NOT NULL,
-                qos INTEGER DEFAULT 0,
-                is_active INTEGER DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (server_id) REFERENCES mqtt_servers(id) ON DELETE CASCADE
-            );
-            ",
-        )?;
-
-        // 迁移：添加缺失的列
-        self.run_migrations()?;
-
-        Ok(())
+    fn save(&self) -> Result<(), String> {
+        let data = self.data.read();
+        let content = serde_yaml::to_string(&*data).map_err(|e| e.to_string())?;
+        fs::write(&self.file_path, content).map_err(|e| e.to_string())
     }
 
-    fn run_migrations(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+    // ===== Server 操作 =====
+    pub fn get_servers(&self) -> Vec<MqttServer> {
+        let data = self.data.read();
+        data.servers.clone()
+    }
 
-        // 检查并添加 subscriptions.is_active 列
-        let has_is_active: bool = conn
-            .prepare("SELECT is_active FROM subscriptions LIMIT 1")
-            .is_ok();
+    pub fn get_server(&self, id: i64) -> Option<MqttServer> {
+        let data = self.data.read();
+        data.servers.iter().find(|s| s.id == Some(id)).cloned()
+    }
 
-        if !has_is_active {
-            let _ = conn.execute(
-                "ALTER TABLE subscriptions ADD COLUMN is_active INTEGER DEFAULT 1",
-                [],
-            );
+    pub fn create_server(&self, mut server: MqttServer) -> Result<i64, String> {
+        let mut data = self.data.write();
+        data.next_server_id += 1;
+        let id = data.next_server_id;
+        server.id = Some(id);
+        server.created_at = Some(chrono::Utc::now().to_rfc3339());
+        server.updated_at = server.created_at.clone();
+        data.servers.push(server);
+        drop(data);
+        self.save()?;
+        Ok(id)
+    }
+
+    pub fn update_server(&self, server: MqttServer) -> Result<(), String> {
+        let mut data = self.data.write();
+        if let Some(existing) = data.servers.iter_mut().find(|s| s.id == server.id) {
+            *existing = server;
+            existing.updated_at = Some(chrono::Utc::now().to_rfc3339());
+        }
+        drop(data);
+        self.save()
+    }
+
+    pub fn delete_server(&self, id: i64) -> Result<(), String> {
+        let mut data = self.data.write();
+        data.servers.retain(|s| s.id != Some(id));
+        // 同时删除相关订阅和消息
+        data.subscriptions.retain(|s| s.server_id != id);
+        data.messages.retain(|m| m.server_id != id);
+        drop(data);
+        self.save()
+    }
+
+    // ===== 订阅操作 =====
+    pub fn get_subscriptions(&self, server_id: i64) -> Vec<Subscription> {
+        let data = self.data.read();
+        data.subscriptions
+            .iter()
+            .filter(|s| s.server_id == server_id)
+            .cloned()
+            .collect()
+    }
+
+    pub fn create_subscription(&self, mut sub: Subscription) -> Result<Subscription, String> {
+        let mut data = self.data.write();
+        data.next_subscription_id += 1;
+        sub.id = Some(data.next_subscription_id);
+        sub.created_at = Some(chrono::Utc::now().to_rfc3339());
+        let result = sub.clone();
+        data.subscriptions.push(sub);
+        drop(data);
+        self.save()?;
+        Ok(result)
+    }
+
+    pub fn update_subscription_status(&self, id: i64, is_active: bool) -> Result<(), String> {
+        let mut data = self.data.write();
+        if let Some(sub) = data.subscriptions.iter_mut().find(|s| s.id == Some(id)) {
+            sub.is_active = is_active;
+        }
+        drop(data);
+        self.save()
+    }
+
+    pub fn delete_subscription(&self, id: i64) -> Result<(), String> {
+        let mut data = self.data.write();
+        data.subscriptions.retain(|s| s.id != Some(id));
+        drop(data);
+        self.save()
+    }
+
+    // ===== 消息操作 =====
+    pub fn get_messages(&self, server_id: i64, limit: usize) -> Vec<MessageHistory> {
+        let data = self.data.read();
+        data.messages
+            .iter()
+            .filter(|m| m.server_id == server_id)
+            .rev()
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
+    pub fn create_message(&self, mut msg: MessageHistory) -> Result<MessageHistory, String> {
+        let mut data = self.data.write();
+        data.next_message_id += 1;
+        msg.id = Some(data.next_message_id);
+        msg.created_at = Some(chrono::Utc::now().to_rfc3339());
+        let result = msg.clone();
+        data.messages.push(msg);
+
+        // 限制消息数量，每个server最多保存1000条
+        let server_id = result.server_id;
+        let count = data
+            .messages
+            .iter()
+            .filter(|m| m.server_id == server_id)
+            .count();
+        if count > 1000 {
+            let to_remove = count - 1000;
+            let mut removed = 0;
+            data.messages.retain(|m| {
+                if m.server_id == server_id && removed < to_remove {
+                    removed += 1;
+                    false
+                } else {
+                    true
+                }
+            });
         }
 
-        // 检查并添加 message_history.payload_format 列
-        let has_payload_format: bool = conn
-            .prepare("SELECT payload_format FROM message_history LIMIT 1")
-            .is_ok();
-
-        if !has_payload_format {
-            let _ = conn.execute(
-                "ALTER TABLE message_history ADD COLUMN payload_format TEXT DEFAULT 'text'",
-                [],
-            );
-        }
-
-        Ok(())
+        drop(data);
+        self.save()?;
+        Ok(result)
     }
 
-    // 订阅相关操作
-    pub fn insert_subscription(&self, sub: &NewSubscription) -> Result<Subscription> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO subscriptions (server_id, topic, qos, is_active) VALUES (?1, ?2, ?3, ?4)",
-            params![sub.server_id, sub.topic, sub.qos, sub.is_active as i32],
-        )?;
-
-        let id = conn.last_insert_rowid();
-        drop(conn);
-        self.get_subscription_by_id(id)
-    }
-
-    pub fn get_subscription_by_id(&self, id: i64) -> Result<Subscription> {
-        let conn = self.conn.lock().unwrap();
-        conn.query_row(
-            "SELECT id, server_id, topic, qos, is_active, created_at FROM subscriptions WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(Subscription {
-                    id: Some(row.get(0)?),
-                    server_id: row.get(1)?,
-                    topic: row.get(2)?,
-                    qos: row.get(3)?,
-                    is_active: row.get::<_, i32>(4)? == 1,
-                    created_at: row.get(5)?,
-                })
-            },
-        )
-    }
-
-    pub fn get_subscriptions_by_server(&self, server_id: i64) -> Result<Vec<Subscription>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, server_id, topic, qos, is_active, created_at FROM subscriptions WHERE server_id = ?1 ORDER BY created_at DESC",
-        )?;
-
-        let subs = stmt.query_map(params![server_id], |row| {
-            Ok(Subscription {
-                id: Some(row.get(0)?),
-                server_id: row.get(1)?,
-                topic: row.get(2)?,
-                qos: row.get(3)?,
-                is_active: row.get::<_, i32>(4)? == 1,
-                created_at: row.get(5)?,
-            })
-        })?;
-
-        subs.collect()
-    }
-
-    pub fn update_subscription_status(&self, id: i64, is_active: bool) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE subscriptions SET is_active = ?1 WHERE id = ?2",
-            params![is_active as i32, id],
-        )?;
-        Ok(())
-    }
-
-    pub fn delete_subscription(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM subscriptions WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
-    // 消息历史相关操作
-    pub fn insert_message_history(&self, msg: &NewMessageHistory) -> Result<MessageHistory> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO message_history (server_id, topic, payload, payload_format, direction, qos, retain) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                msg.server_id,
-                msg.topic,
-                msg.payload,
-                msg.payload_format,
-                msg.direction,
-                msg.qos,
-                msg.retain as i32
-            ],
-        )?;
-
-        let id = conn.last_insert_rowid();
-        drop(conn);
-        self.get_message_history_by_id(id)
-    }
-
-    pub fn get_message_history_by_id(&self, id: i64) -> Result<MessageHistory> {
-        let conn = self.conn.lock().unwrap();
-        conn.query_row(
-            "SELECT id, server_id, topic, payload, payload_format, direction, qos, retain, created_at FROM message_history WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(MessageHistory {
-                    id: Some(row.get(0)?),
-                    server_id: row.get(1)?,
-                    topic: row.get(2)?,
-                    payload: row.get(3)?,
-                    payload_format: row.get(4)?,
-                    direction: row.get(5)?,
-                    qos: row.get(6)?,
-                    retain: row.get::<_, i32>(7)? == 1,
-                    created_at: row.get(8)?,
-                })
-            },
-        )
-    }
-
-    pub fn get_message_history(
-        &self,
-        server_id: i64,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<MessageHistory>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, server_id, topic, payload, payload_format, direction, qos, retain, created_at FROM message_history WHERE server_id = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
-        )?;
-
-        let messages = stmt.query_map(params![server_id, limit, offset], |row| {
-            Ok(MessageHistory {
-                id: Some(row.get(0)?),
-                server_id: row.get(1)?,
-                topic: row.get(2)?,
-                payload: row.get(3)?,
-                payload_format: row.get(4)?,
-                direction: row.get(5)?,
-                qos: row.get(6)?,
-                retain: row.get::<_, i32>(7)? == 1,
-                created_at: row.get(8)?,
-            })
-        })?;
-
-        messages.collect()
-    }
-
-    pub fn clear_message_history(&self, server_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "DELETE FROM message_history WHERE server_id = ?1",
-            params![server_id],
-        )?;
-        Ok(())
+    pub fn clear_messages(&self, server_id: i64) -> Result<(), String> {
+        let mut data = self.data.write();
+        data.messages.retain(|m| m.server_id != server_id);
+        drop(data);
+        self.save()
     }
 }

@@ -1,27 +1,27 @@
-use crate::db::models::{NewSubscription, Subscription};
-use crate::db::Database;
+use crate::db::models::Subscription;
+use crate::db::Storage;
 use crate::mqtt::MqttManager;
 use tauri::State;
 
 #[tauri::command]
 pub async fn add_subscription(
-    db: State<'_, Database>,
+    storage: State<'_, Storage>,
     mqtt_manager: State<'_, MqttManager>,
     server_id: i64,
     topic: String,
     qos: i32,
 ) -> Result<Subscription, String> {
-    // 先添加到数据库
-    let subscription = {
-        let new_sub = NewSubscription {
-            server_id,
-            topic: topic.clone(),
-            qos,
-            is_active: true,
-        };
-        db.insert_subscription(&new_sub)
-            .map_err(|e| e.to_string())?
+    // 创建订阅
+    let sub = Subscription {
+        id: None,
+        server_id,
+        topic: topic.clone(),
+        qos,
+        is_active: true,
+        created_at: None,
     };
+
+    let subscription = storage.create_subscription(sub)?;
 
     // 如果已连接，则订阅主题
     if mqtt_manager.is_connected(server_id) {
@@ -36,7 +36,7 @@ pub async fn add_subscription(
 
 #[tauri::command]
 pub async fn remove_subscription(
-    db: State<'_, Database>,
+    storage: State<'_, Storage>,
     mqtt_manager: State<'_, MqttManager>,
     subscription_id: i64,
     server_id: i64,
@@ -50,25 +50,21 @@ pub async fn remove_subscription(
             .map_err(|e| e.to_string())?;
     }
 
-    // 从数据库删除
-    db.delete_subscription(subscription_id)
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    // 从存储删除
+    storage.delete_subscription(subscription_id)
 }
 
 #[tauri::command]
 pub async fn get_subscriptions(
-    db: State<'_, Database>,
+    storage: State<'_, Storage>,
     server_id: i64,
 ) -> Result<Vec<Subscription>, String> {
-    db.get_subscriptions_by_server(server_id)
-        .map_err(|e| e.to_string())
+    Ok(storage.get_subscriptions(server_id))
 }
 
 #[tauri::command]
 pub async fn toggle_subscription(
-    db: State<'_, Database>,
+    storage: State<'_, Storage>,
     mqtt_manager: State<'_, MqttManager>,
     subscription_id: i64,
     server_id: i64,
@@ -76,9 +72,8 @@ pub async fn toggle_subscription(
     qos: i32,
     is_active: bool,
 ) -> Result<(), String> {
-    // 更新数据库状态
-    db.update_subscription_status(subscription_id, is_active)
-        .map_err(|e| e.to_string())?;
+    // 更新存储状态
+    storage.update_subscription_status(subscription_id, is_active)?;
 
     // 执行订阅/取消订阅操作
     if mqtt_manager.is_connected(server_id) {

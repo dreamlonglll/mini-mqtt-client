@@ -6,7 +6,7 @@ use commands::mqtt::*;
 use commands::publish::*;
 use commands::server::*;
 use commands::subscription::*;
-use db::Database;
+use db::Storage;
 use mqtt::MqttManager;
 use tauri::Manager;
 
@@ -15,9 +15,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // 初始化数据库
-            let db = Database::new(&app.handle())?;
-            app.manage(db);
+            // 初始化存储
+            let storage =
+                Storage::new(&app.handle()).expect("Failed to initialize storage");
+            app.manage(storage);
 
             // 初始化 MQTT 管理器
             let mqtt_manager = MqttManager::new(app.handle().clone());
