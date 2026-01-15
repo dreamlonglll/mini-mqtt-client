@@ -240,6 +240,8 @@ const handlePublish = async () => {
   try {
     // 应用发送前处理脚本
     let processedPayload = publishData.payload;
+    let scriptError: string | undefined = undefined;
+    
     try {
       const scripts = await invoke<Script[]>("get_enabled_scripts", {
         serverId,
@@ -248,10 +250,23 @@ const handlePublish = async () => {
       if (scripts.length > 0) {
         processedPayload = await ScriptEngine.executeBeforePublish(scripts, publishData.payload);
       }
-    } catch (error) {
-      // 使用脚本错误处理器
+    } catch (error: any) {
+      // 记录脚本错误
+      scriptError = error?.message || String(error);
+      // 使用脚本错误处理器（会写入日志）
       handleScriptError(error);
-      return; // 脚本错误时不发布
+      
+      // 将原始消息添加到列表中（带错误标记，不实际发布）
+      mqttStore.addPublishMessage(serverId, {
+        topic: publishData.topic,
+        payload: publishData.payload,
+        qos: publishData.qos as 0 | 1 | 2,
+        retain: publishData.retain,
+        scriptError: scriptError,
+      });
+      
+      ElMessage.error(`脚本处理失败: ${scriptError}`);
+      return;
     }
 
     // 调用 messageStore 发布消息（保存到数据库）

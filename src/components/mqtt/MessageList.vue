@@ -45,17 +45,26 @@
         v-for="msg in filteredMessages"
         :key="msg.id || msg.timestamp"
         class="message-item"
-        :class="msg.direction"
+        :class="[msg.direction, { 'has-error': msg.scriptError }]"
         @click="showDetail(msg)"
       >
         <div class="message-header">
-          <span class="msg-direction" :class="msg.direction">
+          <span class="msg-direction" :class="[msg.direction, { 'has-error': msg.scriptError }]">
             <el-icon v-if="msg.direction === 'publish'"><Top /></el-icon>
             <el-icon v-else><Bottom /></el-icon>
             {{ msg.direction === "publish" ? "PUB" : "RCV" }}
           </span>
           <span class="msg-topic text-ellipsis">{{ msg.topic }}</span>
           <div class="msg-meta">
+            <el-tag
+              v-if="msg.scriptError"
+              size="small"
+              effect="plain"
+              type="danger"
+              class="error-tag"
+            >
+              脚本错误
+            </el-tag>
             <el-tag
               size="small"
               effect="plain"
@@ -70,6 +79,10 @@
             </el-tag>
             <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
           </div>
+        </div>
+        <div v-if="msg.scriptError" class="message-error">
+          <el-icon><WarningFilled /></el-icon>
+          <span>{{ msg.scriptError }}</span>
         </div>
         <div class="message-body">
           <MessagePayload :payload="msg.payload" :preview="true" />
@@ -160,6 +173,7 @@ import {
   Search,
   CopyDocument,
   Promotion,
+  WarningFilled,
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useServerStore } from "@/stores/server";
@@ -488,6 +502,42 @@ function copyToPublish() {
 
 .message-body {
   margin-top: 6px;
+}
+
+.message-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  background-color: var(--el-color-danger-light-9);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--el-color-danger);
+  
+  .el-icon {
+    flex-shrink: 0;
+  }
+  
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.message-item.has-error {
+  border-left-color: var(--el-color-danger);
+}
+
+.msg-direction.has-error {
+  background-color: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+
+.error-tag {
+  margin-right: 4px;
 }
 
 .empty-state {

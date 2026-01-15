@@ -1,4 +1,5 @@
 import type { Script } from "@/stores/script";
+import { errorHandler, ErrorType } from "@/utils/errorHandler";
 
 /**
  * 加密工具类 - 提供常用的加解密函数
@@ -524,9 +525,13 @@ export class ScriptEngine {
     for (const script of scripts) {
       try {
         result = await this.executeScript(script.code, { payload: result });
-      } catch (error) {
-        console.error(`脚本执行失败 [${script.name}]:`, error);
-        // 脚本执行失败时，保留原始值继续
+      } catch (error: any) {
+        const errorMessage = `脚本执行失败 [${script.name}]: ${error?.message || error}`;
+        console.error(errorMessage, error);
+        // 写入错误日志（静默处理，不显示通知）
+        errorHandler.handle(errorMessage, ErrorType.SCRIPT, true);
+        // 抛出错误，让调用方决定如何处理
+        throw error;
       }
     }
     
@@ -546,9 +551,13 @@ export class ScriptEngine {
     for (const script of scripts) {
       try {
         result = await this.executeScript(script.code, { payload: result, topic });
-      } catch (error) {
-        console.error(`脚本执行失败 [${script.name}]:`, error);
-        // 脚本执行失败时，保留原始值继续
+      } catch (error: any) {
+        const errorMessage = `脚本执行失败 [${script.name}]: ${error?.message || error}`;
+        console.error(errorMessage, error);
+        // 写入错误日志（静默处理，不显示通知）
+        errorHandler.handle(errorMessage, ErrorType.SCRIPT, true);
+        // 抛出错误，让调用方可以在消息列表中展示
+        throw error;
       }
     }
     

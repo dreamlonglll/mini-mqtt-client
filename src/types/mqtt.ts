@@ -48,6 +48,8 @@ export interface MqttMessage {
   qos: 0 | 1 | 2;
   retain: boolean;
   timestamp?: string;
+  /** 脚本处理错误信息 */
+  scriptError?: string;
 }
 
 /**

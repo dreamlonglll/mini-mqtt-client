@@ -55,6 +55,7 @@ export const useMqttStore = defineStore("mqtt", () => {
     await listen<ReceivedMessage>("mqtt-message", async (event) => {
       const msg = event.payload;
       let payloadBytes = new Uint8Array(msg.payload);
+      let scriptError: string | undefined = undefined;
       
       // 尝试应用接收后处理脚本
       try {
@@ -72,8 +73,10 @@ export const useMqttStore = defineStore("mqtt", () => {
           );
           payloadBytes = new TextEncoder().encode(processedPayload);
         }
-      } catch (error) {
-        handleScriptError(error, true); // 静默处理，不显示通知
+      } catch (error: any) {
+        // 记录脚本错误
+        scriptError = error?.message || String(error);
+        handleScriptError(error, true); // 静默处理，不显示通知（会写入日志）
       }
       
       messages.value.unshift({
@@ -84,6 +87,7 @@ export const useMqttStore = defineStore("mqtt", () => {
         qos: msg.qos as 0 | 1 | 2,
         retain: msg.retain,
         timestamp: msg.timestamp,
+        scriptError: scriptError,
       });
 
       // 限制消息数量
@@ -193,6 +197,7 @@ export const useMqttStore = defineStore("mqtt", () => {
       payload: string;
       qos: 0 | 1 | 2;
       retain: boolean;
+      scriptError?: string;
     }
   ) => {
     messages.value.unshift({
@@ -203,6 +208,7 @@ export const useMqttStore = defineStore("mqtt", () => {
       qos: msg.qos,
       retain: msg.retain,
       timestamp: new Date().toISOString(),
+      scriptError: msg.scriptError,
     });
 
     // 限制消息数量
