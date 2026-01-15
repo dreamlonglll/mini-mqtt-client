@@ -66,16 +66,6 @@
         <el-button :icon="Setting" circle size="small" @click="handleSettings" />
       </el-tooltip>
     </div>
-
-    <!-- 错误提示 -->
-    <el-alert
-      v-if="connectionError"
-      :title="connectionError"
-      type="error"
-      show-icon
-      :closable="false"
-      class="error-alert"
-    />
   </div>
 </template>
 
@@ -108,11 +98,6 @@ const activeServer = computed(() => serverStore.activeServer);
 const connectionStatus = computed(() => {
   if (!activeServer.value?.server.id) return "disconnected";
   return mqttStore.getConnectionStatus(activeServer.value.server.id);
-});
-
-const connectionError = computed(() => {
-  if (!activeServer.value?.server.id) return undefined;
-  return mqttStore.getConnectionError(activeServer.value.server.id);
 });
 
 const statusText = computed(() => {
@@ -256,11 +241,6 @@ const handleSettings = () => {
 .welcome-text {
   font-size: 14px;
   color: var(--app-text-secondary);
-}
-
-.error-alert {
-  width: 100%;
-  margin-top: 8px;
 }
 
 .status-indicator {

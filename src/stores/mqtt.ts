@@ -2,10 +2,10 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { ElMessage } from "element-plus";
 import type { ConnectionStatus, MqttMessage } from "@/types/mqtt";
 import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
-import { handleMqttError as handleMqttErr } from "@/utils/mqttErrorHandler";
 import { handleScriptError } from "@/utils/errorHandler";
 
 interface ConnectionState {
@@ -45,9 +45,12 @@ export const useMqttStore = defineStore("mqtt", () => {
         error,
       });
       
-      // 如果有错误，使用 MQTT 错误处理器
+      // 如果有错误，使用 ElMessage 显示
       if (error && status === "error") {
-        handleMqttErr(error);
+        ElMessage.error({
+          message: `连接错误: ${error}`,
+          duration: 5000,
+        });
       }
     });
 
