@@ -3,19 +3,13 @@
     <!-- 上部：Server 信息和状态栏 -->
     <ServerInfoBar class="server-info-bar" />
 
-    <!-- 下部：左右分栏 -->
+    <!-- 消息区域 -->
     <div class="content-body">
-      <!-- 左侧：订阅列表面板 -->
-      <SubscriptionPanel class="subscription-panel" />
+      <!-- 消息列表 -->
+      <MessageList ref="messageListRef" class="message-list" />
 
-      <!-- 右侧：消息区域 -->
-      <div class="message-section">
-        <!-- 消息列表 -->
-        <MessageList ref="messageListRef" class="message-list" />
-
-        <!-- 发布消息 -->
-        <PublishPanel class="publish-panel" @publish="handlePublish" />
-      </div>
+      <!-- 发布消息 -->
+      <PublishPanel class="publish-panel" @publish="handlePublish" />
     </div>
   </div>
 </template>
@@ -23,7 +17,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import ServerInfoBar from "./ServerInfoBar.vue";
-import SubscriptionPanel from "./SubscriptionPanel.vue";
 import MessageList from "./MessageList.vue";
 import PublishPanel from "./PublishPanel.vue";
 
@@ -70,22 +63,9 @@ const handlePublish = (data: PublishData) => {
 .content-body {
   flex: 1;
   display: flex;
-  gap: 12px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.subscription-panel {
-  width: 280px;
-  flex-shrink: 0;
-}
-
-.message-section {
-  flex: 1;
-  display: flex;
   flex-direction: column;
   gap: 12px;
-  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 

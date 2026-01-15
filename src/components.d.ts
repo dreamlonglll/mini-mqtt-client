@@ -37,6 +37,5 @@ declare module 'vue' {
     PublishPanel: typeof import('./components/mqtt/PublishPanel.vue')['default']
     ServerInfoBar: typeof import('./components/mqtt/ServerInfoBar.vue')['default']
     Sidebar: typeof import('./components/layout/Sidebar.vue')['default']
-    SubscriptionPanel: typeof import('./components/mqtt/SubscriptionPanel.vue')['default']
   }
 }
