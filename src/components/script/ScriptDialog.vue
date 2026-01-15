@@ -460,6 +460,12 @@ watch(() => formData.value.script_type, (newType) => {
   gap: 4px;
 }
 
+.script-info :deep(.el-tag) {
+  width: 56px;
+  text-align: center;
+  justify-content: center;
+}
+
 .script-name {
   font-size: 13px;
   font-weight: 500;
