@@ -20,18 +20,23 @@
             <el-input v-model="form.name" placeholder="给这个连接起个名字" />
           </el-form-item>
 
-          <el-row :gutter="16">
-            <el-col :span="16">
-              <el-form-item label="主机地址" prop="host">
+          <el-form-item label="主机地址" prop="host">
+            <el-row :gutter="12">
+              <el-col :span="16">
                 <el-input v-model="form.host" placeholder="例如: broker.emqx.io" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item label="端口" prop="port">
-                <el-input-number v-model="form.port" :min="1" :max="65535" style="width: 100%" />
-              </el-form-item>
-            </el-col>
-          </el-row>
+              </el-col>
+              <el-col :span="8">
+                <el-input-number
+                  v-model="form.port"
+                  :min="1"
+                  :max="65535"
+                  :controls="false"
+                  style="width: 100%"
+                  placeholder="端口"
+                />
+              </el-col>
+            </el-row>
+          </el-form-item>
 
           <el-form-item label="协议版本" prop="protocol_version">
             <el-radio-group v-model="form.protocol_version">
