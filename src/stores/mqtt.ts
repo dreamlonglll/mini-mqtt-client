@@ -3,6 +3,8 @@ import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { ConnectionStatus, MqttMessage } from "@/types/mqtt";
+import { ScriptEngine } from "@/utils/scriptEngine";
+import type { Script } from "@/stores/script";
 
 interface ConnectionState {
   server_id: number;
@@ -43,13 +45,35 @@ export const useMqttStore = defineStore("mqtt", () => {
     });
 
     // 监听接收消息
-    await listen<ReceivedMessage>("mqtt-message", (event) => {
+    await listen<ReceivedMessage>("mqtt-message", async (event) => {
       const msg = event.payload;
+      let payloadBytes = new Uint8Array(msg.payload);
+      
+      // 尝试应用接收后处理脚本
+      try {
+        const scripts = await invoke<Script[]>("get_enabled_scripts", {
+          serverId: msg.server_id,
+          scriptType: "after_receive",
+        });
+        
+        if (scripts.length > 0) {
+          const originalPayload = new TextDecoder().decode(payloadBytes);
+          const processedPayload = await ScriptEngine.executeAfterReceive(
+            scripts,
+            originalPayload,
+            msg.topic
+          );
+          payloadBytes = new TextEncoder().encode(processedPayload);
+        }
+      } catch (error) {
+        console.error("脚本处理失败:", error);
+      }
+      
       messages.value.unshift({
         server_id: msg.server_id,
         direction: "receive",
         topic: msg.topic,
-        payload: new Uint8Array(msg.payload),
+        payload: payloadBytes,
         qos: msg.qos as 0 | 1 | 2,
         retain: msg.retain,
         timestamp: msg.timestamp,

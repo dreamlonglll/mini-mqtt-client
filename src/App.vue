@@ -1,5 +1,5 @@
 <template>
-  <AppLayout @open-templates="handleOpenTemplates" @settings="handleOpenSettings">
+  <AppLayout @open-templates="handleOpenTemplates" @open-scripts="handleOpenScripts" @settings="handleOpenSettings">
     <!-- 消息调试视图 -->
     <MainContent 
       :scheduled-publish-running="isScheduledPublishRunning"
@@ -42,6 +42,12 @@
 
   <!-- 系统设置对话框 -->
   <SettingsDialog v-model:visible="showSettingsDialog" />
+
+  <!-- 脚本管理对话框 -->
+  <ScriptDialog
+    v-model:visible="showScriptDialog"
+    :server-id="activeServerId ?? 0"
+  />
 </template>
 
 <script setup lang="ts">
@@ -52,6 +58,7 @@ import TemplateDrawer from "@/components/template/TemplateDrawer.vue";
 import TemplateDialog from "@/components/template/TemplateDialog.vue";
 import ScheduledPublishDialog from "@/components/mqtt/ScheduledPublishDialog.vue";
 import SettingsDialog from "@/components/settings/SettingsDialog.vue";
+import ScriptDialog from "@/components/script/ScriptDialog.vue";
 import { useAppStore } from "@/stores/app";
 import { useMqttStore } from "@/stores/mqtt";
 import { useServerStore } from "@/stores/server";
@@ -79,6 +86,9 @@ const isScheduledPublishRunning = ref(false);
 
 // 系统设置对话框
 const showSettingsDialog = ref(false);
+
+// 脚本管理对话框
+const showScriptDialog = ref(false);
 
 onMounted(() => {
   // 初始化主题
@@ -159,6 +169,15 @@ function handleScheduledPublishRunningChange(running: boolean) {
 // 打开系统设置
 function handleOpenSettings() {
   showSettingsDialog.value = true;
+}
+
+// 打开脚本管理
+function handleOpenScripts() {
+  if (!activeServerId.value) {
+    ElMessage.warning("请先选择一个服务器");
+    return;
+  }
+  showScriptDialog.value = true;
 }
 </script>
 

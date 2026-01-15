@@ -102,3 +102,37 @@ pub struct UpdateTemplateRequest {
     pub description: Option<String>,
     pub category: Option<String>,
 }
+
+/// 预处理脚本
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Script {
+    pub id: Option<i64>,
+    pub server_id: i64,
+    pub name: String,
+    pub script_type: String, // "before_publish" | "after_receive"
+    pub code: String,
+    #[serde(default)]
+    pub enabled: bool,
+    pub description: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateScriptRequest {
+    pub server_id: i64,
+    pub name: String,
+    pub script_type: String,
+    pub code: String,
+    pub enabled: bool,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateScriptRequest {
+    pub id: i64,
+    pub name: Option<String>,
+    pub code: Option<String>,
+    pub enabled: Option<bool>,
+    pub description: Option<String>,
+}

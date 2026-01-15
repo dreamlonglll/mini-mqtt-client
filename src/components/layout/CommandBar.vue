@@ -34,13 +34,16 @@
       <el-button size="small" :icon="FolderOpened" text @click="handleOpenTemplates">
         管理模板
       </el-button>
+      <el-button size="small" :icon="Document" text @click="handleOpenScripts">
+        管理脚本
+      </el-button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, watch } from "vue";
-import { Histogram, Plus, FolderOpened } from "@element-plus/icons-vue";
+import { Histogram, Plus, FolderOpened, Document } from "@element-plus/icons-vue";
 import { useTemplateStore, type CommandTemplate } from "@/stores/template";
 import { useServerStore } from "@/stores/server";
 import { useAppStore } from "@/stores/app";
@@ -84,11 +87,17 @@ async function handleQuickSend(template: CommandTemplate) {
 
 const emit = defineEmits<{
   openTemplates: []
+  openScripts: []
 }>();
 
 // 打开模板管理
 function handleOpenTemplates() {
   emit("openTemplates");
+}
+
+// 打开脚本管理
+function handleOpenScripts() {
+  emit("openScripts");
 }
 </script>
 

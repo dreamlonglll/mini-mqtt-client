@@ -4,6 +4,7 @@ mod mqtt;
 
 use commands::mqtt::*;
 use commands::publish::*;
+use commands::script::*;
 use commands::server::*;
 use commands::settings::*;
 use commands::subscription::*;
@@ -67,6 +68,14 @@ pub fn run() {
             get_data_path,
             migrate_data_path,
             select_data_folder,
+            // 脚本命令
+            list_scripts,
+            get_script,
+            get_enabled_scripts,
+            create_script,
+            update_script,
+            delete_script,
+            toggle_script,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

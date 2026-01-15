@@ -90,10 +90,13 @@
 import { reactive, ref, computed, watch } from "vue";
 import { Promotion, Position, Star, FolderOpened, Timer, Loading } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
+import { invoke } from "@tauri-apps/api/core";
 import { useServerStore } from "@/stores/server";
 import { useMessageStore } from "@/stores/message";
 import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
+import { ScriptEngine } from "@/utils/scriptEngine";
+import type { Script } from "@/stores/script";
 
 type PayloadFormat = "json" | "hex" | "text";
 
@@ -231,10 +234,24 @@ const handlePublish = async () => {
 
   publishing.value = true;
   try {
+    // 应用发送前处理脚本
+    let processedPayload = publishData.payload;
+    try {
+      const scripts = await invoke<Script[]>("get_enabled_scripts", {
+        serverId,
+        scriptType: "before_publish",
+      });
+      if (scripts.length > 0) {
+        processedPayload = await ScriptEngine.executeBeforePublish(scripts, publishData.payload);
+      }
+    } catch (error) {
+      console.error("脚本处理失败:", error);
+    }
+
     // 调用 messageStore 发布消息（保存到数据库）
     await messageStore.publishMessage(serverId, {
       topic: publishData.topic,
-      payload: publishData.payload,
+      payload: processedPayload,
       qos: publishData.qos,
       retain: publishData.retain,
       format: payloadFormat.value,
@@ -243,7 +260,7 @@ const handlePublish = async () => {
     // 同时添加到 mqttStore 的消息列表（用于实时显示）
     mqttStore.addPublishMessage(serverId, {
       topic: publishData.topic,
-      payload: publishData.payload,
+      payload: processedPayload,
       qos: publishData.qos as 0 | 1 | 2,
       retain: publishData.retain,
     });

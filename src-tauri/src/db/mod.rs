@@ -1,6 +1,6 @@
 pub mod models;
 
-use models::{CommandTemplate, CreateTemplateRequest, MessageHistory, MqttServer, Subscription, UpdateTemplateRequest};
+use models::{CommandTemplate, CreateTemplateRequest, CreateScriptRequest, MessageHistory, MqttServer, Script, Subscription, UpdateTemplateRequest, UpdateScriptRequest};
 use parking_lot::RwLock;
 use std::fs;
 use std::path::PathBuf;
@@ -15,6 +15,8 @@ pub struct AppData {
     #[serde(default)]
     pub templates: Vec<CommandTemplate>,
     #[serde(default)]
+    pub scripts: Vec<Script>,
+    #[serde(default)]
     next_server_id: i64,
     #[serde(default)]
     next_subscription_id: i64,
@@ -22,6 +24,8 @@ pub struct AppData {
     next_message_id: i64,
     #[serde(default)]
     next_template_id: i64,
+    #[serde(default)]
+    next_script_id: i64,
 }
 
 /// 应用配置（用于存储自定义数据路径等）
@@ -332,5 +336,91 @@ impl Storage {
         categories.sort();
         categories.dedup();
         categories
+    }
+
+    // ===== 脚本操作 =====
+    pub fn get_scripts(&self, server_id: i64) -> Vec<Script> {
+        let data = self.data.read();
+        data.scripts
+            .iter()
+            .filter(|s| s.server_id == server_id)
+            .cloned()
+            .collect()
+    }
+
+    pub fn get_script(&self, id: i64) -> Option<Script> {
+        let data = self.data.read();
+        data.scripts.iter().find(|s| s.id == Some(id)).cloned()
+    }
+
+    pub fn get_enabled_scripts(&self, server_id: i64, script_type: &str) -> Vec<Script> {
+        let data = self.data.read();
+        data.scripts
+            .iter()
+            .filter(|s| s.server_id == server_id && s.enabled && s.script_type == script_type)
+            .cloned()
+            .collect()
+    }
+
+    pub fn create_script(&self, req: CreateScriptRequest) -> Result<i64, String> {
+        let mut data = self.data.write();
+        data.next_script_id += 1;
+        let id = data.next_script_id;
+        let now = chrono::Utc::now().to_rfc3339();
+        
+        let script = Script {
+            id: Some(id),
+            server_id: req.server_id,
+            name: req.name,
+            script_type: req.script_type,
+            code: req.code,
+            enabled: req.enabled,
+            description: req.description,
+            created_at: Some(now.clone()),
+            updated_at: Some(now),
+        };
+        
+        data.scripts.push(script);
+        drop(data);
+        self.save()?;
+        Ok(id)
+    }
+
+    pub fn update_script(&self, req: UpdateScriptRequest) -> Result<(), String> {
+        let mut data = self.data.write();
+        if let Some(script) = data.scripts.iter_mut().find(|s| s.id == Some(req.id)) {
+            if let Some(name) = req.name {
+                script.name = name;
+            }
+            if let Some(code) = req.code {
+                script.code = code;
+            }
+            if let Some(enabled) = req.enabled {
+                script.enabled = enabled;
+            }
+            if let Some(description) = req.description {
+                script.description = Some(description);
+            }
+            script.updated_at = Some(chrono::Utc::now().to_rfc3339());
+        }
+        drop(data);
+        self.save()
+    }
+
+    pub fn delete_script(&self, id: i64) -> Result<(), String> {
+        let mut data = self.data.write();
+        data.scripts.retain(|s| s.id != Some(id));
+        drop(data);
+        self.save()
+    }
+
+    pub fn toggle_script(&self, id: i64, enabled: bool) -> Result<(), String> {
+        let mut data = self.data.write();
+        if let Some(script) = data.scripts.iter_mut().find(|s| s.id == Some(id)) {
+            script.enabled = enabled;
+            script.updated_at = Some(chrono::Utc::now().to_rfc3339());
+        }
+        drop(data);
+        self.save()
     }
 }
