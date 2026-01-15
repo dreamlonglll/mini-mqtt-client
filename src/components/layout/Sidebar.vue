@@ -32,9 +32,7 @@
             <div class="server-info">
               <span class="server-name text-ellipsis">{{ serverState.server.name }}</span>
               <span class="server-host text-ellipsis">
-                {{ serverState.server.port === 1883 
-                  ? serverState.server.host 
-                  : `${serverState.server.host}:${serverState.server.port}` }}
+                {{ formatServerAddress(serverState.server) }}
               </span>
             </div>
             <el-dropdown trigger="click" @command="(cmd: string) => handleServerAction(cmd, serverState.server)">
@@ -168,6 +166,12 @@ import ServerFormDialog from "@/components/mqtt/ServerFormDialog.vue";
 import type { MqttServer } from "@/types/mqtt";
 
 const appStore = useAppStore();
+
+// 格式化服务器地址为 协议://host:port 格式
+const formatServerAddress = (server: MqttServer): string => {
+  const protocol = server.use_tls ? "mqtts" : "mqtt";
+  return `${protocol}://${server.host}:${server.port}`;
+};
 const serverStore = useServerStore();
 
 // 初始化加载 Server 列表

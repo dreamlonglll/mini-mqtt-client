@@ -7,9 +7,7 @@
         <div class="server-details">
           <span class="server-name">{{ activeServer.server.name }}</span>
           <span class="server-address">
-            {{ activeServer.server.port === 1883 
-              ? activeServer.server.host 
-              : `${activeServer.server.host}:${activeServer.server.port}` }}
+            {{ formatServerAddress(activeServer.server) }}
           </span>
         </div>
         <el-tag
@@ -80,8 +78,15 @@ import {
   Warning,
 } from "@element-plus/icons-vue";
 import { useServerStore } from "@/stores/server";
+import type { MqttServer } from "@/types/mqtt";
 
 const serverStore = useServerStore();
+
+// 格式化服务器地址为 协议://host:port 格式
+const formatServerAddress = (server: MqttServer): string => {
+  const protocol = server.use_tls ? "mqtts" : "mqtt";
+  return `${protocol}://${server.host}:${server.port}`;
+};
 
 const activeServer = computed(() => serverStore.activeServer);
 
