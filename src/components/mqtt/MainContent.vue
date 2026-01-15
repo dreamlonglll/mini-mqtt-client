@@ -1,12 +1,12 @@
 <template>
   <div class="main-content">
-    <!-- 订阅区域 -->
+    <!-- 订阅区域 - 紧凑的单行 -->
     <SubscriptionPanel class="subscription-area" />
 
-    <!-- 消息列表区域 -->
+    <!-- 消息列表区域 - 占据大部分空间 -->
     <MessageList ref="messageListRef" class="message-area" />
 
-    <!-- 发布消息区域 -->
+    <!-- 发布消息区域 - 紧凑布局 -->
     <PublishPanel class="publish-area" @publish="handlePublish" />
   </div>
 </template>
@@ -48,8 +48,8 @@ const handlePublish = (data: PublishData) => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  gap: 16px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px 16px;
   overflow: hidden;
 }
 
@@ -59,7 +59,7 @@ const handlePublish = (data: PublishData) => {
 
 .message-area {
   flex: 1;
-  min-height: 0;
+  min-height: 200px;
 }
 
 .publish-area {

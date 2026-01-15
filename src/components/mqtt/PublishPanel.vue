@@ -1,19 +1,13 @@
 <template>
   <div class="publish-panel app-card">
-    <div class="panel-header">
-      <span class="panel-title">
-        <el-icon><Promotion /></el-icon>
-        发布消息
-      </span>
-    </div>
-
     <div class="publish-form">
-      <div class="form-row">
+      <!-- 第一行：Topic、QoS、Retain、发布按钮 -->
+      <div class="form-row main-row">
         <div class="form-item topic-input">
-          <label class="form-label">Topic</label>
           <el-input
             v-model="publishData.topic"
-            placeholder="输入 Topic，例如: device/001/command"
+            placeholder="Topic，例如: device/001/command"
+            size="default"
           >
             <template #prefix>
               <el-icon><Position /></el-icon>
@@ -21,51 +15,37 @@
           </el-input>
         </div>
 
-        <div class="form-item qos-select">
-          <label class="form-label">QoS</label>
-          <el-select v-model="publishData.qos" style="width: 100%">
-            <el-option :value="0" label="QoS 0 - 最多一次" />
-            <el-option :value="1" label="QoS 1 - 至少一次" />
-            <el-option :value="2" label="QoS 2 - 仅一次" />
-          </el-select>
-        </div>
+        <el-select v-model="publishData.qos" style="width: 120px" size="default">
+          <el-option :value="0" label="QoS 0" />
+          <el-option :value="1" label="QoS 1" />
+          <el-option :value="2" label="QoS 2" />
+        </el-select>
 
-        <div class="form-item retain-switch">
-          <label class="form-label">Retain</label>
-          <el-switch v-model="publishData.retain" />
-        </div>
-      </div>
+        <el-checkbox v-model="publishData.retain" label="Retain" />
 
-      <div class="form-row">
-        <div class="form-item payload-input">
-          <div class="payload-header">
-            <label class="form-label">Payload</label>
-            <div class="payload-actions">
-              <el-button text size="small" @click="handleFormat">
-                格式化 JSON
-              </el-button>
-              <el-button text size="small" @click="handleClear">
-                清空
-              </el-button>
-            </div>
-          </div>
-          <el-input
-            v-model="publishData.payload"
-            type="textarea"
-            :rows="4"
-            placeholder='输入消息内容，例如: {"action": "start", "value": 100}'
-            resize="none"
-          />
-        </div>
-      </div>
-
-      <div class="form-actions">
-        <el-button @click="handleSaveTemplate" :icon="Star">
-          保存为模板
-        </el-button>
         <el-button type="primary" :icon="Promotion" @click="handlePublish">
-          发布消息
+          发布
         </el-button>
+      </div>
+
+      <!-- 第二行：Payload输入 -->
+      <div class="form-row payload-row">
+        <el-input
+          v-model="publishData.payload"
+          type="textarea"
+          :rows="2"
+          placeholder='Payload: {"action": "start", "value": 100}'
+          resize="none"
+          class="payload-input"
+        />
+        <div class="payload-actions">
+          <el-tooltip content="格式化 JSON" placement="top">
+            <el-button :icon="MagicStick" size="small" @click="handleFormat" />
+          </el-tooltip>
+          <el-tooltip content="保存为模板" placement="top">
+            <el-button :icon="Star" size="small" @click="handleSaveTemplate" />
+          </el-tooltip>
+        </div>
       </div>
     </div>
   </div>
@@ -73,7 +53,7 @@
 
 <script setup lang="ts">
 import { reactive } from "vue";
-import { Promotion, Position, Star } from "@element-plus/icons-vue";
+import { Promotion, Position, Star, MagicStick } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 
 const publishData = reactive({
@@ -94,10 +74,6 @@ const handleFormat = () => {
   } catch {
     ElMessage.warning("Payload 不是有效的 JSON 格式");
   }
-};
-
-const handleClear = () => {
-  publishData.payload = "";
 };
 
 const handleSaveTemplate = () => {
@@ -121,82 +97,37 @@ const handlePublish = () => {
   flex-direction: column;
 }
 
-.panel-header {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--app-border-color);
-}
-
-.panel-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--app-text-color);
-}
-
 .publish-form {
-  padding: 16px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .form-row {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+  align-items: center;
+}
+
+.main-row {
+  .topic-input {
+    flex: 1;
+    min-width: 200px;
+  }
+}
+
+.payload-row {
   align-items: flex-start;
-}
+  
+  .payload-input {
+    flex: 1;
+  }
 
-.form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--app-text-secondary);
-}
-
-.topic-input {
-  flex: 1;
-}
-
-.qos-select {
-  width: 180px;
-}
-
-.retain-switch {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 4px;
-}
-
-.payload-input {
-  flex: 1;
-}
-
-.payload-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.payload-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--app-border-color);
+  .payload-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 </style>
