@@ -30,7 +30,7 @@
     <div class="message-container" ref="messageContainer">
       <div
         v-for="msg in messages"
-        :key="msg.id"
+        :key="msg.id || msg.timestamp"
         class="message-item"
         :class="msg.direction"
       >
@@ -48,7 +48,7 @@
           </div>
         </div>
         <div class="message-body">
-          <pre class="code-block">{{ formatPayload(msg.payload) }}</pre>
+          <pre class="code-block">{{ formatPayload(msg) }}</pre>
         </div>
       </div>
 
@@ -64,21 +64,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { ChatDotRound, Delete, Download } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
+import { useServerStore } from "@/stores/server";
+import { useMqttStore } from "@/stores/mqtt";
+import type { MqttMessage } from "@/types/mqtt";
 
 type FormatType = "JSON" | "HEX" | "Text";
-
-interface Message {
-  id: number;
-  direction: "publish" | "receive";
-  topic: string;
-  payload: string;
-  qos: number;
-  retain: boolean;
-  timestamp: Date;
-}
 
 const formatOptions = [
   { label: "JSON", value: "JSON" },
@@ -86,11 +79,22 @@ const formatOptions = [
   { label: "Text", value: "Text" },
 ];
 
-const messages = ref<Message[]>([]);
+const serverStore = useServerStore();
+const mqttStore = useMqttStore();
+
 const formatType = ref<FormatType>("JSON");
 const messageContainer = ref<HTMLElement>();
 
-const formatTime = (date: Date) => {
+// 从 MQTT Store 获取消息
+const messages = computed(() => {
+  const serverId = serverStore.activeServerId;
+  if (!serverId) return [];
+  return mqttStore.getServerMessages(serverId);
+});
+
+const formatTime = (timestamp?: string) => {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
   return date.toLocaleTimeString("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
@@ -98,7 +102,19 @@ const formatTime = (date: Date) => {
   });
 };
 
-const formatPayload = (payload: string): string => {
+const formatPayload = (msg: MqttMessage): string => {
+  // 处理 Uint8Array 类型的 payload
+  let payload: string;
+  if (msg.payload instanceof Uint8Array) {
+    payload = new TextDecoder().decode(msg.payload);
+  } else if (typeof msg.payload === "string") {
+    payload = msg.payload;
+  } else if (msg.payload) {
+    payload = String(msg.payload);
+  } else {
+    payload = "";
+  }
+
   if (formatType.value === "JSON") {
     try {
       return JSON.stringify(JSON.parse(payload), null, 2);
@@ -106,6 +122,11 @@ const formatPayload = (payload: string): string => {
       return payload;
     }
   } else if (formatType.value === "HEX") {
+    if (msg.payload instanceof Uint8Array) {
+      return Array.from(msg.payload)
+        .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+        .join(" ");
+    }
     return Array.from(new TextEncoder().encode(payload))
       .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
       .join(" ");
@@ -114,31 +135,17 @@ const formatPayload = (payload: string): string => {
 };
 
 const handleClear = () => {
-  messages.value = [];
-  ElMessage.success("消息已清空");
+  const serverId = serverStore.activeServerId;
+  if (serverId) {
+    mqttStore.clearMessages(serverId);
+    ElMessage.success("消息已清空");
+  }
 };
 
 const handleExport = () => {
   // TODO: 实现消息导出功能
   ElMessage.info("导出功能开发中");
 };
-
-// 暴露添加消息的方法给父组件
-defineExpose({
-  addMessage: (msg: Omit<Message, "id" | "timestamp">) => {
-    messages.value.push({
-      ...msg,
-      id: Date.now(),
-      timestamp: new Date(),
-    });
-    // 滚动到底部
-    setTimeout(() => {
-      if (messageContainer.value) {
-        messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
-      }
-    }, 0);
-  },
-});
 </script>
 
 <style scoped lang="scss">

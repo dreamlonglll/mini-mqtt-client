@@ -6,44 +6,18 @@
     <!-- 消息区域 -->
     <div class="content-body">
       <!-- 消息列表 -->
-      <MessageList ref="messageListRef" class="message-list" />
+      <MessageList class="message-list" />
 
       <!-- 发布消息 -->
-      <PublishPanel class="publish-panel" @publish="handlePublish" />
+      <PublishPanel class="publish-panel" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
 import ServerInfoBar from "./ServerInfoBar.vue";
 import MessageList from "./MessageList.vue";
 import PublishPanel from "./PublishPanel.vue";
-
-const messageListRef = ref<InstanceType<typeof MessageList>>();
-
-interface PublishData {
-  topic: string;
-  payload: string;
-  qos: number;
-  retain: boolean;
-}
-
-const handlePublish = (data: PublishData) => {
-  // 添加到消息列表
-  if (messageListRef.value) {
-    messageListRef.value.addMessage({
-      direction: "publish",
-      topic: data.topic,
-      payload: data.payload,
-      qos: data.qos,
-      retain: data.retain,
-    });
-  }
-
-  // TODO: 调用 Tauri 命令发布消息
-  console.log("Publish:", data);
-};
 </script>
 
 <style scoped lang="scss">
