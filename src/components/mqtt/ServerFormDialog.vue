@@ -226,10 +226,12 @@ watch(
     if (val) {
       activeTab.value = "basic";
       if (props.server) {
-        // 编辑模式：将 host:port 组合成 address
+        // 编辑模式：将 host:port 组合成 address（默认端口1883时不显示）
         formData.id = props.server.id;
         formData.name = props.server.name;
-        formData.address = `${props.server.host}:${props.server.port}`;
+        formData.address = props.server.port === 1883
+          ? props.server.host
+          : `${props.server.host}:${props.server.port}`;
         formData.protocol_version = props.server.protocol_version;
         formData.username = props.server.username || "";
         formData.password = props.server.password || "";
