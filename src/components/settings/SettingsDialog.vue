@@ -62,6 +62,33 @@
           </el-alert>
         </div>
       </div>
+
+      <!-- 日志设置 -->
+      <div class="setting-section">
+        <div class="setting-header">
+          <el-icon><Document /></el-icon>
+          <span class="setting-title">日志</span>
+        </div>
+        <div class="setting-body">
+          <div class="data-path-info">
+            <span class="label">日志目录：</span>
+            <el-tooltip :content="logPath" placement="top">
+              <code class="path">{{ truncatePath(logPath) }}</code>
+            </el-tooltip>
+          </div>
+          <div class="log-info">
+            <span class="log-desc">错误日志按天分割，最多保留 10 个日志文件</span>
+          </div>
+          <div class="data-path-actions">
+            <el-button size="small" :icon="FolderOpened" @click="handleOpenLogFolder">
+              打开日志目录
+            </el-button>
+            <el-button size="small" :icon="Delete" type="danger" plain @click="handleClearLogs">
+              清空日志
+            </el-button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <template #footer>
@@ -80,9 +107,10 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Sunny, Moon, FolderOpened, CopyDocument } from '@element-plus/icons-vue'
+import { Sunny, Moon, FolderOpened, CopyDocument, Document, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { useAppStore, type Theme } from '@/stores/app'
 
 const props = defineProps<{
@@ -106,6 +134,7 @@ const currentTheme = ref<Theme>('light')
 const originalTheme = ref<Theme>('light')
 const currentDataPath = ref('')
 const newDataPath = ref('')
+const logPath = ref('')
 
 // 是否有更改
 const hasChanges = computed(() => {
@@ -122,6 +151,12 @@ async function loadSettings() {
     currentDataPath.value = await invoke<string>('get_data_path')
   } catch (e) {
     console.error('获取数据路径失败:', e)
+  }
+  
+  try {
+    logPath.value = await invoke<string>('get_log_dir')
+  } catch (e) {
+    console.error('获取日志路径失败:', e)
   }
 }
 
@@ -149,6 +184,37 @@ async function handleCopyPath() {
     ElMessage.success('路径已复制到剪贴板')
   } catch (e) {
     ElMessage.error('复制失败')
+  }
+}
+
+// 打开日志文件夹
+async function handleOpenLogFolder() {
+  try {
+    await revealItemInDir(logPath.value)
+  } catch (e) {
+    ElMessage.error(`打开日志目录失败: ${e}`)
+  }
+}
+
+// 清空日志
+async function handleClearLogs() {
+  try {
+    await ElMessageBox.confirm(
+      '确定要清空所有日志文件吗？此操作不可撤销。',
+      '清空日志',
+      {
+        confirmButtonText: '清空',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    await invoke('clear_logs')
+    ElMessage.success('日志已清空')
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error(`清空日志失败: ${e}`)
+    }
   }
 }
 
@@ -281,6 +347,15 @@ function handleClose() {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.log-info {
+  margin-bottom: 12px;
+  
+  .log-desc {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
 }
 
 .migrate-alert {
