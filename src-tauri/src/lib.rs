@@ -3,7 +3,9 @@ mod db;
 mod mqtt;
 
 use commands::mqtt::*;
+use commands::publish::*;
 use commands::server::*;
+use commands::subscription::*;
 use db::Database;
 use mqtt::MqttManager;
 use tauri::Manager;
@@ -37,6 +39,15 @@ pub fn run() {
             mqtt_subscribe,
             mqtt_unsubscribe,
             mqtt_is_connected,
+            // 订阅命令
+            add_subscription,
+            remove_subscription,
+            get_subscriptions,
+            toggle_subscription,
+            // 消息命令
+            publish_message,
+            get_message_history,
+            clear_message_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

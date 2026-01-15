@@ -57,7 +57,13 @@
           <el-tooltip content="保存为模板" placement="top">
             <el-button :icon="Star" @click="handleSaveTemplate" />
           </el-tooltip>
-          <el-button type="primary" :icon="Promotion" @click="handlePublish">
+          <el-button
+            type="primary"
+            :icon="Promotion"
+            :loading="publishing"
+            :disabled="!isConnected"
+            @click="handlePublish"
+          >
             发布
           </el-button>
         </div>
@@ -70,14 +76,23 @@
 import { reactive, ref, computed } from "vue";
 import { Promotion, Position, Star } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
+import { useServerStore } from "@/stores/server";
+import { useMessageStore } from "@/stores/message";
+import { useMqttStore } from "@/stores/mqtt";
 
-type PayloadFormat = "JSON" | "HEX" | "Text";
+type PayloadFormat = "json" | "hex" | "text";
 
 const formatOptions = [
-  { label: "JSON", value: "JSON" },
-  { label: "HEX", value: "HEX" },
-  { label: "Text", value: "Text" },
+  { label: "JSON", value: "json" },
+  { label: "HEX", value: "hex" },
+  { label: "Text", value: "text" },
 ];
+
+const serverStore = useServerStore();
+const messageStore = useMessageStore();
+const mqttStore = useMqttStore();
+
+const publishing = ref(false);
 
 const publishData = reactive({
   topic: "",
@@ -86,51 +101,75 @@ const publishData = reactive({
   retain: false,
 });
 
-const payloadFormat = ref<PayloadFormat>("JSON");
+const payloadFormat = ref<PayloadFormat>("json");
+
+const isConnected = computed(() => {
+  const serverId = serverStore.activeServerId;
+  if (!serverId) return false;
+  return mqttStore.getConnectionStatus(serverId) === "connected";
+});
 
 const payloadPlaceholder = computed(() => {
   switch (payloadFormat.value) {
-    case "JSON":
+    case "json":
       return 'JSON 格式，例如: {"action": "start", "value": 100}';
-    case "HEX":
+    case "hex":
       return "十六进制格式，例如: 48 65 6C 6C 6F";
     default:
       return "纯文本消息内容";
   }
 });
 
-const emit = defineEmits<{
-  (e: "publish", data: typeof publishData): void;
-}>();
-
 const handleSaveTemplate = () => {
   // TODO: 保存为命令模板
   ElMessage.success("模板保存功能开发中");
 };
 
-const handlePublish = () => {
+const handlePublish = async () => {
   if (!publishData.topic.trim()) {
     ElMessage.warning("请输入 Topic");
     return;
   }
 
-  let payload = publishData.payload;
+  const serverId = serverStore.activeServerId;
+  if (!serverId) {
+    ElMessage.warning("请先选择一个服务器");
+    return;
+  }
 
-  // 如果是 HEX 格式，转换为字符串
-  if (payloadFormat.value === "HEX") {
+  // 验证格式
+  if (payloadFormat.value === "hex") {
     const hex = publishData.payload.replace(/\s/g, "");
-    if (!/^[0-9A-Fa-f]*$/.test(hex) || hex.length % 2 !== 0) {
+    if (!/^[0-9A-Fa-f]*$/.test(hex)) {
       ElMessage.warning("HEX 格式不正确");
       return;
     }
-    payload = hex
-      .match(/.{2}/g)
-      ?.map((byte) => String.fromCharCode(parseInt(byte, 16)))
-      .join("") || "";
   }
 
-  emit("publish", { ...publishData, payload });
-  ElMessage.success("消息已发布");
+  if (payloadFormat.value === "json" && publishData.payload.trim()) {
+    try {
+      JSON.parse(publishData.payload);
+    } catch {
+      ElMessage.warning("JSON 格式不正确");
+      return;
+    }
+  }
+
+  publishing.value = true;
+  try {
+    await messageStore.publishMessage(serverId, {
+      topic: publishData.topic,
+      payload: publishData.payload,
+      qos: publishData.qos,
+      retain: publishData.retain,
+      format: payloadFormat.value,
+    });
+    ElMessage.success("消息已发布");
+  } catch (error) {
+    ElMessage.error(`发布失败: ${error}`);
+  } finally {
+    publishing.value = false;
+  }
 };
 </script>
 

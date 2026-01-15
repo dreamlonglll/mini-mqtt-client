@@ -37,7 +37,7 @@ export interface CommandTemplate {
 }
 
 /**
- * MQTT 消息
+ * MQTT 消息 (实时)
  */
 export interface MqttMessage {
   id?: number;
@@ -48,6 +48,44 @@ export interface MqttMessage {
   qos: 0 | 1 | 2;
   retain: boolean;
   timestamp?: string;
+}
+
+/**
+ * 订阅类型
+ */
+export interface Subscription {
+  id?: number;
+  server_id: number;
+  topic: string;
+  qos: number;
+  is_active: boolean;
+  created_at?: string;
+}
+
+/**
+ * 消息历史类型
+ */
+export interface MessageHistory {
+  id?: number;
+  server_id: number;
+  topic: string;
+  payload?: string;
+  payload_format?: "text" | "json" | "hex";
+  direction: "publish" | "receive";
+  qos: number;
+  retain: boolean;
+  created_at?: string;
+}
+
+/**
+ * 发布消息载荷
+ */
+export interface PublishPayload {
+  topic: string;
+  payload: string;
+  qos: number;
+  retain: boolean;
+  format: "text" | "json" | "hex";
 }
 
 /**

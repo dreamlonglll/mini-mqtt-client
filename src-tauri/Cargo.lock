@@ -2013,6 +2013,7 @@ name = "mini-mqtt-client"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "hex",
  "parking_lot",
  "rumqttc",
  "rusqlite",

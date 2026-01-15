@@ -28,7 +28,7 @@
             :class="{ active: serverState.server.id === serverStore.activeServerId }"
             @click="handleSelectServer(serverState.server.id!)"
           >
-            <span class="status-indicator" :class="serverState.status" />
+            <span class="status-indicator" :class="getConnectionClass(serverState.server.id!)" />
             <div class="server-info">
               <span class="server-name text-ellipsis">{{ serverState.server.name }}</span>
               <span class="server-host text-ellipsis">
@@ -79,21 +79,26 @@
 
         <div class="subscription-list">
           <div
-            v-for="sub in subscriptions"
+            v-for="sub in currentSubscriptions"
             :key="sub.id"
             class="subscription-item"
+            :class="{ inactive: !sub.is_active }"
           >
             <div class="sub-main">
+              <el-switch
+                :model-value="sub.is_active"
+                size="small"
+                @change="(val: string | number | boolean) => handleToggleSubscription(sub, Boolean(val))"
+              />
               <span class="sub-topic text-ellipsis">{{ sub.topic }}</span>
               <el-tag size="small" effect="plain" type="info">Q{{ sub.qos }}</el-tag>
             </div>
             <div class="sub-actions">
-              <el-button text size="small" :icon="Edit" @click="handleEditSubscription(sub)" />
-              <el-button text size="small" type="danger" :icon="Close" @click="handleDeleteSubscription(sub.id)" />
+              <el-button text size="small" type="danger" :icon="Close" @click="handleDeleteSubscription(sub)" />
             </div>
           </div>
 
-          <div v-if="subscriptions.length === 0" class="empty-hint">
+          <div v-if="currentSubscriptions.length === 0" class="empty-hint">
             点击 + 添加订阅
           </div>
         </div>
@@ -121,7 +126,7 @@
     <!-- 订阅对话框 -->
     <el-dialog
       v-model="showSubDialog"
-      :title="isEditingSub ? '编辑订阅' : '添加订阅'"
+      title="添加订阅"
       width="420px"
       :close-on-click-modal="false"
     >
@@ -139,8 +144,8 @@
       </el-form>
       <template #footer>
         <el-button @click="showSubDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleConfirmSubscription">
-          {{ isEditingSub ? '保存' : '订阅' }}
+        <el-button type="primary" :loading="subLoading" @click="handleConfirmSubscription">
+          订阅
         </el-button>
       </template>
     </el-dialog>
@@ -148,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, computed, watch } from "vue";
 import {
   Plus,
   MoreFilled,
@@ -161,23 +166,50 @@ import {
 } from "@element-plus/icons-vue";
 import { useAppStore } from "@/stores/app";
 import { useServerStore } from "@/stores/server";
+import { useSubscriptionStore } from "@/stores/subscription";
+import { useMqttStore } from "@/stores/mqtt";
 import { ElMessage, ElMessageBox } from "element-plus";
 import ServerFormDialog from "@/components/mqtt/ServerFormDialog.vue";
-import type { MqttServer } from "@/types/mqtt";
+import type { MqttServer, Subscription } from "@/types/mqtt";
 
 const appStore = useAppStore();
+const serverStore = useServerStore();
+const subscriptionStore = useSubscriptionStore();
+const mqttStore = useMqttStore();
 
 // 格式化服务器地址为 协议://host:port 格式
 const formatServerAddress = (server: MqttServer): string => {
   const protocol = server.use_tls ? "mqtts" : "mqtt";
   return `${protocol}://${server.host}:${server.port}`;
 };
-const serverStore = useServerStore();
+
+// 获取连接状态样式类
+const getConnectionClass = (serverId: number): string => {
+  return mqttStore.getConnectionStatus(serverId);
+};
+
+// 当前服务器的订阅列表
+const currentSubscriptions = computed(() => {
+  const serverId = serverStore.activeServerId;
+  if (!serverId) return [];
+  return subscriptionStore.getSubscriptionsByServer(serverId);
+});
 
 // 初始化加载 Server 列表
 onMounted(() => {
   serverStore.fetchServers();
 });
+
+// 监听活动服务器变化，加载订阅列表
+watch(
+  () => serverStore.activeServerId,
+  (serverId) => {
+    if (serverId) {
+      subscriptionStore.fetchSubscriptions(serverId);
+    }
+  },
+  { immediate: true }
+);
 
 // ===== Server 相关 =====
 const showServerDialog = ref(false);
@@ -227,79 +259,75 @@ const handleServerSaved = () => {
 };
 
 // ===== 订阅相关 =====
-interface Subscription {
-  id: number;
-  topic: string;
-  qos: number;
-}
-
-const subscriptions = ref<Subscription[]>([]);
 const showSubDialog = ref(false);
-const isEditingSub = ref(false);
-const editingSubId = ref<number | null>(null);
+const subLoading = ref(false);
 
 const subFormData = reactive({
   topic: "",
   qos: 0,
 });
 
-let nextSubId = 1;
-
 const handleAddSubscription = () => {
-  isEditingSub.value = false;
-  editingSubId.value = null;
   subFormData.topic = "";
   subFormData.qos = 0;
   showSubDialog.value = true;
 };
 
-const handleEditSubscription = (sub: Subscription) => {
-  isEditingSub.value = true;
-  editingSubId.value = sub.id;
-  subFormData.topic = sub.topic;
-  subFormData.qos = sub.qos;
-  showSubDialog.value = true;
-};
-
-const handleDeleteSubscription = async (id: number) => {
+const handleDeleteSubscription = async (sub: Subscription) => {
   try {
-    await ElMessageBox.confirm("确定要取消此订阅吗？", "确认", {
+    await ElMessageBox.confirm(`确定要取消订阅 "${sub.topic}" 吗？`, "确认", {
       confirmButtonText: "确定",
       cancelButtonText: "取消",
       type: "warning",
     });
-    const index = subscriptions.value.findIndex((s) => s.id === id);
-    if (index !== -1) {
-      subscriptions.value.splice(index, 1);
-      ElMessage.success("订阅已取消");
+    await subscriptionStore.removeSubscription(
+      sub.id!,
+      serverStore.activeServerId!,
+      sub.topic
+    );
+    ElMessage.success("订阅已取消");
+  } catch (error) {
+    if (error !== "cancel") {
+      ElMessage.error(`取消订阅失败: ${error}`);
     }
-  } catch {
-    // 用户取消
   }
 };
 
-const handleConfirmSubscription = () => {
+const handleToggleSubscription = async (sub: Subscription, isActive: boolean) => {
+  try {
+    await subscriptionStore.toggleSubscription(
+      sub.id!,
+      serverStore.activeServerId!,
+      sub.topic,
+      sub.qos,
+      isActive
+    );
+    ElMessage.success(isActive ? "已恢复订阅" : "已暂停订阅");
+  } catch (error) {
+    ElMessage.error(`操作失败: ${error}`);
+  }
+};
+
+const handleConfirmSubscription = async () => {
   if (!subFormData.topic.trim()) {
     ElMessage.warning("请输入 Topic");
     return;
   }
 
-  if (isEditingSub.value && editingSubId.value !== null) {
-    const sub = subscriptions.value.find((s) => s.id === editingSubId.value);
-    if (sub) {
-      sub.topic = subFormData.topic;
-      sub.qos = subFormData.qos;
-      ElMessage.success("订阅已更新");
-    }
-  } else {
-    subscriptions.value.push({
-      id: nextSubId++,
-      topic: subFormData.topic,
-      qos: subFormData.qos,
-    });
+  subLoading.value = true;
+  try {
+    await subscriptionStore.addSubscription(
+      serverStore.activeServerId!,
+      subFormData.topic,
+      subFormData.qos
+    );
     ElMessage.success("订阅成功");
+    showSubDialog.value = false;
+  } catch (error) {
+    ElMessage.error(`订阅失败: ${error}`);
+  } finally {
+    subLoading.value = false;
   }
-  showSubDialog.value = false;
 };
 </script>
 
@@ -433,6 +461,10 @@ const handleConfirmSubscription = () => {
     .sub-actions {
       opacity: 1;
     }
+  }
+
+  &.inactive {
+    opacity: 0.6;
   }
 }
 

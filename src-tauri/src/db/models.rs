@@ -40,10 +40,22 @@ pub struct MessageHistory {
     pub server_id: i64,
     pub direction: String, // "publish" or "receive"
     pub topic: String,
-    pub payload: Option<Vec<u8>>,
+    pub payload: Option<String>,
+    pub payload_format: Option<String>, // "text", "json", "hex"
     pub qos: i32,
     pub retain: bool,
-    pub timestamp: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewMessageHistory {
+    pub server_id: i64,
+    pub topic: String,
+    pub payload: String,
+    pub payload_format: String,
+    pub direction: String,
+    pub qos: i32,
+    pub retain: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,5 +64,23 @@ pub struct Subscription {
     pub server_id: i64,
     pub topic: String,
     pub qos: i32,
+    pub is_active: bool,
     pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewSubscription {
+    pub server_id: i64,
+    pub topic: String,
+    pub qos: i32,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishPayload {
+    pub topic: String,
+    pub payload: String,
+    pub qos: i32,
+    pub retain: bool,
+    pub format: String, // "json" | "hex" | "text"
 }
