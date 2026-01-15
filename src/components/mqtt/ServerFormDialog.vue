@@ -167,7 +167,7 @@ interface FormData {
 const formData = reactive<FormData>({
   name: "",
   address: "",
-  protocol_version: "3.1.1",
+  protocol_version: "5.0",
   username: "",
   password: "",
   client_id: "",
@@ -245,7 +245,7 @@ watch(
         formData.id = undefined;
         formData.name = "";
         formData.address = "";
-        formData.protocol_version = "3.1.1";
+        formData.protocol_version = "5.0";
         formData.username = "";
         formData.password = "";
         formData.client_id = "";

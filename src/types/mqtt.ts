@@ -67,7 +67,7 @@ export function createDefaultServer(): MqttServer {
     name: "",
     host: "",
     port: 1883,
-    protocol_version: "3.1.1",
+    protocol_version: "5.0",
     username: "",
     password: "",
     client_id: "",
