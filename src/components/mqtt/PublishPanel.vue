@@ -54,9 +54,6 @@
           />
         </div>
         <div class="form-actions">
-          <el-tooltip :content="formatButtonText" placement="top">
-            <el-button :icon="MagicStick" @click="handleFormat" />
-          </el-tooltip>
           <el-tooltip content="保存为模板" placement="top">
             <el-button :icon="Star" @click="handleSaveTemplate" />
           </el-tooltip>
@@ -71,7 +68,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed } from "vue";
-import { Promotion, Position, Star, MagicStick } from "@element-plus/icons-vue";
+import { Promotion, Position, Star } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 
 type PayloadFormat = "JSON" | "HEX" | "Text";
@@ -102,41 +99,9 @@ const payloadPlaceholder = computed(() => {
   }
 });
 
-const formatButtonText = computed(() => {
-  switch (payloadFormat.value) {
-    case "JSON":
-      return "格式化 JSON";
-    case "HEX":
-      return "格式化 HEX";
-    default:
-      return "格式化";
-  }
-});
-
 const emit = defineEmits<{
   (e: "publish", data: typeof publishData): void;
 }>();
-
-const handleFormat = () => {
-  if (payloadFormat.value === "JSON") {
-    try {
-      const parsed = JSON.parse(publishData.payload);
-      publishData.payload = JSON.stringify(parsed, null, 2);
-      ElMessage.success("JSON 格式化成功");
-    } catch {
-      ElMessage.warning("Payload 不是有效的 JSON 格式");
-    }
-  } else if (payloadFormat.value === "HEX") {
-    // 格式化 HEX：移除多余空格，每两个字符加空格
-    const hex = publishData.payload.replace(/\s/g, "").toUpperCase();
-    if (/^[0-9A-F]*$/.test(hex)) {
-      publishData.payload = hex.match(/.{1,2}/g)?.join(" ") || "";
-      ElMessage.success("HEX 格式化成功");
-    } else {
-      ElMessage.warning("Payload 包含非法的十六进制字符");
-    }
-  }
-};
 
 const handleSaveTemplate = () => {
   // TODO: 保存为命令模板
