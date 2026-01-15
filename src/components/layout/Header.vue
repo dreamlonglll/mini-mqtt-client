@@ -161,7 +161,7 @@ watch(connectionStatus, async (newStatus, oldStatus) => {
     }
 
     if (activeSubscriptions.length > 0) {
-      ElMessage.success(`已自动订阅 ${activeSubscriptions.length} 个主题`);
+      // ElMessage.success(`已自动订阅 ${activeSubscriptions.length} 个主题`);
     }
   }
 });

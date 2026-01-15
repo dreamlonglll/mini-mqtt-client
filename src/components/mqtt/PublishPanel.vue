@@ -6,7 +6,7 @@
         发布消息
       </span>
       <div class="header-actions">
-        <el-select v-model="payloadFormat" size="small" style="width: 90px">
+        <el-select v-model="payloadFormat" size="small" style="width: 90px" :disabled="props.scheduledPublishRunning">
           <el-option
             v-for="opt in formatOptions"
             :key="opt.value"
@@ -14,13 +14,19 @@
             :value="opt.value"
           />
         </el-select>
-        <el-button size="small" :icon="Timer" @click="handleScheduledPublish">
-          定时发布
+        <el-button 
+          size="small" 
+          :icon="props.scheduledPublishRunning ? Loading : Timer" 
+          :type="props.scheduledPublishRunning ? 'primary' : 'default'"
+          :class="{ 'is-running': props.scheduledPublishRunning }"
+          @click="handleScheduledPublish"
+        >
+          {{ props.scheduledPublishRunning ? '发布中...' : '定时发布' }}
         </el-button>
       </div>
     </div>
 
-    <div class="publish-form">
+    <div class="publish-form" :class="{ disabled: props.scheduledPublishRunning }">
       <!-- 第一行：Topic、QoS、Retain -->
       <div class="form-row">
         <div class="form-item topic-input">
@@ -28,6 +34,7 @@
             v-model="publishData.topic"
             placeholder="Topic，例如: device/001/command"
             size="default"
+            :disabled="props.scheduledPublishRunning"
           >
             <template #prefix>
               <el-icon><Position /></el-icon>
@@ -35,13 +42,13 @@
           </el-input>
         </div>
 
-        <el-select v-model="publishData.qos" style="width: 100px" size="default">
+        <el-select v-model="publishData.qos" style="width: 100px" size="default" :disabled="props.scheduledPublishRunning">
           <el-option :value="0" label="QoS 0" />
           <el-option :value="1" label="QoS 1" />
           <el-option :value="2" label="QoS 2" />
         </el-select>
 
-        <el-checkbox v-model="publishData.retain">Retain</el-checkbox>
+        <el-checkbox v-model="publishData.retain" :disabled="props.scheduledPublishRunning">Retain</el-checkbox>
       </div>
 
       <!-- 第二行：Payload 输入 -->
@@ -54,20 +61,21 @@
             :placeholder="payloadPlaceholder"
             resize="none"
             class="payload-input"
+            :disabled="props.scheduledPublishRunning"
           />
         </div>
         <div class="form-actions">
           <el-tooltip content="从模板选择" placement="top">
-            <el-button :icon="FolderOpened" @click="handleOpenTemplates" />
+            <el-button :icon="FolderOpened" :disabled="props.scheduledPublishRunning" @click="handleOpenTemplates" />
           </el-tooltip>
           <el-tooltip content="保存为模板" placement="top">
-            <el-button :icon="Star" @click="handleSaveTemplate" />
+            <el-button :icon="Star" :disabled="props.scheduledPublishRunning" @click="handleSaveTemplate" />
           </el-tooltip>
           <el-button
             type="primary"
             :icon="Promotion"
             :loading="publishing"
-            :disabled="!isConnected"
+            :disabled="!isConnected || props.scheduledPublishRunning"
             @click="handlePublish"
           >
             发布
@@ -80,7 +88,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from "vue";
-import { Promotion, Position, Star, FolderOpened, Timer } from "@element-plus/icons-vue";
+import { Promotion, Position, Star, FolderOpened, Timer, Loading } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { useServerStore } from "@/stores/server";
 import { useMessageStore } from "@/stores/message";
@@ -88,6 +96,10 @@ import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
 
 type PayloadFormat = "json" | "hex" | "text";
+
+const props = defineProps<{
+  scheduledPublishRunning: boolean;
+}>();
 
 const formatOptions = [
   { label: "JSON", value: "json" },
@@ -303,5 +315,21 @@ const handlePublish = async () => {
     display: flex;
     gap: 8px;
   }
+}
+
+.publish-form.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.is-running {
+  :deep(.el-icon) {
+    animation: spin 1s linear infinite;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

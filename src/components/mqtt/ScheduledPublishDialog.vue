@@ -1,14 +1,14 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    :title="isRunning ? '定时发布 - 运行中' : '定时发布'"
+    :title="isRunning ? '定时发布 - 运行中' : (isCompleted ? '定时发布 - 已完成' : '定时发布')"
     width="700px"
     :close-on-click-modal="false"
     :close-on-press-escape="!isRunning"
     @close="handleClose"
   >
     <!-- 配置视图 -->
-    <div v-if="!isRunning" class="config-view">
+    <div v-if="!isRunning && !isCompleted" class="config-view">
       <!-- 命令列表 -->
       <div class="section">
         <div class="section-header">
@@ -111,7 +111,7 @@
       </div>
     </div>
 
-    <!-- 运行视图 -->
+    <!-- 运行视图（运行中或已完成时显示） -->
     <div v-else class="running-view">
       <!-- 发送状态 -->
       <div class="section">
@@ -119,9 +119,10 @@
           <span class="section-title">发送状态</span>
         </div>
         <div class="status-panel">
-          <div class="status-indicator" :class="{ running: isRunning }">
-            <el-icon class="spinning"><Loading /></el-icon>
-            <span>正在发送...</span>
+          <div class="status-indicator" :class="{ running: isRunning, completed: isCompleted }">
+            <el-icon v-if="isRunning" class="spinning"><Loading /></el-icon>
+            <el-icon v-else><SuccessFilled /></el-icon>
+            <span>{{ isRunning ? '正在发送...' : '发布完成' }}</span>
           </div>
           <div class="status-info">
             <div class="info-row">
@@ -164,11 +165,16 @@
             class="log-item"
             :class="log.status"
           >
-            <span class="log-time">[{{ log.time }}]</span>
-            <span class="log-topic">{{ log.topic }}</span>
-            <el-tag :type="log.status === 'success' ? 'success' : 'danger'" size="small">
-              {{ log.status === 'success' ? '成功' : '失败' }}
-            </el-tag>
+            <div class="log-header">
+              <span class="log-time">[{{ log.time }}]</span>
+              <span class="log-topic">{{ log.topic }}</span>
+              <el-tag :type="log.status === 'success' ? 'success' : 'danger'" size="small">
+                {{ log.status === 'success' ? '成功' : '失败' }}
+              </el-tag>
+            </div>
+            <div class="log-payload">
+              <code>{{ truncatePayload(log.payload) }}</code>
+            </div>
           </div>
           <div v-if="logs.length === 0" class="empty-log">暂无发送记录</div>
         </div>
@@ -176,18 +182,29 @@
     </div>
 
     <template #footer>
-      <el-button v-if="!isRunning" @click="handleClose">取消</el-button>
-      <el-button
-        v-if="!isRunning"
-        type="primary"
-        :disabled="selectedIds.length === 0"
-        @click="handleStart"
-      >
-        开始发布
-      </el-button>
-      <el-button v-else type="danger" @click="handleStop">
-        停止发布
-      </el-button>
+      <!-- 配置视图按钮 -->
+      <template v-if="!isRunning && !isCompleted">
+        <el-button @click="handleClose">取消</el-button>
+        <el-button
+          type="primary"
+          :disabled="selectedIds.length === 0"
+          @click="handleStart"
+        >
+          开始发布
+        </el-button>
+      </template>
+      <!-- 运行中按钮 -->
+      <template v-else-if="isRunning">
+        <el-button @click="handleMinimize">最小化</el-button>
+        <el-button type="danger" @click="handleStop">
+          停止发布
+        </el-button>
+      </template>
+      <!-- 完成后按钮 -->
+      <template v-else>
+        <el-button @click="handleBackToConfig">返回配置</el-button>
+        <el-button type="primary" @click="handleClose">关闭</el-button>
+      </template>
     </template>
   </el-dialog>
 </template>
@@ -195,7 +212,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Position, Loading } from '@element-plus/icons-vue'
+import { Position, Loading, SuccessFilled } from '@element-plus/icons-vue'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
 import { useMqttStore } from '@/stores/mqtt'
 
@@ -206,6 +223,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:visible': [value: boolean]
+  'running-change': [isRunning: boolean]
 }>()
 
 const templateStore = useTemplateStore()
@@ -239,6 +257,8 @@ const config = ref({
 
 // 运行状态
 const isRunning = ref(false)
+const isCompleted = ref(false)  // 是否已完成（用于保持在发布视图）
+const isMinimized = ref(false)  // 是否已最小化（用于区分最小化和关闭）
 const currentCommand = ref<CommandTemplate | null>(null)
 const currentIndex = ref(0)
 const currentRound = ref(1)
@@ -250,6 +270,7 @@ const failCount = ref(0)
 interface LogEntry {
   time: string
   topic: string
+  payload: string
   status: 'success' | 'error'
   message?: string
 }
@@ -263,7 +284,10 @@ let publishTimeout: ReturnType<typeof setTimeout> | null = null
 watch(() => props.visible, (visible) => {
   if (visible && props.serverId) {
     templateStore.loadTemplates(props.serverId)
-    resetState()
+    // 如果不是运行中（从最小化恢复），则重置状态
+    if (!isRunning.value) {
+      resetState()
+    }
   }
 })
 
@@ -289,6 +313,8 @@ function resetState() {
   selectedIds.value = []
   selectAll.value = false
   isRunning.value = false
+  isCompleted.value = false
+  isMinimized.value = false
   currentCommand.value = null
   currentIndex.value = 0
   currentRound.value = 1
@@ -352,10 +378,10 @@ function getOrderedCommands(): CommandTemplate[] {
 }
 
 // 添加日志
-function addLog(topic: string, status: 'success' | 'error', message?: string) {
+function addLog(topic: string, payload: string, status: 'success' | 'error', message?: string) {
   const now = new Date()
   const time = now.toLocaleTimeString('zh-CN', { hour12: false })
-  logs.value.push({ time, topic, status, message })
+  logs.value.push({ time, topic, payload, status, message })
   
   // 限制日志数量
   if (logs.value.length > 100) {
@@ -385,6 +411,9 @@ async function handleStart() {
   failCount.value = 0
   logs.value = []
   
+  // 通知父组件运行状态变化
+  emit('running-change', true)
+  
   await publishNext()
 }
 
@@ -410,10 +439,10 @@ async function publishNext() {
       command.retain
     )
     successCount.value++
-    addLog(command.topic, 'success')
+    addLog(command.topic, command.payload, 'success')
   } catch (error: any) {
     failCount.value++
-    addLog(command.topic, 'error', error?.message)
+    addLog(command.topic, command.payload, 'error', error?.message)
   }
   
   sentCount.value++
@@ -425,7 +454,7 @@ async function publishNext() {
     
     // 检查是否达到循环次数
     if (config.value.loopMode === 'count' && currentRound.value >= config.value.loopCount) {
-      stopPublishing()
+      stopPublishing(true)
       ElMessage.success('定时发布完成')
       return
     }
@@ -447,24 +476,54 @@ async function publishNext() {
 
 // 停止发布
 function handleStop() {
-  stopPublishing()
+  stopPublishing(true)
   ElMessage.info('已停止定时发布')
 }
 
-function stopPublishing() {
+function stopPublishing(keepView: boolean = false) {
   isRunning.value = false
+  if (keepView) {
+    isCompleted.value = true
+  }
   if (publishTimeout) {
     clearTimeout(publishTimeout)
     publishTimeout = null
   }
+  // 通知父组件运行状态变化
+  emit('running-change', false)
 }
 
-// 关闭对话框
+// 返回配置界面
+function handleBackToConfig() {
+  isCompleted.value = false
+  currentIndex.value = 0
+  currentRound.value = 1
+  sentCount.value = 0
+  successCount.value = 0
+  failCount.value = 0
+  logs.value = []
+}
+
+// 最小化对话框
+function handleMinimize() {
+  isMinimized.value = true
+  dialogVisible.value = false
+  // 通知父组件运行状态
+  emit('running-change', true)
+}
+
+// 对话框关闭事件（由 el-dialog 的 @close 触发）
 function handleClose() {
+  // 如果是最小化操作，不停止发布
+  if (isMinimized.value) {
+    isMinimized.value = false
+    return
+  }
+  // 正常关闭时停止发布
   if (isRunning.value) {
     stopPublishing()
   }
-  dialogVisible.value = false
+  emit('running-change', false)
 }
 </script>
 
@@ -601,6 +660,10 @@ function handleClose() {
     animation: spin 1s linear infinite;
     flex-shrink: 0;
   }
+
+  &.completed {
+    color: var(--el-color-success);
+  }
 }
 
 @keyframes spin {
@@ -661,9 +724,9 @@ function handleClose() {
 
 .log-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
   font-size: 12px;
   border-bottom: 1px dashed var(--app-border-color);
 
@@ -672,9 +735,16 @@ function handleClose() {
   }
 }
 
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .log-time {
   color: var(--app-text-secondary);
   font-family: 'Fira Code', 'Consolas', monospace;
+  flex-shrink: 0;
 }
 
 .log-topic {
@@ -683,6 +753,20 @@ function handleClose() {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--app-text-color);
+}
+
+.log-payload {
+  margin-left: 8px;
+  padding: 4px 8px;
+  background-color: var(--sidebar-hover);
+  border-radius: 4px;
+  
+  code {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 11px;
+    color: var(--app-text-secondary);
+    word-break: break-all;
+  }
 }
 
 .empty-log {

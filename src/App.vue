@@ -2,6 +2,7 @@
   <AppLayout @open-templates="handleOpenTemplates">
     <!-- 消息调试视图 -->
     <MainContent 
+      :scheduled-publish-running="isScheduledPublishRunning"
       @save-template="handleSaveTemplate" 
       @open-templates="handleOpenTemplates"
       @scheduled-publish="handleScheduledPublish"
@@ -36,6 +37,7 @@
   <ScheduledPublishDialog
     v-model:visible="showScheduledPublishDialog"
     :server-id="activeServerId ?? 0"
+    @running-change="handleScheduledPublishRunningChange"
   />
 </template>
 
@@ -69,6 +71,7 @@ const templateToSave = ref<CommandTemplate | null>(null);
 
 // 定时发布对话框
 const showScheduledPublishDialog = ref(false);
+const isScheduledPublishRunning = ref(false);
 
 onMounted(() => {
   // 初始化主题
@@ -139,6 +142,11 @@ function handleScheduledPublish() {
     return;
   }
   showScheduledPublishDialog.value = true;
+}
+
+// 定时发布运行状态变化
+function handleScheduledPublishRunningChange(running: boolean) {
+  isScheduledPublishRunning.value = running;
 }
 </script>
 

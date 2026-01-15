@@ -6,6 +6,7 @@
     <!-- 发布消息 -->
     <PublishPanel 
       class="publish-panel" 
+      :scheduled-publish-running="scheduledPublishRunning"
       @save-template="handleSaveTemplate" 
       @open-templates="handleOpenTemplates"
       @scheduled-publish="handleScheduledPublish"
@@ -24,6 +25,10 @@ interface SaveTemplateData {
   retain: boolean;
   payloadType: string;
 }
+
+defineProps<{
+  scheduledPublishRunning: boolean;
+}>();
 
 const emit = defineEmits<{
   saveTemplate: [data: SaveTemplateData]
