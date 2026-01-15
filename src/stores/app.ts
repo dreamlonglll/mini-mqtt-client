@@ -3,12 +3,23 @@ import { ref } from "vue";
 
 export type Theme = "light" | "dark";
 
+// 复制到发布面板的消息数据
+export interface CopyToPublishData {
+  topic: string;
+  payload: string;
+  qos: number;
+  retain: boolean;
+}
+
 export const useAppStore = defineStore("app", () => {
   // 主题
   const theme = ref<Theme>("light");
 
   // 侧边栏折叠状态
   const sidebarCollapsed = ref(false);
+
+  // 复制到发布面板的消息
+  const copyToPublishData = ref<CopyToPublishData | null>(null);
 
   // 切换主题
   const toggleTheme = () => {
@@ -54,12 +65,25 @@ export const useAppStore = defineStore("app", () => {
     sidebarCollapsed.value = !sidebarCollapsed.value;
   };
 
+  // 设置复制到发布面板的消息
+  const setCopyToPublish = (data: CopyToPublishData) => {
+    copyToPublishData.value = data;
+  };
+
+  // 清除复制到发布面板的消息
+  const clearCopyToPublish = () => {
+    copyToPublishData.value = null;
+  };
+
   return {
     theme,
     sidebarCollapsed,
+    copyToPublishData,
     toggleTheme,
     setTheme,
     initTheme,
     toggleSidebar,
+    setCopyToPublish,
+    clearCopyToPublish,
   };
 });

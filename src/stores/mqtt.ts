@@ -154,6 +154,32 @@ export const useMqttStore = defineStore("mqtt", () => {
     }
   };
 
+  // 添加发布消息到列表（用于UI显示）
+  const addPublishMessage = (
+    serverId: number,
+    msg: {
+      topic: string;
+      payload: string;
+      qos: 0 | 1 | 2;
+      retain: boolean;
+    }
+  ) => {
+    messages.value.unshift({
+      server_id: serverId,
+      direction: "publish",
+      topic: msg.topic,
+      payload: new TextEncoder().encode(msg.payload),
+      qos: msg.qos,
+      retain: msg.retain,
+      timestamp: new Date().toISOString(),
+    });
+
+    // 限制消息数量
+    if (messages.value.length > 1000) {
+      messages.value = messages.value.slice(0, 1000);
+    }
+  };
+
   return {
     connectionStates,
     messages,
@@ -168,5 +194,6 @@ export const useMqttStore = defineStore("mqtt", () => {
     getConnectionError,
     getServerMessages,
     clearMessages,
+    addPublishMessage,
   };
 });

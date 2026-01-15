@@ -73,12 +73,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from "vue";
+import { reactive, ref, computed, watch } from "vue";
 import { Promotion, Position, Star } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { useServerStore } from "@/stores/server";
 import { useMessageStore } from "@/stores/message";
 import { useMqttStore } from "@/stores/mqtt";
+import { useAppStore } from "@/stores/app";
 
 type PayloadFormat = "json" | "hex" | "text";
 
@@ -91,8 +92,35 @@ const formatOptions = [
 const serverStore = useServerStore();
 const messageStore = useMessageStore();
 const mqttStore = useMqttStore();
+const appStore = useAppStore();
 
 const publishing = ref(false);
+
+// 监听复制到发布的消息
+watch(
+  () => appStore.copyToPublishData,
+  (data) => {
+    if (data) {
+      publishData.topic = data.topic;
+      publishData.payload = data.payload;
+      publishData.qos = data.qos;
+      publishData.retain = data.retain;
+
+      // 自动检测格式
+      if (data.payload.trim()) {
+        try {
+          JSON.parse(data.payload.trim());
+          payloadFormat.value = "json";
+        } catch {
+          payloadFormat.value = "text";
+        }
+      }
+
+      // 清除复制数据
+      appStore.clearCopyToPublish();
+    }
+  }
+);
 
 const publishData = reactive({
   topic: "",
@@ -157,6 +185,7 @@ const handlePublish = async () => {
 
   publishing.value = true;
   try {
+    // 调用 messageStore 发布消息（保存到数据库）
     await messageStore.publishMessage(serverId, {
       topic: publishData.topic,
       payload: publishData.payload,
@@ -164,6 +193,15 @@ const handlePublish = async () => {
       retain: publishData.retain,
       format: payloadFormat.value,
     });
+
+    // 同时添加到 mqttStore 的消息列表（用于实时显示）
+    mqttStore.addPublishMessage(serverId, {
+      topic: publishData.topic,
+      payload: publishData.payload,
+      qos: publishData.qos as 0 | 1 | 2,
+      retain: publishData.retain,
+    });
+
     ElMessage.success("消息已发布");
   } catch (error) {
     ElMessage.error(`发布失败: ${error}`);
