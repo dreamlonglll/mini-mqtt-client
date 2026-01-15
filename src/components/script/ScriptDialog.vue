@@ -220,10 +220,14 @@ const hashFunctions = [
 ]
 
 const aesFunctions = [
-  { name: 'await crypto.aesGcmEncrypt(text, key, nonce?)', desc: 'AES-GCM 加密，nonce 可选' },
-  { name: 'await crypto.aesGcmDecrypt(cipher, key)', desc: 'AES-GCM 解密' },
-  { name: 'await crypto.aesCbcEncrypt(text, key, iv?)', desc: 'AES-CBC 加密，iv 可选' },
-  { name: 'await crypto.aesCbcDecrypt(cipher, key)', desc: 'AES-CBC 解密' },
+  { name: 'await crypto.aesGcmEncrypt(text, keyBase64, ivBase64?)', desc: 'AES-GCM 加密（Base64 格式）' },
+  { name: 'await crypto.aesGcmDecrypt(cipherBase64, keyBase64)', desc: 'AES-GCM 解密（Base64 格式）' },
+  { name: 'await crypto.aesCbcEncrypt(text, keyBase64, ivBase64?)', desc: 'AES-CBC 加密（Base64 格式）' },
+  { name: 'await crypto.aesCbcDecrypt(cipherBase64, keyBase64)', desc: 'AES-CBC 解密（Base64 格式）' },
+  { name: 'await crypto.aesGcmEncryptHex(text, keyHex, ivHex?)', desc: 'AES-GCM 加密（Hex 格式）' },
+  { name: 'await crypto.aesGcmDecryptHex(cipherHex, keyHex)', desc: 'AES-GCM 解密（Hex 格式）' },
+  { name: 'await crypto.aesCbcEncryptHex(text, keyHex, ivHex?)', desc: 'AES-CBC 加密（Hex 格式）' },
+  { name: 'await crypto.aesCbcDecryptHex(cipherHex, keyHex)', desc: 'AES-CBC 解密（Hex 格式）' },
 ]
 
 const otherFunctions = [

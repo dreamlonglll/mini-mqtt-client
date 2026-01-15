@@ -360,6 +360,118 @@ class CryptoUtils {
   }
 
   /**
+   * AES-GCM 加密（Hex 格式密钥和 IV）
+   * @param plaintext 明文
+   * @param keyHex 密钥（Hex格式，128/256位，即32或64个十六进制字符）
+   * @param ivHex 可选IV（Hex格式，12字节即24个十六进制字符），不提供则自动生成
+   * @returns Hex格式的密文（包含IV）
+   */
+  static async aesGcmEncryptHex(plaintext: string, keyHex: string, ivHex?: string): Promise<string> {
+    const keyBytes = this.hexToBytes(keyHex);
+    const iv = ivHex ? this.hexToBytes(ivHex) : this.randomBytes(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw', keyBytes, { name: 'AES-GCM' }, false, ['encrypt']
+    );
+    
+    const encoded = this.stringToBytes(plaintext);
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv }, key, encoded
+    );
+    
+    // 返回 iv + ciphertext 的 hex
+    const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(ciphertext), iv.length);
+    return this.bytesToHex(combined);
+  }
+
+  /**
+   * AES-GCM 解密（Hex 格式密钥）
+   * @param ciphertextHex 密文（Hex格式，包含IV）
+   * @param keyHex 密钥（Hex格式）
+   * @returns 解密后的明文
+   */
+  static async aesGcmDecryptHex(ciphertextHex: string, keyHex: string): Promise<string> {
+    const keyBytes = this.hexToBytes(keyHex);
+    const combined = this.hexToBytes(ciphertextHex);
+    
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv }, key, ciphertext
+    );
+    
+    return this.bytesToString(new Uint8Array(decrypted));
+  }
+
+  /**
+   * AES-CBC 加密（Hex 格式密钥和 IV）
+   * @param plaintext 明文
+   * @param keyHex 密钥（Hex格式，128/256位）
+   * @param ivHex 可选IV（Hex格式，16字节即32个十六进制字符），不提供则自动生成
+   * @returns Hex格式的密文（包含IV）
+   */
+  static async aesCbcEncryptHex(plaintext: string, keyHex: string, ivHex?: string): Promise<string> {
+    const keyBytes = this.hexToBytes(keyHex);
+    const iv = ivHex ? this.hexToBytes(ivHex) : this.randomBytes(16);
+    
+    const key = await crypto.subtle.importKey(
+      'raw', keyBytes, { name: 'AES-CBC' }, false, ['encrypt']
+    );
+    
+    // PKCS7 填充
+    const encoded = this.stringToBytes(plaintext);
+    const blockSize = 16;
+    const padLen = blockSize - (encoded.length % blockSize);
+    const padded = new Uint8Array(encoded.length + padLen);
+    padded.set(encoded);
+    padded.fill(padLen, encoded.length);
+    
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: 'AES-CBC', iv }, key, padded
+    );
+    
+    // 返回 iv + ciphertext 的 hex
+    const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(ciphertext), iv.length);
+    return this.bytesToHex(combined);
+  }
+
+  /**
+   * AES-CBC 解密（Hex 格式密钥）
+   * @param ciphertextHex 密文（Hex格式，包含IV）
+   * @param keyHex 密钥（Hex格式）
+   * @returns 解密后的明文
+   */
+  static async aesCbcDecryptHex(ciphertextHex: string, keyHex: string): Promise<string> {
+    const keyBytes = this.hexToBytes(keyHex);
+    const combined = this.hexToBytes(ciphertextHex);
+    
+    const iv = combined.slice(0, 16);
+    const ciphertext = combined.slice(16);
+    
+    const key = await crypto.subtle.importKey(
+      'raw', keyBytes, { name: 'AES-CBC' }, false, ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-CBC', iv }, key, ciphertext
+    );
+    
+    // 移除 PKCS7 填充
+    const decryptedBytes = new Uint8Array(decrypted);
+    const padLen = decryptedBytes[decryptedBytes.length - 1];
+    return this.bytesToString(decryptedBytes.slice(0, -padLen));
+  }
+
+  /**
    * XOR 加解密（对称）
    */
   static xor(data: string, key: string): string {
@@ -494,11 +606,16 @@ export class ScriptEngine {
         sha1: CryptoUtils.sha1.bind(CryptoUtils),
         md5: CryptoUtils.md5.bind(CryptoUtils),
         hmacSha256: CryptoUtils.hmacSha256.bind(CryptoUtils),
-        // AES 加解密
+        // AES 加解密（Base64 格式）
         aesGcmEncrypt: CryptoUtils.aesGcmEncrypt.bind(CryptoUtils),
         aesGcmDecrypt: CryptoUtils.aesGcmDecrypt.bind(CryptoUtils),
         aesCbcEncrypt: CryptoUtils.aesCbcEncrypt.bind(CryptoUtils),
         aesCbcDecrypt: CryptoUtils.aesCbcDecrypt.bind(CryptoUtils),
+        // AES 加解密（Hex 格式）
+        aesGcmEncryptHex: CryptoUtils.aesGcmEncryptHex.bind(CryptoUtils),
+        aesGcmDecryptHex: CryptoUtils.aesGcmDecryptHex.bind(CryptoUtils),
+        aesCbcEncryptHex: CryptoUtils.aesCbcEncryptHex.bind(CryptoUtils),
+        aesCbcDecryptHex: CryptoUtils.aesCbcDecryptHex.bind(CryptoUtils),
         // 其他
         xor: CryptoUtils.xor.bind(CryptoUtils),
         crc32: CryptoUtils.crc32.bind(CryptoUtils),
