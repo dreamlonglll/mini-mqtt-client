@@ -97,6 +97,39 @@ impl Database {
             ",
         )?;
 
+        // 迁移：添加缺失的列
+        self.run_migrations()?;
+
+        Ok(())
+    }
+
+    fn run_migrations(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+
+        // 检查并添加 subscriptions.is_active 列
+        let has_is_active: bool = conn
+            .prepare("SELECT is_active FROM subscriptions LIMIT 1")
+            .is_ok();
+
+        if !has_is_active {
+            let _ = conn.execute(
+                "ALTER TABLE subscriptions ADD COLUMN is_active INTEGER DEFAULT 1",
+                [],
+            );
+        }
+
+        // 检查并添加 message_history.payload_format 列
+        let has_payload_format: bool = conn
+            .prepare("SELECT payload_format FROM message_history LIMIT 1")
+            .is_ok();
+
+        if !has_payload_format {
+            let _ = conn.execute(
+                "ALTER TABLE message_history ADD COLUMN payload_format TEXT DEFAULT 'text'",
+                [],
+            );
+        }
+
         Ok(())
     }
 

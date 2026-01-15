@@ -314,16 +314,23 @@ const handleConfirmSubscription = async () => {
     return;
   }
 
+  const serverId = serverStore.activeServerId;
+  if (!serverId) {
+    ElMessage.warning("请先选择一个服务器");
+    return;
+  }
+
   subLoading.value = true;
   try {
     await subscriptionStore.addSubscription(
-      serverStore.activeServerId!,
+      serverId,
       subFormData.topic,
       subFormData.qos
     );
     ElMessage.success("订阅成功");
     showSubDialog.value = false;
   } catch (error) {
+    console.error("订阅失败:", error);
     ElMessage.error(`订阅失败: ${error}`);
   } finally {
     subLoading.value = false;
