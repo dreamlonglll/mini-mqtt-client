@@ -5,6 +5,8 @@ import { listen } from "@tauri-apps/api/event";
 import type { ConnectionStatus, MqttMessage } from "@/types/mqtt";
 import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
+import { handleMqttError as handleMqttErr } from "@/utils/mqttErrorHandler";
+import { handleScriptError } from "@/utils/errorHandler";
 
 interface ConnectionState {
   server_id: number;
@@ -42,6 +44,11 @@ export const useMqttStore = defineStore("mqtt", () => {
         status: status as ConnectionStatus,
         error,
       });
+      
+      // 如果有错误，使用 MQTT 错误处理器
+      if (error && status === "error") {
+        handleMqttErr(error);
+      }
     });
 
     // 监听接收消息
@@ -66,7 +73,7 @@ export const useMqttStore = defineStore("mqtt", () => {
           payloadBytes = new TextEncoder().encode(processedPayload);
         }
       } catch (error) {
-        console.error("脚本处理失败:", error);
+        handleScriptError(error, true); // 静默处理，不显示通知
       }
       
       messages.value.unshift({

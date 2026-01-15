@@ -97,6 +97,8 @@ import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
 import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
+import { validatePublishTopic, handleMqttError } from "@/utils/mqttErrorHandler";
+import { handleScriptError } from "@/utils/errorHandler";
 
 type PayloadFormat = "json" | "hex" | "text";
 
@@ -203,8 +205,10 @@ const handleSaveTemplate = () => {
 };
 
 const handlePublish = async () => {
-  if (!publishData.topic.trim()) {
-    ElMessage.warning("请输入 Topic");
+  // 验证 Topic
+  const topicValidation = validatePublishTopic(publishData.topic);
+  if (!topicValidation.valid) {
+    ElMessage.warning(topicValidation.error || "Topic 格式无效");
     return;
   }
 
@@ -245,7 +249,9 @@ const handlePublish = async () => {
         processedPayload = await ScriptEngine.executeBeforePublish(scripts, publishData.payload);
       }
     } catch (error) {
-      console.error("脚本处理失败:", error);
+      // 使用脚本错误处理器
+      handleScriptError(error);
+      return; // 脚本错误时不发布
     }
 
     // 调用 messageStore 发布消息（保存到数据库）
@@ -266,8 +272,9 @@ const handlePublish = async () => {
     });
 
     ElMessage.success("消息已发布");
-  } catch (error) {
-    ElMessage.error(`发布失败: ${error}`);
+  } catch (error: any) {
+    // 使用 MQTT 错误处理器
+    handleMqttError(error?.message || String(error));
   } finally {
     publishing.value = false;
   }

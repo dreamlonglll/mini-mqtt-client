@@ -1,6 +1,7 @@
 import { createApp } from "vue";
 import App from "./App.vue";
 import pinia from "./stores";
+import { setupGlobalErrorHandler } from "./utils/errorHandler";
 
 // Element Plus 暗黑主题
 import "element-plus/theme-chalk/dark/css-vars.css";
@@ -12,6 +13,9 @@ import "element-plus/theme-chalk/el-overlay.css";
 
 // 全局样式
 import "./assets/styles/index.scss";
+
+// 设置全局错误处理器
+setupGlobalErrorHandler();
 
 const app = createApp(App);
 

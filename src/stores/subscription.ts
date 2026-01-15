@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { Subscription } from "@/types/mqtt";
+import { validateSubscribeTopic } from "@/utils/mqttErrorHandler";
 
 export const useSubscriptionStore = defineStore("subscription", () => {
   const subscriptions = ref<Map<number, Subscription[]>>(new Map());
@@ -24,6 +25,12 @@ export const useSubscriptionStore = defineStore("subscription", () => {
   }
 
   async function addSubscription(serverId: number, topic: string, qos: number) {
+    // 验证订阅 Topic
+    const validation = validateSubscribeTopic(topic);
+    if (!validation.valid) {
+      throw new Error(validation.error || "Topic 格式无效");
+    }
+
     const result = await invoke<Subscription>("add_subscription", {
       serverId,
       topic,

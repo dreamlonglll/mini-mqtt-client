@@ -1,7 +1,9 @@
 mod commands;
 mod db;
+mod log;
 mod mqtt;
 
+use commands::log::*;
 use commands::mqtt::*;
 use commands::publish::*;
 use commands::script::*;
@@ -10,6 +12,7 @@ use commands::settings::*;
 use commands::subscription::*;
 use commands::template::*;
 use db::Storage;
+use log::LogManager;
 use mqtt::MqttManager;
 use tauri::Manager;
 
@@ -27,6 +30,11 @@ pub fn run() {
             // 初始化 MQTT 管理器
             let mqtt_manager = MqttManager::new(app.handle().clone());
             app.manage(mqtt_manager);
+
+            // 初始化日志管理器
+            let log_manager =
+                LogManager::new(&app.handle()).expect("Failed to initialize log manager");
+            app.manage(log_manager);
 
             Ok(())
         })
@@ -76,6 +84,11 @@ pub fn run() {
             update_script,
             delete_script,
             toggle_script,
+            // 日志命令
+            write_error_log,
+            get_recent_logs,
+            get_log_dir,
+            clear_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

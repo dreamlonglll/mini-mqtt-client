@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Mini MQTT Client",
-  "version": "0.1.0",
-  "identifier": "com.tauri-app.mini-mqtt-client",
+  "version": "1.0.0",
+  "identifier": "com.minimqtt.client",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -20,7 +20,8 @@
         "center": true,
         "resizable": true,
         "decorations": true,
-        "transparent": false
+        "transparent": false,
+        "fullscreen": false
       }
     ],
     "security": {
@@ -29,13 +30,18 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
   }
 }

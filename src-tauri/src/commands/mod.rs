@@ -1,3 +1,4 @@
+pub mod log;
 pub mod mqtt;
 pub mod publish;
 pub mod script;
