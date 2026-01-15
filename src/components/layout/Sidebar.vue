@@ -109,10 +109,11 @@
     <div class="sidebar-footer">
       <el-button text @click="appStore.toggleTheme" class="theme-btn">
         <el-icon>
-          <Moon v-if="appStore.theme === 'light'" />
-          <Sunny v-else />
+          <Sunny v-if="appStore.theme === 'light'" />
+          <Moon v-else-if="appStore.theme === 'dark'" />
+          <Platform v-else />
         </el-icon>
-        <span>{{ appStore.theme === 'light' ? '深色模式' : '浅色模式' }}</span>
+        <span>{{ themeLabel }}</span>
       </el-button>
     </div>
 
@@ -163,6 +164,7 @@ import {
   CopyDocument,
   Moon,
   Sunny,
+  Platform,
 } from "@element-plus/icons-vue";
 import { useAppStore } from "@/stores/app";
 import { useServerStore } from "@/stores/server";
@@ -193,6 +195,20 @@ const currentSubscriptions = computed(() => {
   const serverId = serverStore.activeServerId;
   if (!serverId) return [];
   return subscriptionStore.getSubscriptionsByServer(serverId);
+});
+
+// 主题标签文字
+const themeLabel = computed(() => {
+  switch (appStore.theme) {
+    case 'light':
+      return '浅色模式';
+    case 'dark':
+      return '深色模式';
+    case 'auto':
+      return '跟随系统';
+    default:
+      return '浅色模式';
+  }
 });
 
 // 初始化加载 Server 列表

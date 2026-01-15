@@ -23,6 +23,10 @@
               <el-icon><Moon /></el-icon>
               暗色模式
             </el-radio>
+            <el-radio value="auto">
+              <el-icon><Platform /></el-icon>
+              跟随系统
+            </el-radio>
           </el-radio-group>
         </div>
       </div>
@@ -107,7 +111,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Sunny, Moon, FolderOpened, CopyDocument, Document, Delete } from '@element-plus/icons-vue'
+import { Sunny, Moon, Platform, FolderOpened, CopyDocument, Document, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
