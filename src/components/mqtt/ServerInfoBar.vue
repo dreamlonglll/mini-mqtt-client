@@ -22,13 +22,13 @@
       <!-- 中间：协议和配置信息 -->
       <div class="server-config">
         <el-tag size="small" type="info" effect="plain">
-          MQTT {{ activeServer.server.protocolVersion }}
+          MQTT {{ activeServer.server.protocol_version }}
         </el-tag>
-        <el-tag v-if="activeServer.server.useTls" size="small" type="success" effect="plain">
+        <el-tag v-if="activeServer.server.use_tls" size="small" type="success" effect="plain">
           TLS
         </el-tag>
         <el-tag size="small" effect="plain">
-          Keep Alive: {{ activeServer.server.keepAlive }}s
+          Keep Alive: {{ activeServer.server.keep_alive }}s
         </el-tag>
       </div>
 
@@ -110,24 +110,21 @@ const statusTagType = computed(() => {
 });
 
 const handleConnect = () => {
-  if (activeServer.value) {
-    serverStore.setConnectionStatus(activeServer.value.server.id, "connecting");
+  const server = activeServer.value;
+  if (server?.server.id) {
+    const id = server.server.id;
+    serverStore.setConnectionStatus(id, "connecting");
     // 模拟连接
     setTimeout(() => {
-      serverStore.setConnectionStatus(
-        activeServer.value!.server.id,
-        "connected"
-      );
+      serverStore.setConnectionStatus(id, "connected");
     }, 1500);
   }
 };
 
 const handleDisconnect = () => {
-  if (activeServer.value) {
-    serverStore.setConnectionStatus(
-      activeServer.value.server.id,
-      "disconnected"
-    );
+  const server = activeServer.value;
+  if (server?.server.id) {
+    serverStore.setConnectionStatus(server.server.id, "disconnected");
   }
 };
 

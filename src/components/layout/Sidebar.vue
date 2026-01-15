@@ -26,7 +26,7 @@
             :key="serverState.server.id"
             class="server-item"
             :class="{ active: serverState.server.id === serverStore.activeServerId }"
-            @click="handleSelectServer(serverState.server.id)"
+            @click="handleSelectServer(serverState.server.id!)"
           >
             <span class="status-indicator" :class="serverState.status" />
             <div class="server-info">
@@ -35,22 +35,19 @@
                 {{ serverState.server.host }}:{{ serverState.server.port }}
               </span>
             </div>
-            <el-dropdown trigger="click" @command="handleServerAction">
+            <el-dropdown trigger="click" @command="(cmd: string) => handleServerAction(cmd, serverState.server)">
               <el-button :icon="MoreFilled" text size="small" class="more-btn" @click.stop />
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item :command="{ action: 'edit', id: serverState.server.id }">
+                  <el-dropdown-item command="edit">
                     <el-icon><Edit /></el-icon>
                     <span>编辑</span>
                   </el-dropdown-item>
-                  <el-dropdown-item :command="{ action: 'duplicate', id: serverState.server.id }">
+                  <el-dropdown-item command="duplicate">
                     <el-icon><CopyDocument /></el-icon>
                     <span>复制</span>
                   </el-dropdown-item>
-                  <el-dropdown-item
-                    :command="{ action: 'delete', id: serverState.server.id }"
-                    divided
-                  >
+                  <el-dropdown-item command="delete" divided>
                     <el-icon><Delete /></el-icon>
                     <span style="color: var(--el-color-danger)">删除</span>
                   </el-dropdown-item>
@@ -73,7 +70,7 @@
       <!-- 分隔线 -->
       <el-divider v-if="serverStore.activeServer" />
 
-      <!-- 订阅列表区域 - 仅当有选中的 Server 时显示 -->
+      <!-- 订阅列表区域 -->
       <div v-if="serverStore.activeServer" class="section">
         <div class="section-header">
           <span class="section-title">订阅</span>
@@ -114,7 +111,14 @@
       </el-button>
     </div>
 
-    <!-- 添加/编辑订阅对话框 -->
+    <!-- Server 表单对话框 -->
+    <ServerFormDialog
+      v-model:visible="showServerDialog"
+      :server="editingServer"
+      @saved="handleServerSaved"
+    />
+
+    <!-- 订阅对话框 -->
     <el-dialog
       v-model="showSubDialog"
       :title="isEditingSub ? '编辑订阅' : '添加订阅'"
@@ -144,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import {
   Plus,
   MoreFilled,
@@ -158,36 +162,62 @@ import {
 import { useAppStore } from "@/stores/app";
 import { useServerStore } from "@/stores/server";
 import { ElMessage, ElMessageBox } from "element-plus";
+import ServerFormDialog from "@/components/mqtt/ServerFormDialog.vue";
+import type { MqttServer } from "@/types/mqtt";
 
 const appStore = useAppStore();
 const serverStore = useServerStore();
 
+// 初始化加载 Server 列表
+onMounted(() => {
+  serverStore.fetchServers();
+});
+
 // ===== Server 相关 =====
+const showServerDialog = ref(false);
+const editingServer = ref<MqttServer | null>(null);
+
 const handleAddServer = () => {
-  console.log("Add server");
+  editingServer.value = null;
+  showServerDialog.value = true;
 };
 
 const handleSelectServer = (id: number) => {
   serverStore.setActiveServer(id);
 };
 
-interface ServerAction {
-  action: "edit" | "duplicate" | "delete";
-  id: number;
-}
-
-const handleServerAction = (command: ServerAction) => {
-  switch (command.action) {
+const handleServerAction = async (command: string, server: MqttServer) => {
+  switch (command) {
     case "edit":
-      console.log("Edit server:", command.id);
+      editingServer.value = server;
+      showServerDialog.value = true;
       break;
     case "duplicate":
-      console.log("Duplicate server:", command.id);
+      await serverStore.duplicateServer(server.id!);
+      ElMessage.success("复制成功");
       break;
     case "delete":
-      serverStore.removeServer(command.id);
+      try {
+        await ElMessageBox.confirm(
+          `确定要删除 "${server.name}" 吗？`,
+          "确认删除",
+          {
+            confirmButtonText: "删除",
+            cancelButtonText: "取消",
+            type: "warning",
+          }
+        );
+        await serverStore.removeServer(server.id!);
+        ElMessage.success("删除成功");
+      } catch {
+        // 用户取消
+      }
       break;
   }
+};
+
+const handleServerSaved = () => {
+  // 对话框会自动关闭
 };
 
 // ===== 订阅相关 =====
