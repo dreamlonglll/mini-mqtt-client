@@ -72,7 +72,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/mini-mqtt-client.git
+git clone https://github.com/dreamlonglll/mini-mqtt-client
 cd mini-mqtt-client
 
 # 安装依赖
