@@ -3,18 +3,14 @@
     <template v-if="activeServer">
       <!-- 左侧：Server 信息 -->
       <div class="server-info">
-        <span class="status-indicator" :class="activeServer.status" />
+        <span class="status-indicator" :class="connectionStatus" />
         <div class="server-details">
           <span class="server-name">{{ activeServer.server.name }}</span>
           <span class="server-address">
             {{ formatServerAddress(activeServer.server) }}
           </span>
         </div>
-        <el-tag
-          :type="statusTagType"
-          size="small"
-          effect="plain"
-        >
+        <el-tag :type="statusTagType" size="small" effect="plain">
           {{ statusText }}
         </el-tag>
       </div>
@@ -24,7 +20,12 @@
         <el-tag size="small" type="info" effect="plain">
           MQTT {{ activeServer.server.protocol_version }}
         </el-tag>
-        <el-tag v-if="activeServer.server.use_tls" size="small" type="success" effect="plain">
+        <el-tag
+          v-if="activeServer.server.use_tls"
+          size="small"
+          type="success"
+          effect="plain"
+        >
           TLS
         </el-tag>
         <el-tag size="small" effect="plain">
@@ -35,16 +36,17 @@
       <!-- 右侧：操作按钮 -->
       <div class="server-actions">
         <el-button
-          v-if="activeServer.status === 'disconnected' || activeServer.status === 'error'"
+          v-if="connectionStatus === 'disconnected' || connectionStatus === 'error'"
           type="primary"
           size="small"
           :icon="Connection"
+          :loading="connecting"
           @click="handleConnect"
         >
           连接
         </el-button>
         <el-button
-          v-else-if="activeServer.status === 'connected'"
+          v-else-if="connectionStatus === 'connected'"
           type="danger"
           size="small"
           plain
@@ -58,6 +60,16 @@
         </el-button>
         <el-button :icon="Setting" size="small" @click="handleSettings" />
       </div>
+
+      <!-- 错误提示 -->
+      <el-alert
+        v-if="connectionError"
+        :title="connectionError"
+        type="error"
+        show-icon
+        :closable="false"
+        class="error-alert"
+      />
     </template>
 
     <template v-else>
@@ -70,17 +82,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import {
   Connection,
   SwitchButton,
   Setting,
   Warning,
 } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
 import { useServerStore } from "@/stores/server";
+import { useMqttStore } from "@/stores/mqtt";
 import type { MqttServer } from "@/types/mqtt";
 
 const serverStore = useServerStore();
+const mqttStore = useMqttStore();
+const connecting = ref(false);
 
 // 格式化服务器地址为 协议://host:port 格式
 const formatServerAddress = (server: MqttServer): string => {
@@ -90,8 +106,18 @@ const formatServerAddress = (server: MqttServer): string => {
 
 const activeServer = computed(() => serverStore.activeServer);
 
+const connectionStatus = computed(() => {
+  if (!activeServer.value?.server.id) return "disconnected";
+  return mqttStore.getConnectionStatus(activeServer.value.server.id);
+});
+
+const connectionError = computed(() => {
+  if (!activeServer.value?.server.id) return undefined;
+  return mqttStore.getConnectionError(activeServer.value.server.id);
+});
+
 const statusText = computed(() => {
-  switch (activeServer.value?.status) {
+  switch (connectionStatus.value) {
     case "connected":
       return "已连接";
     case "connecting":
@@ -104,7 +130,7 @@ const statusText = computed(() => {
 });
 
 const statusTagType = computed(() => {
-  switch (activeServer.value?.status) {
+  switch (connectionStatus.value) {
     case "connected":
       return "success";
     case "connecting":
@@ -116,22 +142,28 @@ const statusTagType = computed(() => {
   }
 });
 
-const handleConnect = () => {
+const handleConnect = async () => {
   const server = activeServer.value;
-  if (server?.server.id) {
-    const id = server.server.id;
-    serverStore.setConnectionStatus(id, "connecting");
-    // 模拟连接
-    setTimeout(() => {
-      serverStore.setConnectionStatus(id, "connected");
-    }, 1500);
+  if (!server?.server.id) return;
+
+  connecting.value = true;
+  try {
+    await mqttStore.connect(server.server.id);
+  } catch (e) {
+    ElMessage.error(`连接失败: ${e}`);
+  } finally {
+    connecting.value = false;
   }
 };
 
-const handleDisconnect = () => {
+const handleDisconnect = async () => {
   const server = activeServer.value;
-  if (server?.server.id) {
-    serverStore.setConnectionStatus(server.server.id, "disconnected");
+  if (!server?.server.id) return;
+
+  try {
+    await mqttStore.disconnect(server.server.id);
+  } catch (e) {
+    ElMessage.error(`断开失败: ${e}`);
   }
 };
 
@@ -147,6 +179,7 @@ const handleSettings = () => {
   justify-content: space-between;
   padding: 12px 16px;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .server-info {
@@ -195,5 +228,10 @@ const handleSettings = () => {
   .el-icon {
     font-size: 18px;
   }
+}
+
+.error-alert {
+  width: 100%;
+  margin-top: 8px;
 }
 </style>
