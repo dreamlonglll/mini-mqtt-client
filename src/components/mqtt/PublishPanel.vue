@@ -54,6 +54,9 @@
           />
         </div>
         <div class="form-actions">
+          <el-tooltip content="从模板选择" placement="top">
+            <el-button :icon="FolderOpened" @click="handleOpenTemplates" />
+          </el-tooltip>
           <el-tooltip content="保存为模板" placement="top">
             <el-button :icon="Star" @click="handleSaveTemplate" />
           </el-tooltip>
@@ -74,7 +77,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from "vue";
-import { Promotion, Position, Star } from "@element-plus/icons-vue";
+import { Promotion, Position, Star, FolderOpened } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { useServerStore } from "@/stores/server";
 import { useMessageStore } from "@/stores/message";
@@ -106,8 +109,11 @@ watch(
       publishData.qos = data.qos;
       publishData.retain = data.retain;
 
-      // 自动检测格式
-      if (data.payload.trim()) {
+      // 设置格式类型
+      if (data.payloadType) {
+        payloadFormat.value = data.payloadType as PayloadFormat;
+      } else if (data.payload.trim()) {
+        // 自动检测格式
         try {
           JSON.parse(data.payload.trim());
           payloadFormat.value = "json";
@@ -148,9 +154,28 @@ const payloadPlaceholder = computed(() => {
   }
 });
 
+const emit = defineEmits<{
+  saveTemplate: [data: { topic: string; payload: string; qos: number; retain: boolean; payloadType: string }]
+  openTemplates: []
+}>();
+
+// 打开模板管理
+const handleOpenTemplates = () => {
+  emit("openTemplates");
+};
+
 const handleSaveTemplate = () => {
-  // TODO: 保存为命令模板
-  ElMessage.success("模板保存功能开发中");
+  if (!publishData.topic.trim()) {
+    ElMessage.warning("请先输入 Topic");
+    return;
+  }
+  emit("saveTemplate", {
+    topic: publishData.topic,
+    payload: publishData.payload,
+    qos: publishData.qos,
+    retain: publishData.retain,
+    payloadType: payloadFormat.value,
+  });
 };
 
 const handlePublish = async () => {

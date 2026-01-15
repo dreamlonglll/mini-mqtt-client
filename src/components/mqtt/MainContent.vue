@@ -9,7 +9,11 @@
       <MessageList class="message-list" />
 
       <!-- 发布消息 -->
-      <PublishPanel class="publish-panel" />
+      <PublishPanel 
+        class="publish-panel" 
+        @save-template="handleSaveTemplate" 
+        @open-templates="handleOpenTemplates"
+      />
     </div>
   </div>
 </template>
@@ -18,6 +22,27 @@
 import ServerInfoBar from "./ServerInfoBar.vue";
 import MessageList from "./MessageList.vue";
 import PublishPanel from "./PublishPanel.vue";
+
+interface SaveTemplateData {
+  topic: string;
+  payload: string;
+  qos: number;
+  retain: boolean;
+  payloadType: string;
+}
+
+const emit = defineEmits<{
+  saveTemplate: [data: SaveTemplateData]
+  openTemplates: []
+}>();
+
+function handleSaveTemplate(data: SaveTemplateData) {
+  emit('saveTemplate', data);
+}
+
+function handleOpenTemplates() {
+  emit('openTemplates');
+}
 </script>
 
 <style scoped lang="scss">

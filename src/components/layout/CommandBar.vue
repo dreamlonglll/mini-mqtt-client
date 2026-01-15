@@ -6,21 +6,24 @@
       <el-divider direction="vertical" />
       
       <div class="command-list">
+        <!-- 常用模板快捷按钮 -->
         <el-button
-          v-for="(cmd, index) in recentCommands"
-          :key="index"
+          v-for="template in frequentTemplates"
+          :key="template.id"
           size="small"
-          @click="handleExecuteCommand(cmd)"
+          @click="handleQuickSend(template)"
         >
-          {{ cmd.name }}
+          {{ template.name }}
         </el-button>
         
+        <!-- 无模板时显示添加按钮 -->
         <el-button
-          v-if="recentCommands.length === 0"
+          v-if="frequentTemplates.length === 0"
           size="small"
           type="primary"
           plain
           :icon="Plus"
+          @click="handleOpenTemplates"
         >
           添加命令模板
         </el-button>
@@ -28,7 +31,7 @@
     </div>
     
     <div class="command-bar-actions">
-      <el-button size="small" :icon="FolderOpened" text>
+      <el-button size="small" :icon="FolderOpened" text @click="handleOpenTemplates">
         管理模板
       </el-button>
     </div>
@@ -36,22 +39,57 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, watch } from "vue";
 import { Histogram, Plus, FolderOpened } from "@element-plus/icons-vue";
+import { useTemplateStore, type CommandTemplate } from "@/stores/template";
+import { useServerStore } from "@/stores/server";
+import { useAppStore } from "@/stores/app";
+import { ElMessage } from "element-plus";
 
-interface CommandTemplate {
-  id: number;
-  name: string;
-  topic: string;
-  payload?: string;
+const templateStore = useTemplateStore();
+const serverStore = useServerStore();
+const appStore = useAppStore();
+
+// 常用模板（前5个）
+const frequentTemplates = computed(() => templateStore.frequentTemplates);
+
+// 监听服务器变化，加载模板
+watch(
+  () => serverStore.activeServerId,
+  (serverId) => {
+    if (serverId) {
+      templateStore.loadTemplates(serverId);
+    }
+  },
+  { immediate: true }
+);
+
+// 快速发送模板
+async function handleQuickSend(template: CommandTemplate) {
+  try {
+    const used = await templateStore.useTemplate(template.id!);
+    // 复制到发布面板
+    appStore.setCopyToPublish({
+      topic: used.topic,
+      payload: used.payload,
+      qos: used.qos,
+      retain: used.retain,
+      payloadType: used.payload_type,
+    });
+    ElMessage.success(`已加载: ${template.name}`);
+  } catch (error) {
+    ElMessage.error("加载模板失败");
+  }
 }
 
-const recentCommands = ref<CommandTemplate[]>([]);
+const emit = defineEmits<{
+  openTemplates: []
+}>();
 
-const handleExecuteCommand = (cmd: CommandTemplate) => {
-  // TODO: 执行命令
-  console.log("Execute command:", cmd);
-};
+// 打开模板管理
+function handleOpenTemplates() {
+  emit("openTemplates");
+}
 </script>
 
 <style scoped lang="scss">

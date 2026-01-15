@@ -57,3 +57,48 @@ pub struct PublishPayload {
     pub retain: bool,
     pub format: String, // "json" | "hex" | "text"
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandTemplate {
+    pub id: Option<i64>,
+    pub server_id: i64,
+    pub name: String,
+    pub topic: String,
+    pub payload: String,
+    pub payload_type: String, // "json" | "hex" | "text"
+    pub qos: i32,
+    pub retain: bool,
+    pub description: Option<String>,
+    pub category: Option<String>,
+    #[serde(default)]
+    pub use_count: i64,
+    pub last_used_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTemplateRequest {
+    pub server_id: i64,
+    pub name: String,
+    pub topic: String,
+    pub payload: String,
+    pub payload_type: String,
+    pub qos: i32,
+    pub retain: bool,
+    pub description: Option<String>,
+    pub category: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateTemplateRequest {
+    pub id: i64,
+    pub name: Option<String>,
+    pub topic: Option<String>,
+    pub payload: Option<String>,
+    pub payload_type: Option<String>,
+    pub qos: Option<i32>,
+    pub retain: Option<bool>,
+    pub description: Option<String>,
+    pub category: Option<String>,
+}

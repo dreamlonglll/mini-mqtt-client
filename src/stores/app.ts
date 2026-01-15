@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 export type Theme = "light" | "dark";
+export type ViewType = "messages" | "templates";
 
 // 复制到发布面板的消息数据
 export interface CopyToPublishData {
@@ -9,6 +10,7 @@ export interface CopyToPublishData {
   payload: string;
   qos: number;
   retain: boolean;
+  payloadType?: string; // "json" | "hex" | "text"
 }
 
 export const useAppStore = defineStore("app", () => {
@@ -17,6 +19,9 @@ export const useAppStore = defineStore("app", () => {
 
   // 侧边栏折叠状态
   const sidebarCollapsed = ref(false);
+
+  // 当前视图
+  const currentView = ref<ViewType>("messages");
 
   // 复制到发布面板的消息
   const copyToPublishData = ref<CopyToPublishData | null>(null);
@@ -65,6 +70,11 @@ export const useAppStore = defineStore("app", () => {
     sidebarCollapsed.value = !sidebarCollapsed.value;
   };
 
+  // 设置当前视图
+  const setCurrentView = (view: ViewType) => {
+    currentView.value = view;
+  };
+
   // 设置复制到发布面板的消息
   const setCopyToPublish = (data: CopyToPublishData) => {
     copyToPublishData.value = data;
@@ -78,11 +88,13 @@ export const useAppStore = defineStore("app", () => {
   return {
     theme,
     sidebarCollapsed,
+    currentView,
     copyToPublishData,
     toggleTheme,
     setTheme,
     initTheme,
     toggleSidebar,
+    setCurrentView,
     setCopyToPublish,
     clearCopyToPublish,
   };

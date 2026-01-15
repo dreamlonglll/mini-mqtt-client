@@ -349,11 +349,13 @@ function copyPayload() {
 function copyToPublish() {
   if (selectedMessage.value) {
     const payload = getPayloadString(selectedMessage.value.payload);
+    const format = detectPayloadFormat(selectedMessage.value.payload);
     appStore.setCopyToPublish({
       topic: selectedMessage.value.topic,
       payload: payload,
       qos: selectedMessage.value.qos,
       retain: selectedMessage.value.retain,
+      payloadType: format,
     });
     ElMessage.success("已复制到发布面板");
     showDetailDialog.value = false;

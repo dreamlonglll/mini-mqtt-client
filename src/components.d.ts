@@ -21,6 +21,7 @@ declare module 'vue' {
     ElDescriptionsItem: typeof import('element-plus/es')['ElDescriptionsItem']
     ElDialog: typeof import('element-plus/es')['ElDialog']
     ElDivider: typeof import('element-plus/es')['ElDivider']
+    ElDrawer: typeof import('element-plus/es')['ElDrawer']
     ElDropdown: typeof import('element-plus/es')['ElDropdown']
     ElDropdownItem: typeof import('element-plus/es')['ElDropdownItem']
     ElDropdownMenu: typeof import('element-plus/es')['ElDropdownMenu']
@@ -46,8 +47,16 @@ declare module 'vue' {
     MessageList: typeof import('./components/mqtt/MessageList.vue')['default']
     MessagePayload: typeof import('./components/mqtt/MessagePayload.vue')['default']
     PublishPanel: typeof import('./components/mqtt/PublishPanel.vue')['default']
+    QuickSendPanel: typeof import('./components/template/QuickSendPanel.vue')['default']
     ServerFormDialog: typeof import('./components/mqtt/ServerFormDialog.vue')['default']
     ServerInfoBar: typeof import('./components/mqtt/ServerInfoBar.vue')['default']
     Sidebar: typeof import('./components/layout/Sidebar.vue')['default']
+    TemplateDialog: typeof import('./components/template/TemplateDialog.vue')['default']
+    TemplateDrawer: typeof import('./components/template/TemplateDrawer.vue')['default']
+    TemplateList: typeof import('./components/template/TemplateList.vue')['default']
+    TemplateManager: typeof import('./components/template/TemplateManager.vue')['default']
+  }
+  export interface GlobalDirectives {
+    vLoading: typeof import('element-plus/es')['ElLoadingDirective']
   }
 }

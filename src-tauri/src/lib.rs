@@ -6,6 +6,7 @@ use commands::mqtt::*;
 use commands::publish::*;
 use commands::server::*;
 use commands::subscription::*;
+use commands::template::*;
 use db::Storage;
 use mqtt::MqttManager;
 use tauri::Manager;
@@ -49,6 +50,17 @@ pub fn run() {
             publish_message,
             get_message_history,
             clear_message_history,
+            // 模板命令
+            create_template,
+            get_template,
+            list_templates,
+            update_template,
+            delete_template,
+            use_template,
+            get_template_categories,
+            export_templates,
+            import_templates,
+            duplicate_template,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

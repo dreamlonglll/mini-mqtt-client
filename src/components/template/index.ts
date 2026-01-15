@@ -1,0 +1,5 @@
+export { default as TemplateList } from './TemplateList.vue'
+export { default as TemplateDialog } from './TemplateDialog.vue'
+export { default as QuickSendPanel } from './QuickSendPanel.vue'
+export { default as TemplateManager } from './TemplateManager.vue'
+export { default as TemplateDrawer } from './TemplateDrawer.vue'

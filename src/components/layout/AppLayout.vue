@@ -6,7 +6,7 @@
       <div class="app-content">
         <slot />
       </div>
-      <CommandBar class="app-command-bar" />
+      <CommandBar class="app-command-bar" @open-templates="handleOpenTemplates" />
     </div>
   </div>
 </template>
@@ -15,6 +15,14 @@
 import Sidebar from "./Sidebar.vue";
 import Header from "./Header.vue";
 import CommandBar from "./CommandBar.vue";
+
+const emit = defineEmits<{
+  openTemplates: []
+}>();
+
+function handleOpenTemplates() {
+  emit("openTemplates");
+}
 </script>
 
 <style scoped lang="scss">
