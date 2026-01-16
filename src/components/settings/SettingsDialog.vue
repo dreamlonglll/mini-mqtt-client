@@ -9,88 +9,70 @@
     <div class="settings-content">
       <!-- 主题设置 -->
       <div class="setting-section">
-        <div class="setting-header">
-          <el-icon><Sunny /></el-icon>
-          <span class="setting-title">主题设置</span>
-        </div>
-        <div class="setting-body">
-          <el-radio-group v-model="currentTheme" @change="(val: string | number | boolean | undefined) => handleThemeChange(val as Theme)">
-            <el-radio value="light">
-              <el-icon><Sunny /></el-icon>
-              亮色模式
-            </el-radio>
-            <el-radio value="dark">
-              <el-icon><Moon /></el-icon>
-              暗色模式
-            </el-radio>
-            <el-radio value="auto">
-              <el-icon><Platform /></el-icon>
-              跟随系统
-            </el-radio>
-          </el-radio-group>
-        </div>
+        <div class="setting-title">外观主题</div>
+        <div class="setting-desc">选择应用的外观主题，立即生效</div>
+        <el-radio-group 
+          v-model="currentTheme" 
+          @change="(val: string | number | boolean | undefined) => handleThemeChange(val as Theme)"
+          class="theme-radio-group"
+        >
+          <el-radio-button value="light">
+            <el-icon><Sunny /></el-icon>
+            浅色
+          </el-radio-button>
+          <el-radio-button value="dark">
+            <el-icon><Moon /></el-icon>
+            深色
+          </el-radio-button>
+          <el-radio-button value="auto">
+            <el-icon><Platform /></el-icon>
+            跟随系统
+          </el-radio-button>
+        </el-radio-group>
       </div>
 
       <!-- 数据存储设置 -->
       <div class="setting-section">
-        <div class="setting-header">
-          <el-icon><FolderOpened /></el-icon>
-          <span class="setting-title">数据存储</span>
+        <div class="setting-title">数据存储</div>
+        <div class="setting-desc">配置和脚本等数据的存储位置</div>
+        <div class="setting-row">
+          <el-tooltip :content="currentDataPath" placement="top">
+            <el-input :model-value="currentDataPath" readonly size="small" class="path-input" />
+          </el-tooltip>
+          <el-tooltip content="更改位置" placement="top">
+            <el-button size="small" :icon="FolderOpened" @click="handleSelectFolder" />
+          </el-tooltip>
+          <el-tooltip content="复制路径" placement="top">
+            <el-button size="small" :icon="CopyDocument" @click="handleCopyPath" />
+          </el-tooltip>
         </div>
-        <div class="setting-body">
-          <div class="data-path-info">
-            <span class="label">当前路径：</span>
-            <el-tooltip :content="currentDataPath" placement="top">
-              <code class="path">{{ truncatePath(currentDataPath) }}</code>
-            </el-tooltip>
-          </div>
-          <div class="data-path-actions">
-            <el-button size="small" :icon="FolderOpened" @click="handleSelectFolder">
-              更改位置
-            </el-button>
-            <el-button size="small" :icon="CopyDocument" @click="handleCopyPath">
-              复制路径
-            </el-button>
-          </div>
-          <el-alert
-            v-if="newDataPath"
-            type="warning"
-            :closable="false"
-            show-icon
-            class="migrate-alert"
-          >
-            <template #title>
-              <span>将迁移数据到新位置：</span>
-              <code>{{ truncatePath(newDataPath) }}</code>
-            </template>
-          </el-alert>
-        </div>
+        <el-alert
+          v-if="newDataPath"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="migrate-alert"
+        >
+          <template #title>
+            <span>将迁移数据到新位置：{{ truncatePath(newDataPath) }}</span>
+          </template>
+        </el-alert>
       </div>
 
       <!-- 日志设置 -->
       <div class="setting-section">
-        <div class="setting-header">
-          <el-icon><Document /></el-icon>
-          <span class="setting-title">日志</span>
-        </div>
-        <div class="setting-body">
-          <div class="data-path-info">
-            <span class="label">日志目录：</span>
-            <el-tooltip :content="logPath" placement="top">
-              <code class="path">{{ truncatePath(logPath) }}</code>
-            </el-tooltip>
-          </div>
-          <div class="log-info">
-            <span class="log-desc">错误日志按天分割，最多保留 10 个日志文件</span>
-          </div>
-          <div class="data-path-actions">
-            <el-button size="small" :icon="FolderOpened" @click="handleOpenLogFolder">
-              打开日志目录
-            </el-button>
-            <el-button size="small" :icon="Delete" type="danger" plain @click="handleClearLogs">
-              清空日志
-            </el-button>
-          </div>
+        <div class="setting-title">日志</div>
+        <div class="setting-desc">错误日志按天分割，最多保留 10 个日志文件</div>
+        <div class="setting-row">
+          <el-tooltip :content="logPath" placement="top">
+            <el-input :model-value="logPath" readonly size="small" class="path-input" />
+          </el-tooltip>
+          <el-tooltip content="打开日志目录" placement="top">
+            <el-button size="small" :icon="FolderOpened" @click="handleOpenLogFolder" />
+          </el-tooltip>
+          <el-tooltip content="清空日志" placement="top">
+            <el-button size="small" :icon="Delete" type="danger" plain @click="handleClearLogs" />
+          </el-tooltip>
         </div>
       </div>
     </div>
@@ -111,7 +93,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Sunny, Moon, Platform, FolderOpened, CopyDocument, Document, Delete } from '@element-plus/icons-vue'
+import { Sunny, Moon, Platform, FolderOpened, CopyDocument, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -291,92 +273,50 @@ function handleClose() {
 .settings-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .setting-section {
-  background-color: var(--sidebar-bg);
-  border: 1px solid var(--app-border-color);
-  border-radius: 8px;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.setting-header {
+.setting-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-color);
+}
+
+.setting-desc {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.setting-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  background-color: var(--card-bg);
-  border-bottom: 1px solid var(--app-border-color);
-  
-  .setting-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--app-text-color);
-  }
 }
 
-.setting-body {
-  padding: 16px;
-}
-
-.data-path-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+.path-input {
+  flex: 1;
   
-  .label {
-    font-size: 13px;
-    color: var(--app-text-secondary);
-    flex-shrink: 0;
-  }
-  
-  .path {
+  :deep(input) {
     font-family: 'Fira Code', 'Consolas', monospace;
     font-size: 12px;
-    color: var(--app-text-color);
-    background-color: var(--sidebar-hover);
-    padding: 4px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    
-    &:hover {
-      background-color: var(--primary-light);
-    }
-  }
-}
-
-.data-path-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.log-info {
-  margin-bottom: 12px;
-  
-  .log-desc {
-    font-size: 12px;
-    color: var(--app-text-secondary);
   }
 }
 
 .migrate-alert {
-  margin-top: 12px;
-  
-  code {
-    font-family: 'Fira Code', 'Consolas', monospace;
-    font-size: 11px;
-    display: block;
-    margin-top: 4px;
-  }
+  margin-top: 4px;
 }
 
-:deep(.el-radio) {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: 24px;
+.theme-radio-group {
+  :deep(.el-radio-button__inner) {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
 }
 </style>
