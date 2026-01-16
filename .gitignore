@@ -26,3 +26,5 @@ dist-ssr
 # Python cache
 __pycache__/
 *.py[cod]
+Cargo.lock
+package-lock.json
