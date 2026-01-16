@@ -1,0 +1,262 @@
+# English translation file
+
+common:
+  confirm: Confirm
+  cancel: Cancel
+  save: Save
+  delete: Delete
+  edit: Edit
+  copy: Copy
+  close: Close
+  loading: Loading...
+  success: Success
+  error: Error
+  warning: Warning
+  info: Info
+
+header:
+  welcome: Welcome to Mini MQTT Client
+  connect: Connect
+  disconnect: Disconnect
+  connecting: Connecting
+  settings: Settings
+  status:
+    connected: Connected
+    connecting: Connecting...
+    disconnected: Disconnected
+    error: Connection Error
+
+sidebar:
+  server: SERVER
+  addServer: Add Server
+  noServer: No Server
+  subscription: Subscriptions
+  addSubscription: Add Subscription
+  editSubscription: Edit Subscription
+  addSubscriptionHint: Click + to add subscription
+  colorMark: Color Mark
+  noColor: No Color
+  topic: Topic
+  actions: Actions
+  deleteServerConfirm: Are you sure to delete "{name}"?
+  deleteSubscriptionConfirm: Are you sure to unsubscribe "{topic}"?
+  theme:
+    light: Light Mode
+    dark: Dark Mode
+    auto: Follow System
+
+settings:
+  title: Settings
+  theme:
+    title: Appearance
+    desc: Select the application theme, takes effect immediately
+    light: Light
+    dark: Dark
+    auto: Follow System
+  language:
+    title: Language
+    desc: Select the interface language, takes effect immediately
+    zhCN: Chinese
+    enUS: English
+    auto: Follow System
+  storage:
+    title: Data Storage
+    desc: Storage location for configuration and scripts
+    changeLocation: Change Location
+    copyPath: Copy Path
+    migrateAlert: Data will be migrated to the new location
+    migrateTitle: Change Data Storage Location
+    migrateConfirm: Migrate existing data to the new location?
+    migrateBtn: Migrate Data
+    changeOnlyBtn: Change Path Only
+    migrateSuccess: Data migration complete, please restart the application
+    changeSuccess: Storage location changed, please restart the application
+  log:
+    title: Logs
+    desc: Error logs are rotated daily, keeping up to 10 log files
+    openDir: Open Log Directory
+    clear: Clear Logs
+    clearTitle: Clear Logs
+    clearConfirm: Are you sure to clear all log files? This action cannot be undone.
+    clearSuccess: Logs cleared
+  update:
+    title: Check for Updates
+    currentVersion: Current Version
+    check: Check Updates
+    newVersion: New version available
+    upToDate: You are up to date
+    download: Download
+
+publish:
+  topic: Topic
+  payload: Payload
+  qos: QoS
+  retain: Retain
+  send: Send
+  clear: Clear
+  saveTemplate: Save Template
+  scheduledPublish: Scheduled Publish
+  openScripts: Script Manager
+  openTemplates: Templates
+  payloadType: Format
+  topicPlaceholder: Enter topic
+  payloadPlaceholder: Enter message content
+  type: Type
+
+messages:
+  title: Messages
+  clear: Clear Messages
+  noMessages: No messages
+  viewPayload: View Payload
+  copyPayload: Copy
+  copyToPublish: Copy to Publish
+  direction:
+    received: Received
+    sent: Sent
+  clearConfirm: Are you sure to clear all messages?
+  clearTitle: Clear Messages
+  copied: Message copied
+
+template:
+  title: Command Templates
+  drawerTitle: Command Templates
+  save: Save Template
+  name: Template Name
+  namePlaceholder: Enter template name
+  category: Category
+  categoryPlaceholder: Select or create category
+  newCategory: New Category
+  noTemplate: No templates
+  addTemplate: Add Template
+  useTemplate: Use Template
+  deleteConfirm: Are you sure to delete this template?
+  deleteTitle: Delete Template
+  allCategories: All
+  uncategorized: Uncategorized
+  searchPlaceholder: Search templates...
+  saveSuccess: Template saved
+  loadSuccess: Loaded
+  deleteSuccess: Template deleted
+  usedTimes: Used {count} times
+  import: Import Templates
+  export: Export Templates
+  frequentTemplates: Frequent Templates
+  useCount: Use Count
+  importSuccess: Successfully imported {count} templates
+  exportSuccess: Templates exported
+
+script:
+  title: Preprocessing Scripts
+  name: Script Name
+  namePlaceholder: Enter script name
+  description: Description
+  descriptionPlaceholder: Optional script description
+  type: Type
+  beforeSend: Before Send
+  afterReceive: After Receive
+  enabled: Enabled
+  code: Script Code
+  testRun: Test Run
+  testInput: Test Input
+  testOutput: Output
+  noScript: No scripts
+  addScript: Add Script
+  editScript: Edit Script
+  deleteConfirm: Are you sure to delete this script?
+  deleteTitle: Delete Script
+  saveSuccess: Script saved
+  deleteSuccess: Script deleted
+  testSuccess: Test passed
+  testError: Test failed
+  functions: Available Functions
+
+scheduled:
+  title: Scheduled Publish
+  selectTemplate: Select Templates
+  noTemplateSelected: Please select templates to publish
+  mode: Publish Mode
+  once: Once
+  interval: Interval
+  cron: Cron Expression
+  intervalSeconds: Interval (seconds)
+  cronExpression: Cron Expression
+  cronHelp: "Example: */5 * * * * (every 5 minutes)"
+  executeTime: Execute Time
+  selectTime: Select Time
+  start: Start
+  stop: Stop
+  running: Running
+  nextExecution: Next Execution
+  executionCount: Executed {count} times
+  selectedTemplates: "{count} templates selected"
+  status: Publish Status
+  completed: Completed
+
+server:
+  addTitle: Add Server
+  editTitle: Edit Server
+  name: Name
+  namePlaceholder: "e.g., Local Test Server"
+  host: Host
+  hostPlaceholder: "e.g., localhost or 192.168.1.1"
+  port: Port
+  clientId: Client ID
+  clientIdPlaceholder: Leave empty to auto-generate
+  protocol: Protocol Version
+  keepAlive: Keep Alive (seconds)
+  useTls: Use TLS
+  cleanSession: Clean Session
+  username: Username
+  usernamePlaceholder: Optional
+  password: Password
+  passwordPlaceholder: Optional
+  advanced: Advanced Settings
+  tls:
+    title: TLS Settings
+    caCert: CA Certificate
+    caCertPlaceholder: Paste PEM format CA certificate
+    clientCert: Client Certificate
+    clientCertPlaceholder: Paste PEM format client certificate
+    clientKey: Client Key
+    clientKeyPlaceholder: Paste PEM format private key
+    keyPassword: Key Password
+    keyPasswordPlaceholder: If private key is password protected
+  saveSuccess: Server saved
+  duplicateSuccess: Duplicated successfully
+  deleteSuccess: Deleted successfully
+
+errors:
+  connectFailed: Connection failed
+  disconnectFailed: Disconnect failed
+  publishFailed: Publish failed
+  subscribeFailed: Subscribe failed
+  unsubscribeFailed: Unsubscribe failed
+  saveFailed: Save failed
+  deleteFailed: Delete failed
+  loadFailed: Load failed
+  selectServer: Please select a server first
+  inputTopic: Please enter topic
+  inputPayload: Please enter payload
+  inputName: Please enter name
+  hexInvalid: Invalid HEX format
+  jsonInvalid: Invalid JSON format
+  openFolderFailed: Failed to open folder
+  selectFolderFailed: Failed to select folder
+  copyFailed: Copy failed
+  checkUpdateFailed: Failed to check for updates
+  openBrowserFailed: Failed to open browser
+  selectFile: Please select a file first
+
+success:
+  connected: Connected successfully
+  disconnected: Disconnected
+  published: Published successfully
+  subscribed: Subscribed successfully
+  resumed: Subscription resumed
+  paused: Subscription paused
+  unsubscribed: Unsubscribed
+  saved: Saved successfully
+  deleted: Deleted successfully
+  copied: Copied to clipboard
+  templateLoaded: Template loaded
+  autoSubscribed: Auto-subscribed to {count} topics

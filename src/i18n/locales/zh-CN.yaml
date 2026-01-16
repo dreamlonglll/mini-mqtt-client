@@ -1,0 +1,262 @@
+# 中文翻译文件
+
+common:
+  confirm: 确定
+  cancel: 取消
+  save: 保存
+  delete: 删除
+  edit: 编辑
+  copy: 复制
+  close: 关闭
+  loading: 加载中...
+  success: 成功
+  error: 错误
+  warning: 警告
+  info: 提示
+
+header:
+  welcome: 欢迎使用 Mini MQTT Client
+  connect: 连接
+  disconnect: 断开
+  connecting: 连接中
+  settings: 设置
+  status:
+    connected: 已连接
+    connecting: 连接中...
+    disconnected: 未连接
+    error: 连接错误
+
+sidebar:
+  server: SERVER
+  addServer: 添加 Server
+  noServer: 暂无 Server
+  subscription: 订阅
+  addSubscription: 添加订阅
+  editSubscription: 编辑订阅
+  addSubscriptionHint: 点击 + 添加订阅
+  colorMark: 颜色标记
+  noColor: 无颜色
+  topic: Topic
+  actions: 操作
+  deleteServerConfirm: 确定要删除 "{name}" 吗？
+  deleteSubscriptionConfirm: 确定要取消订阅 "{topic}" 吗？
+  theme:
+    light: 浅色模式
+    dark: 深色模式
+    auto: 跟随系统
+
+settings:
+  title: 系统设置
+  theme:
+    title: 外观主题
+    desc: 选择应用的外观主题，立即生效
+    light: 浅色
+    dark: 深色
+    auto: 跟随系统
+  language:
+    title: 界面语言
+    desc: 选择应用的界面语言，立即生效
+    zhCN: 中文
+    enUS: English
+    auto: 跟随系统
+  storage:
+    title: 数据存储
+    desc: 配置和脚本等数据的存储位置
+    changeLocation: 更改位置
+    copyPath: 复制路径
+    migrateAlert: 将迁移数据到新位置
+    migrateTitle: 更改数据存储位置
+    migrateConfirm: 是否将现有数据迁移到新位置？
+    migrateBtn: 迁移数据
+    changeOnlyBtn: 仅更改路径
+    migrateSuccess: 数据迁移完成，请重启应用
+    changeSuccess: 存储位置已更改，请重启应用
+  log:
+    title: 日志
+    desc: 错误日志按天分割，最多保留 10 个日志文件
+    openDir: 打开日志目录
+    clear: 清空日志
+    clearTitle: 清空日志
+    clearConfirm: 确定要清空所有日志文件吗？此操作不可撤销。
+    clearSuccess: 日志已清空
+  update:
+    title: 检查更新
+    currentVersion: 当前版本
+    check: 检查更新
+    newVersion: 发现新版本
+    upToDate: 已是最新版本
+    download: 前往下载
+
+publish:
+  topic: Topic
+  payload: Payload
+  qos: QoS
+  retain: Retain
+  send: 发送
+  clear: 清空
+  saveTemplate: 保存模板
+  scheduledPublish: 定时发布
+  openScripts: 脚本管理
+  openTemplates: 命令模板
+  payloadType: 格式
+  topicPlaceholder: 请输入 Topic
+  payloadPlaceholder: 请输入消息内容
+  type: 类型
+
+messages:
+  title: 消息列表
+  clear: 清空消息
+  noMessages: 暂无消息
+  viewPayload: 查看消息内容
+  copyPayload: 复制
+  copyToPublish: 复制到发布
+  direction:
+    received: 接收
+    sent: 发送
+  clearConfirm: 确定要清空所有消息吗？
+  clearTitle: 清空消息
+  copied: 消息已复制
+
+template:
+  title: 命令模板
+  drawerTitle: 命令模板
+  save: 保存模板
+  name: 模板名称
+  namePlaceholder: 请输入模板名称
+  category: 分类
+  categoryPlaceholder: 选择或创建分类
+  newCategory: 新建分类
+  noTemplate: 暂无模板
+  addTemplate: 添加模板
+  useTemplate: 使用模板
+  deleteConfirm: 确定要删除此模板吗？
+  deleteTitle: 删除模板
+  allCategories: 全部
+  uncategorized: 未分类
+  searchPlaceholder: 搜索模板...
+  saveSuccess: 模板已保存
+  loadSuccess: 已加载
+  deleteSuccess: 模板已删除
+  usedTimes: 使用 {count} 次
+  import: 导入模板
+  export: 导出模板
+  frequentTemplates: 常用模板
+  useCount: 使用次数
+  importSuccess: 成功导入 {count} 个模板
+  exportSuccess: 模板已导出
+
+script:
+  title: 预处理脚本
+  name: 脚本名称
+  namePlaceholder: 请输入脚本名称
+  description: 描述
+  descriptionPlaceholder: 可选的脚本描述
+  type: 类型
+  beforeSend: 发送前
+  afterReceive: 接收后
+  enabled: 启用
+  code: 脚本代码
+  testRun: 测试运行
+  testInput: 测试输入
+  testOutput: 输出结果
+  noScript: 暂无脚本
+  addScript: 添加脚本
+  editScript: 编辑脚本
+  deleteConfirm: 确定要删除此脚本吗？
+  deleteTitle: 删除脚本
+  saveSuccess: 脚本已保存
+  deleteSuccess: 脚本已删除
+  testSuccess: 测试通过
+  testError: 测试失败
+  functions: 可用函数
+
+scheduled:
+  title: 定时发布
+  selectTemplate: 选择模板
+  noTemplateSelected: 请选择要发布的模板
+  mode: 发布模式
+  once: 单次
+  interval: 间隔
+  cron: Cron表达式
+  intervalSeconds: 间隔（秒）
+  cronExpression: Cron 表达式
+  cronHelp: 例如：*/5 * * * * (每5分钟)
+  executeTime: 执行时间
+  selectTime: 选择时间
+  start: 开始
+  stop: 停止
+  running: 运行中
+  nextExecution: 下次执行
+  executionCount: 已执行 {count} 次
+  selectedTemplates: 已选择 {count} 个模板
+  status: 发送状态
+  completed: 已完成
+
+server:
+  addTitle: 添加服务器
+  editTitle: 编辑服务器
+  name: 名称
+  namePlaceholder: 例如：本地测试服务器
+  host: 主机
+  hostPlaceholder: 例如：localhost 或 192.168.1.1
+  port: 端口
+  clientId: Client ID
+  clientIdPlaceholder: 留空则自动生成
+  protocol: 协议版本
+  keepAlive: Keep Alive (秒)
+  useTls: 使用 TLS
+  cleanSession: Clean Session
+  username: 用户名
+  usernamePlaceholder: 可选
+  password: 密码
+  passwordPlaceholder: 可选
+  advanced: 高级设置
+  tls:
+    title: TLS 设置
+    caCert: CA 证书
+    caCertPlaceholder: 粘贴 PEM 格式的 CA 证书
+    clientCert: 客户端证书
+    clientCertPlaceholder: 粘贴 PEM 格式的客户端证书
+    clientKey: 客户端密钥
+    clientKeyPlaceholder: 粘贴 PEM 格式的私钥
+    keyPassword: 密钥密码
+    keyPasswordPlaceholder: 如果私钥有密码保护
+  saveSuccess: 服务器已保存
+  duplicateSuccess: 复制成功
+  deleteSuccess: 删除成功
+
+errors:
+  connectFailed: 连接失败
+  disconnectFailed: 断开失败
+  publishFailed: 发布失败
+  subscribeFailed: 订阅失败
+  unsubscribeFailed: 取消订阅失败
+  saveFailed: 保存失败
+  deleteFailed: 删除失败
+  loadFailed: 加载失败
+  selectServer: 请先选择一个服务器
+  inputTopic: 请输入 Topic
+  inputPayload: 请输入 Payload
+  inputName: 请输入名称
+  hexInvalid: HEX 格式无效
+  jsonInvalid: JSON 格式无效
+  openFolderFailed: 打开文件夹失败
+  selectFolderFailed: 选择文件夹失败
+  copyFailed: 复制失败
+  checkUpdateFailed: 检查更新失败
+  openBrowserFailed: 打开浏览器失败
+  selectFile: 请先选择文件
+
+success:
+  connected: 连接成功
+  disconnected: 已断开连接
+  published: 发布成功
+  subscribed: 订阅成功
+  resumed: 已恢复订阅
+  paused: 已暂停订阅
+  unsubscribed: 已取消订阅
+  saved: 保存成功
+  deleted: 删除成功
+  copied: 已复制到剪贴板
+  templateLoaded: 模板已加载
+  autoSubscribed: 已自动订阅 {count} 个主题

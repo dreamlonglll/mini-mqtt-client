@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="isEdit ? '编辑 Server' : '新增 Server'"
+    :title="isEdit ? $t('server.editTitle') : $t('server.addTitle')"
     width="600px"
     destroy-on-close
     :close-on-click-modal="false"
@@ -16,13 +16,13 @@
     >
       <el-tabs v-model="activeTab">
         <!-- 基本配置 -->
-        <el-tab-pane label="基本配置" name="basic">
-          <el-form-item label="名称" prop="name">
-            <el-input v-model="formData.name" placeholder="给这个连接起个名字" />
+        <el-tab-pane :label="$t('server.name')" name="basic">
+          <el-form-item :label="$t('server.name')" prop="name">
+            <el-input v-model="formData.name" :placeholder="$t('server.namePlaceholder')" />
           </el-form-item>
 
           <!-- 服务器地址：协议 + 主机 + 端口 -->
-          <el-form-item label="服务器地址" required>
+          <el-form-item :label="$t('server.host')" required>
             <div class="address-input">
               <el-select v-model="formData.protocol" class="protocol-select">
                 <el-option label="mqtt://" value="mqtt" />
@@ -31,7 +31,7 @@
                 <el-option label="wss://" value="wss" />
               </el-select>
               <el-form-item prop="host" class="host-input" style="margin-bottom: 0">
-                <el-input v-model="formData.host" placeholder="主机地址" />
+                <el-input v-model="formData.host" :placeholder="$t('server.hostPlaceholder')" />
               </el-form-item>
               <span class="separator">:</span>
               <el-form-item prop="port" class="port-input" style="margin-bottom: 0">
@@ -40,21 +40,21 @@
                   :min="1"
                   :max="65535"
                   :controls="false"
-                  placeholder="端口"
+                  :placeholder="$t('server.port')"
                 />
               </el-form-item>
             </div>
           </el-form-item>
 
-          <el-form-item label="协议版本" prop="protocol_version">
+          <el-form-item :label="$t('server.protocol')" prop="protocol_version">
             <el-radio-group v-model="formData.protocol_version">
               <el-radio value="3.1.1">MQTT 3.1.1</el-radio>
               <el-radio value="5.0">MQTT 5.0</el-radio>
             </el-radio-group>
           </el-form-item>
 
-          <el-form-item label="Client ID" prop="client_id">
-            <el-input v-model="formData.client_id" placeholder="留空则自动生成">
+          <el-form-item :label="$t('server.clientId')" prop="client_id">
+            <el-input v-model="formData.client_id" :placeholder="$t('server.clientIdPlaceholder')">
               <template #append>
                 <el-button @click="generateClientId">
                   <el-icon><RefreshRight /></el-icon>
@@ -65,68 +65,67 @@
         </el-tab-pane>
 
         <!-- 认证配置 -->
-        <el-tab-pane label="认证" name="auth">
-          <el-form-item label="用户名" prop="username">
-            <el-input v-model="formData.username" placeholder="可选" />
+        <el-tab-pane :label="$t('server.username')" name="auth">
+          <el-form-item :label="$t('server.username')" prop="username">
+            <el-input v-model="formData.username" :placeholder="$t('server.usernamePlaceholder')" />
           </el-form-item>
 
-          <el-form-item label="密码" prop="password">
+          <el-form-item :label="$t('server.password')" prop="password">
             <el-input
               v-model="formData.password"
               type="password"
-              placeholder="可选"
+              :placeholder="$t('server.passwordPlaceholder')"
               show-password
             />
           </el-form-item>
         </el-tab-pane>
 
         <!-- 高级配置 -->
-        <el-tab-pane label="高级" name="advanced">
-          <el-form-item label="Keep Alive" prop="keep_alive">
+        <el-tab-pane :label="$t('server.advanced')" name="advanced">
+          <el-form-item :label="$t('server.keepAlive')" prop="keep_alive">
             <el-input-number v-model="formData.keep_alive" :min="0" :max="65535" />
           </el-form-item>
-          <el-form-item label="Clean Session">
+          <el-form-item :label="$t('server.cleanSession')">
             <el-switch v-model="formData.clean_session" />
           </el-form-item>
 
-          <el-form-item label="TLS/SSL" v-if="formData.protocol === 'mqtts' || formData.protocol === 'wss'">
+          <el-form-item :label="$t('server.useTls')" v-if="formData.protocol === 'mqtts' || formData.protocol === 'wss'">
             <el-switch v-model="formData.use_tls" disabled />
-            <span class="form-hint">已根据协议自动启用</span>
           </el-form-item>
 
           <template v-if="formData.protocol === 'mqtts' || formData.protocol === 'wss'">
-            <el-form-item label="CA 证书" prop="ca_cert">
+            <el-form-item :label="$t('server.tls.caCert')" prop="ca_cert">
               <el-input
                 v-model="formData.ca_cert"
                 type="textarea"
                 :rows="3"
-                placeholder="PEM 格式证书内容（可选）"
+                :placeholder="$t('server.tls.caCertPlaceholder')"
               />
             </el-form-item>
 
-            <el-form-item label="客户端证书" prop="client_cert">
+            <el-form-item :label="$t('server.tls.clientCert')" prop="client_cert">
               <el-input
                 v-model="formData.client_cert"
                 type="textarea"
                 :rows="3"
-                placeholder="PEM 格式证书内容（可选）"
+                :placeholder="$t('server.tls.clientCertPlaceholder')"
               />
             </el-form-item>
 
-            <el-form-item label="客户端私钥" prop="client_key">
+            <el-form-item :label="$t('server.tls.clientKey')" prop="client_key">
               <el-input
                 v-model="formData.client_key"
                 type="textarea"
                 :rows="3"
-                placeholder="PEM 格式私钥内容（可选）"
+                :placeholder="$t('server.tls.clientKeyPlaceholder')"
               />
             </el-form-item>
 
-            <el-form-item label="私钥密码" prop="client_key_password">
+            <el-form-item :label="$t('server.tls.keyPassword')" prop="client_key_password">
               <el-input
                 v-model="formData.client_key_password"
                 type="password"
-                placeholder="私钥密码（如果私钥已加密）"
+                :placeholder="$t('server.tls.keyPasswordPlaceholder')"
                 show-password
               />
             </el-form-item>
@@ -136,9 +135,9 @@
     </el-form>
 
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
+      <el-button @click="$emit('update:visible', false)">{{ $t('common.cancel') }}</el-button>
       <el-button type="primary" :loading="saving" @click="handleSave">
-        保存
+        {{ $t('common.save') }}
       </el-button>
     </template>
   </el-dialog>
@@ -146,11 +145,14 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, reactive } from "vue";
+import { useI18n } from "vue-i18n";
 import type { FormInstance, FormRules } from "element-plus";
 import { RefreshRight } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { useServerStore } from "@/stores/server";
 import type { MqttServer } from "@/types/mqtt";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
@@ -229,18 +231,17 @@ watch(() => formData.protocol, (newProtocol) => {
   }
 });
 
-const rules: FormRules = {
+const rules = computed<FormRules>(() => ({
   name: [
-    { required: true, message: "请输入名称", trigger: "blur" },
-    { min: 1, max: 50, message: "名称长度在 1-50 个字符", trigger: "blur" },
+    { required: true, message: t('errors.inputName'), trigger: "blur" },
   ],
   host: [
-    { required: true, message: "请输入主机地址", trigger: "blur" },
+    { required: true, message: t('server.hostPlaceholder'), trigger: "blur" },
   ],
   port: [
-    { required: true, message: "请输入端口", trigger: "blur" },
+    { required: true, message: t('server.port'), trigger: "blur" },
   ],
-};
+}));
 
 watch(
   () => props.visible,
@@ -320,15 +321,15 @@ const handleSave = async () => {
   try {
     if (isEdit.value) {
       await serverStore.updateServer(serverData);
-      ElMessage.success("更新成功");
+      ElMessage.success(t('server.saveSuccess'));
     } else {
       await serverStore.createServer(serverData);
-      ElMessage.success("创建成功");
+      ElMessage.success(t('server.saveSuccess'));
     }
     emit("saved");
     emit("update:visible", false);
   } catch (error) {
-    ElMessage.error(`保存失败: ${error}`);
+    ElMessage.error(`${t('errors.saveFailed')}: ${error}`);
   } finally {
     saving.value = false;
   }

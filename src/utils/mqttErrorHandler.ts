@@ -1,4 +1,5 @@
 import { errorHandler, ErrorType } from './errorHandler'
+import i18n from '@/i18n'
 
 /**
  * MQTT 错误信息接口
@@ -168,12 +169,13 @@ export function getMqttStatusInfo(status: MqttConnectionStatus): {
   type: 'success' | 'warning' | 'danger' | 'info' 
   icon?: string
 } {
+  const t = i18n.global.t
   const statusMap: Record<MqttConnectionStatus, { text: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
-    'disconnected': { text: '未连接', type: 'info' },
-    'connecting': { text: '连接中...', type: 'warning' },
-    'connected': { text: '已连接', type: 'success' },
-    'reconnecting': { text: '重连中...', type: 'warning' },
-    'error': { text: '连接错误', type: 'danger' }
+    'disconnected': { text: t('header.status.disconnected'), type: 'info' },
+    'connecting': { text: t('header.status.connecting'), type: 'warning' },
+    'connected': { text: t('header.status.connected'), type: 'success' },
+    'reconnecting': { text: t('header.status.connecting'), type: 'warning' },
+    'error': { text: t('header.status.error'), type: 'danger' }
   }
   
   return statusMap[status] || { text: status, type: 'info' }

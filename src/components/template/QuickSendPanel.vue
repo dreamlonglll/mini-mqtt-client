@@ -4,11 +4,11 @@
     <div class="panel-header">
       <div class="header-title">
         <el-icon><Lightning /></el-icon>
-        <span>快速发送</span>
+        <span>{{ $t('publish.send') }}</span>
       </div>
       <el-button text size="small" @click="$emit('manage')">
         <el-icon><Setting /></el-icon>
-        管理
+        {{ $t('publish.openTemplates') }}
       </el-button>
     </div>
 
@@ -16,7 +16,7 @@
     <div class="search-wrapper">
       <el-input
         v-model="searchKeyword"
-        placeholder="搜索模板..."
+        :placeholder="$t('template.searchPlaceholder')"
         :prefix-icon="Search"
         clearable
         size="small"
@@ -33,7 +33,7 @@
             effect="plain"
             @click="selectedCategory = null"
           >
-            全部
+            {{ $t('template.allCategories') }}
           </el-tag>
           <el-tag
             v-for="cat in categories"
@@ -82,11 +82,11 @@
           <!-- 空状态 -->
           <el-empty
             v-if="displayedTemplates.length === 0"
-            description="暂无模板"
+            :description="$t('template.noTemplate')"
             :image-size="60"
           >
             <el-button type="primary" size="small" @click="$emit('manage')">
-              创建模板
+              {{ $t('template.addTemplate') }}
             </el-button>
           </el-empty>
         </div>
@@ -97,7 +97,7 @@
     <div v-if="recentTemplates.length > 0" class="recent-section">
       <div class="recent-header">
         <el-icon><Clock /></el-icon>
-        <span>最近使用</span>
+        <span>Recent</span>
       </div>
       <div class="recent-list">
         <el-tag
@@ -116,6 +116,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import {
   Search,
@@ -127,6 +128,8 @@ import {
 // 使用 SVG 替代 Lightning 图标
 import { Promotion as Lightning } from '@element-plus/icons-vue'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   serverId: number
@@ -197,9 +200,9 @@ async function handleSend(template: CommandTemplate) {
   try {
     const used = await templateStore.useTemplate(template.id!)
     emit('send', used)
-    ElMessage.success(`已加载: ${template.name}`)
+    ElMessage.success(`${t('template.loadSuccess')}: ${template.name}`)
   } catch (error) {
-    ElMessage.error('加载模板失败')
+    ElMessage.error(t('errors.loadFailed'))
   }
 }
 </script>

@@ -63,7 +63,7 @@ impl LogManager {
             .create(true)
             .append(true)
             .open(&log_file)
-            .map_err(|e| format!("无法打开日志文件: {}", e))?;
+            .map_err(|e| format!("Failed to open log file: {}", e))?;
 
         // 格式化日志条目
         let log_line = format!(
@@ -79,7 +79,7 @@ impl LogManager {
         );
 
         file.write_all(log_line.as_bytes())
-            .map_err(|e| format!("写入日志失败: {}", e))?;
+            .map_err(|e| format!("Failed to write log: {}", e))?;
 
         // 清理旧日志文件
         self.cleanup_old_logs()?;
@@ -91,7 +91,7 @@ impl LogManager {
     fn rotate_log_file(&self, log_file: &PathBuf) -> Result<(), String> {
         let timestamp = Local::now().format("%Y-%m-%d_%H%M%S").to_string();
         let rotated_name = log_file.with_extension(format!("{}.log", timestamp));
-        fs::rename(log_file, rotated_name).map_err(|e| format!("轮转日志文件失败: {}", e))
+        fs::rename(log_file, rotated_name).map_err(|e| format!("Failed to rotate log file: {}", e))
     }
 
     /// 清理旧日志文件
@@ -142,7 +142,7 @@ impl LogManager {
             return Ok(Vec::new());
         }
 
-        let file = File::open(&log_file).map_err(|e| format!("无法读取日志文件: {}", e))?;
+        let file = File::open(&log_file).map_err(|e| format!("Failed to read log file: {}", e))?;
 
         let reader = BufReader::new(file);
         let lines: Vec<String> = reader

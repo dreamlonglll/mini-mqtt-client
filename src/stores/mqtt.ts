@@ -7,6 +7,7 @@ import type { ConnectionStatus, MqttMessage } from "@/types/mqtt";
 import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
 import { handleScriptError } from "@/utils/errorHandler";
+import i18n from "@/i18n";
 
 interface ConnectionState {
   server_id: number;
@@ -48,7 +49,7 @@ export const useMqttStore = defineStore("mqtt", () => {
       // 如果有错误，使用 ElMessage 显示
       if (error && status === "error") {
         ElMessage.error({
-          message: `连接错误: ${error}`,
+          message: `${i18n.global.t('errors.connectFailed')}: ${error}`,
           duration: 5000,
         });
       }

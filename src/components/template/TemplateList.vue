@@ -5,7 +5,7 @@
       <div class="toolbar-left">
         <el-input
           v-model="searchKeyword"
-          placeholder="搜索模板..."
+          :placeholder="$t('template.searchPlaceholder')"
           :prefix-icon="Search"
           clearable
           class="search-input"
@@ -13,7 +13,7 @@
         />
         <el-select
           v-model="selectedCategory"
-          placeholder="全部分类"
+          :placeholder="$t('template.allCategories')"
           clearable
           class="category-select"
           @change="handleCategoryChange"
@@ -28,17 +28,17 @@
       </div>
       <div class="toolbar-right">
         <el-button type="primary" :icon="Plus" @click="handleCreate">
-          新建模板
+          {{ $t('template.addTemplate') }}
         </el-button>
         <el-dropdown @command="handleCommand">
           <el-button :icon="MoreFilled" />
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="import" :icon="Upload">
-                导入模板
+                {{ $t('template.import') }}
               </el-dropdown-item>
               <el-dropdown-item command="export" :icon="Download">
-                导出模板
+                {{ $t('template.export') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -50,7 +50,7 @@
     <div v-if="frequentTemplates.length > 0" class="frequent-section">
       <div class="section-header">
         <el-icon><Star /></el-icon>
-        <span>常用模板</span>
+        <span>{{ $t('template.frequentTemplates') }}</span>
       </div>
       <div class="frequent-tags">
         <el-tag
@@ -75,7 +75,7 @@
         class="template-table"
         @row-dblclick="handleQuickSend"
       >
-        <el-table-column prop="name" label="模板名称" min-width="140">
+        <el-table-column prop="name" :label="$t('template.name')" min-width="140">
           <template #default="{ row }">
             <div class="template-name-cell">
               <span class="name">{{ row.name }}</span>
@@ -86,13 +86,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="topic" label="主题" min-width="180" show-overflow-tooltip>
+        <el-table-column prop="topic" :label="$t('publish.topic')" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <code class="topic-code">{{ row.topic }}</code>
           </template>
         </el-table-column>
 
-        <el-table-column prop="payload_type" label="类型" width="80" align="center">
+        <el-table-column prop="payload_type" :label="$t('publish.type')" width="80" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="getPayloadTypeTag(row.payload_type)">
               {{ row.payload_type.toUpperCase() }}
@@ -113,7 +113,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="category" label="分类" width="100">
+        <el-table-column prop="category" :label="$t('template.category')" width="100">
           <template #default="{ row }">
             <el-tag v-if="row.category" size="small" effect="plain" type="info">
               {{ row.category }}
@@ -122,16 +122,16 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="use_count" label="使用次数" width="90" align="center">
+        <el-table-column prop="use_count" :label="$t('template.useCount')" width="90" align="center">
           <template #default="{ row }">
             <span class="use-count">{{ row.use_count }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column :label="$t('sidebar.actions')" width="200" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
-              <el-tooltip content="发送" placement="top">
+              <el-tooltip :content="$t('publish.send')" placement="top">
                 <el-button
                   size="small"
                   type="primary"
@@ -140,7 +140,7 @@
                   @click="handleQuickSend(row)"
                 />
               </el-tooltip>
-              <el-tooltip content="编辑" placement="top">
+              <el-tooltip :content="$t('common.edit')" placement="top">
                 <el-button
                   size="small"
                   :icon="Edit"
@@ -148,7 +148,7 @@
                   @click="handleEdit(row)"
                 />
               </el-tooltip>
-              <el-tooltip content="复制" placement="top">
+              <el-tooltip :content="$t('common.copy')" placement="top">
                 <el-button
                   size="small"
                   :icon="CopyDocument"
@@ -156,7 +156,7 @@
                   @click="handleDuplicate(row)"
                 />
               </el-tooltip>
-              <el-tooltip content="删除" placement="top">
+              <el-tooltip :content="$t('common.delete')" placement="top">
                 <el-button
                   size="small"
                   type="danger"
@@ -173,11 +173,11 @@
       <!-- 空状态 -->
       <el-empty
         v-if="!loading && filteredTemplates.length === 0"
-        description="暂无模板"
+        :description="$t('template.noTemplate')"
         :image-size="80"
       >
         <el-button type="primary" @click="handleCreate">
-          创建第一个模板
+          {{ $t('template.addTemplate') }}
         </el-button>
       </el-empty>
     </div>
@@ -192,7 +192,7 @@
     />
 
     <!-- 导入对话框 -->
-    <el-dialog v-model="showImportDialog" title="导入模板" width="500px">
+    <el-dialog v-model="showImportDialog" :title="$t('template.import')" width="500px">
       <el-upload
         ref="uploadRef"
         :auto-upload="false"
@@ -203,18 +203,18 @@
       >
         <el-icon class="upload-icon"><Upload /></el-icon>
         <div class="upload-text">
-          将JSON文件拖到此处，或<em>点击上传</em>
+          Drop JSON file here, or <em>click to upload</em>
         </div>
         <template #tip>
           <div class="upload-tip">
-            请选择之前导出的JSON模板文件
+            Select exported JSON template file
           </div>
         </template>
       </el-upload>
       <template #footer>
-        <el-button @click="showImportDialog = false">取消</el-button>
+        <el-button @click="showImportDialog = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleImport" :loading="importing">
-          导入
+          {{ $t('template.import') }}
         </el-button>
       </template>
     </el-dialog>
@@ -223,6 +223,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search,
@@ -240,6 +241,8 @@ import {
 } from '@element-plus/icons-vue'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
 import TemplateDialog from './TemplateDialog.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   serverId: number
@@ -314,9 +317,9 @@ async function handleQuickSend(template: CommandTemplate) {
   try {
     const used = await templateStore.useTemplate(template.id!)
     emit('use', used)
-    ElMessage.success(`已加载模板: ${template.name}`)
+    ElMessage.success(`${t('template.loadSuccess')}: ${template.name}`)
   } catch (error) {
-    ElMessage.error('加载模板失败')
+    ElMessage.error(t('errors.loadFailed'))
   }
 }
 
@@ -324,19 +327,21 @@ async function handleQuickSend(template: CommandTemplate) {
 async function handleDuplicate(template: CommandTemplate) {
   try {
     const { value: newName } = await ElMessageBox.prompt(
-      '请输入新模板名称',
-      '复制模板',
+      t('template.namePlaceholder'),
+      t('common.copy'),
       {
-        inputValue: `${template.name} - 副本`,
+        inputValue: `${template.name} - Copy`,
         inputPattern: /\S+/,
-        inputErrorMessage: '名称不能为空'
+        inputErrorMessage: t('errors.inputName'),
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel')
       }
     )
     await templateStore.duplicateTemplate(template.id!, newName)
-    ElMessage.success('模板已复制')
+    ElMessage.success(t('server.duplicateSuccess'))
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('复制模板失败')
+      ElMessage.error(t('errors.saveFailed'))
     }
   }
 }
@@ -345,15 +350,15 @@ async function handleDuplicate(template: CommandTemplate) {
 async function handleDelete(template: CommandTemplate) {
   try {
     await ElMessageBox.confirm(
-      `确定要删除模板 "${template.name}" 吗？`,
-      '删除确认',
-      { type: 'warning' }
+      t('template.deleteConfirm'),
+      t('template.deleteTitle'),
+      { type: 'warning', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') }
     )
     await templateStore.deleteTemplate(template.id!)
-    ElMessage.success('模板已删除')
+    ElMessage.success(t('template.deleteSuccess'))
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除模板失败')
+      ElMessage.error(t('errors.deleteFailed'))
     }
   }
 }
@@ -362,7 +367,7 @@ async function handleDelete(template: CommandTemplate) {
 function handleSaved() {
   showDialog.value = false
   editingTemplate.value = null
-  ElMessage.success('模板已保存')
+  ElMessage.success(t('success.saved'))
 }
 
 // 下拉菜单命令处理
@@ -390,9 +395,9 @@ async function handleExport() {
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
     
-    ElMessage.success('模板已导出')
+    ElMessage.success(t('template.exportSuccess'))
   } catch (error) {
-    ElMessage.error('导出失败')
+    ElMessage.error(t('errors.saveFailed'))
   }
 }
 
@@ -408,18 +413,18 @@ function handleFileChange(file: any) {
 // 导入模板
 async function handleImport() {
   if (!importFileContent.value) {
-    ElMessage.warning('请先选择文件')
+    ElMessage.warning(t('errors.selectFile'))
     return
   }
 
   importing.value = true
   try {
     const count = await templateStore.importTemplates(props.serverId, importFileContent.value)
-    ElMessage.success(`成功导入 ${count} 个模板`)
+    ElMessage.success(t('template.importSuccess', { count }))
     showImportDialog.value = false
     importFileContent.value = ''
   } catch (error) {
-    ElMessage.error('导入失败: ' + error)
+    ElMessage.error(`${t('errors.loadFailed')}: ${error}`)
   } finally {
     importing.value = false
   }

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    title="脚本管理"
+    :title="$t('script.title')"
     width="800px"
     :close-on-click-modal="false"
     @open="handleOpen"
@@ -10,9 +10,9 @@
       <!-- 左侧脚本列表 -->
       <div class="script-list-panel">
         <div class="panel-header">
-          <span>脚本列表</span>
+          <span>{{ $t('script.title') }}</span>
           <el-button type="primary" size="small" :icon="Plus" @click="handleAdd">
-            新增
+            {{ $t('script.addScript') }}
           </el-button>
         </div>
         <div class="script-list" v-loading="loading">
@@ -25,7 +25,7 @@
           >
             <div class="script-info">
               <span class="script-name">{{ script.name }}</span>
-              <el-tag size="small" :type="getTypeTag(script.script_type)">
+              <el-tag size="small" style="width: 100px;" :type="getTypeTag(script.script_type)">
                 {{ getTypeLabel(script.script_type) }}
               </el-tag>
             </div>
@@ -36,7 +36,7 @@
               @click.stop
             />
           </div>
-          <el-empty v-if="scripts.length === 0" description="暂无脚本" :image-size="60" />
+          <el-empty v-if="scripts.length === 0" :description="$t('script.noScript')" :image-size="60" />
         </div>
       </div>
 
@@ -44,7 +44,7 @@
       <div class="script-editor-panel">
         <template v-if="selectedScript || isAdding">
           <div class="panel-header">
-            <span>{{ isAdding ? '新增脚本' : '编辑脚本' }}</span>
+            <span>{{ isAdding ? $t('script.addScript') : $t('script.editScript') }}</span>
             <div class="header-actions">
               <el-button 
                 v-if="!isAdding" 
@@ -54,38 +54,38 @@
                 :icon="Delete"
                 @click="handleDelete"
               >
-                删除
+                {{ $t('common.delete') }}
               </el-button>
             </div>
           </div>
-          <el-form :model="formData" label-width="80px" class="script-form">
-            <el-form-item label="名称" required>
-              <el-input v-model="formData.name" placeholder="脚本名称" />
+          <el-form :model="formData" label-width="100px" class="script-form">
+            <el-form-item :label="$t('script.name')" required>
+              <el-input v-model="formData.name" :placeholder="$t('script.namePlaceholder')" />
             </el-form-item>
-            <el-form-item label="类型" required>
+            <el-form-item :label="$t('script.type')" required>
               <el-radio-group v-model="formData.script_type" :disabled="!isAdding">
-                <el-radio value="before_publish">发送前处理</el-radio>
-                <el-radio value="after_receive">接收后处理</el-radio>
+                <el-radio value="before_publish">{{ $t('script.beforeSend') }}</el-radio>
+                <el-radio value="after_receive">{{ $t('script.afterReceive') }}</el-radio>
               </el-radio-group>
             </el-form-item>
-            <el-form-item label="描述">
-              <el-input v-model="formData.description" placeholder="脚本描述（可选）" />
+            <el-form-item :label="$t('script.description')">
+              <el-input v-model="formData.description" :placeholder="$t('script.descriptionPlaceholder')" />
             </el-form-item>
-            <el-form-item label="脚本代码" required>
+            <el-form-item :label="$t('script.code')" required>
               <div class="code-editor-wrapper">
                 <div class="code-hint">
                   <code v-if="formData.script_type === 'before_publish'">
-                    定义 process(payload) 函数，返回处理后的 payload
+                    Define process(payload) function, return processed payload
                   </code>
                   <code v-else>
-                    定义 process(payload, topic) 函数，返回处理后的 payload
+                    Define process(payload, topic) function, return processed payload
                   </code>
                 </div>
                 <el-input
                   v-model="formData.code"
                   type="textarea"
                   :rows="12"
-                  placeholder="请输入 JavaScript 代码"
+                  placeholder="Enter JavaScript code"
                   class="code-textarea"
                 />
               </div>
@@ -93,87 +93,90 @@
           </el-form>
           <div class="form-actions">
             <div class="left-actions">
-              <el-button :icon="FolderOpened" @click="handleImportFile">导入js脚本</el-button>
-              <el-button :icon="Document" @click="showFunctionList = true">查看可用函数</el-button>
+              <el-button :icon="FolderOpened" @click="handleImportFile">Import JS</el-button>
+              <el-button :icon="Document" @click="showFunctionList = true">Functions</el-button>
             </div>
             <el-button type="primary" :loading="saving" @click="handleSave">
-              保存
+              {{ $t('common.save') }}
             </el-button>
           </div>
         </template>
         <div v-else class="empty-editor">
-          <el-empty description="请选择或新增脚本" :image-size="80" />
+          <el-empty :description="$t('script.noScript')" :image-size="80" />
         </div>
       </div>
     </div>
 
     <template #footer>
-      <el-button @click="dialogVisible = false">关闭</el-button>
+      <el-button @click="dialogVisible = false">{{ $t('common.close') }}</el-button>
     </template>
   </el-dialog>
 
   <!-- 可用函数列表弹框 -->
   <el-dialog
     v-model="showFunctionList"
-    title="可用函数列表"
+    :title="$t('script.functions')"
     width="600px"
     :append-to-body="true"
   >
     <div class="function-list">
       <div class="function-category">
-        <h4>基础函数</h4>
+        <h4>Basic Functions</h4>
         <el-table :data="basicFunctions" size="small">
-          <el-table-column prop="name" label="函数" width="200" />
-          <el-table-column prop="desc" label="说明" />
+          <el-table-column prop="name" label="Function" width="200" />
+          <el-table-column prop="desc" label="Description" />
         </el-table>
       </div>
       
       <div class="function-category">
-        <h4>编码转换</h4>
+        <h4>Encoding</h4>
         <el-table :data="encodingFunctions" size="small">
-          <el-table-column prop="name" label="函数" width="250" />
-          <el-table-column prop="desc" label="说明" />
+          <el-table-column prop="name" label="Function" width="250" />
+          <el-table-column prop="desc" label="Description" />
         </el-table>
       </div>
       
       <div class="function-category">
-        <h4>哈希函数</h4>
+        <h4>Hash Functions</h4>
         <el-table :data="hashFunctions" size="small">
-          <el-table-column prop="name" label="函数" width="250" />
-          <el-table-column prop="desc" label="说明" />
+          <el-table-column prop="name" label="Function" width="250" />
+          <el-table-column prop="desc" label="Description" />
         </el-table>
       </div>
       
       <div class="function-category">
-        <h4>AES 加解密</h4>
+        <h4>AES Encryption</h4>
         <el-table :data="aesFunctions" size="small">
-          <el-table-column prop="name" label="函数" width="320" />
-          <el-table-column prop="desc" label="说明" />
+          <el-table-column prop="name" label="Function" width="320" />
+          <el-table-column prop="desc" label="Description" />
         </el-table>
       </div>
       
       <div class="function-category">
-        <h4>其他工具</h4>
+        <h4>Other Tools</h4>
         <el-table :data="otherFunctions" size="small">
-          <el-table-column prop="name" label="函数" width="200" />
-          <el-table-column prop="desc" label="说明" />
+          <el-table-column prop="name" label="Function" width="200" />
+          <el-table-column prop="desc" label="Description" />
         </el-table>
       </div>
     </div>
 
     <template #footer>
-      <el-button @click="showFunctionList = false">关闭</el-button>
+      <el-button @click="showFunctionList = false">{{ $t('common.close') }}</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Plus, Delete, Document, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useScriptStore, type Script, type ScriptType } from '@/stores/script'
 import { open } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   visible: boolean
@@ -201,46 +204,46 @@ const showFunctionList = ref(false)
 
 // 可用函数列表数据
 const basicFunctions = [
-  { name: 'JSON.parse(str)', desc: '解析 JSON 字符串' },
-  { name: 'JSON.stringify(obj)', desc: '对象转 JSON 字符串' },
-  { name: 'console.log(...args)', desc: '输出日志（调试用）' },
-  { name: 'btoa(str)', desc: 'Base64 编码' },
-  { name: 'atob(str)', desc: 'Base64 解码' },
+  { name: 'JSON.parse(str)', desc: 'Parse JSON string' },
+  { name: 'JSON.stringify(obj)', desc: 'Object to JSON string' },
+  { name: 'console.log(...args)', desc: 'Output log (debug)' },
+  { name: 'btoa(str)', desc: 'Base64 encode' },
+  { name: 'atob(str)', desc: 'Base64 decode' },
 ]
 
 const encodingFunctions = [
-  { name: 'crypto.stringToBytes(str)', desc: '字符串转 Uint8Array' },
-  { name: 'crypto.bytesToString(bytes)', desc: 'Uint8Array 转字符串' },
-  { name: 'crypto.bytesToBase64(bytes)', desc: 'Uint8Array 转 Base64' },
-  { name: 'crypto.base64ToBytes(str)', desc: 'Base64 转 Uint8Array' },
-  { name: 'crypto.bytesToHex(bytes)', desc: 'Uint8Array 转十六进制' },
-  { name: 'crypto.hexToBytes(hex)', desc: '十六进制转 Uint8Array' },
+  { name: 'crypto.stringToBytes(str)', desc: 'String to Uint8Array' },
+  { name: 'crypto.bytesToString(bytes)', desc: 'Uint8Array to string' },
+  { name: 'crypto.bytesToBase64(bytes)', desc: 'Uint8Array to Base64' },
+  { name: 'crypto.base64ToBytes(str)', desc: 'Base64 to Uint8Array' },
+  { name: 'crypto.bytesToHex(bytes)', desc: 'Uint8Array to hex' },
+  { name: 'crypto.hexToBytes(hex)', desc: 'Hex to Uint8Array' },
 ]
 
 const hashFunctions = [
-  { name: 'await crypto.sha256(data)', desc: 'SHA-256 哈希（返回十六进制）' },
-  { name: 'await crypto.sha1(data)', desc: 'SHA-1 哈希（返回十六进制）' },
-  { name: 'crypto.md5(data)', desc: 'MD5 哈希（返回十六进制）' },
+  { name: 'await crypto.sha256(data)', desc: 'SHA-256 hash (returns hex)' },
+  { name: 'await crypto.sha1(data)', desc: 'SHA-1 hash (returns hex)' },
+  { name: 'crypto.md5(data)', desc: 'MD5 hash (returns hex)' },
   { name: 'await crypto.hmacSha256(key, data)', desc: 'HMAC-SHA256' },
 ]
 
 const aesFunctions = [
-  { name: 'await crypto.aesGcmEncrypt(text, keyBase64, ivBase64?)', desc: 'AES-GCM 加密（Base64 格式）' },
-  { name: 'await crypto.aesGcmDecrypt(cipherBase64, keyBase64)', desc: 'AES-GCM 解密（Base64 格式）' },
-  { name: 'await crypto.aesCbcEncrypt(text, keyBase64, ivBase64?)', desc: 'AES-CBC 加密（Base64 格式）' },
-  { name: 'await crypto.aesCbcDecrypt(cipherBase64, keyBase64)', desc: 'AES-CBC 解密（Base64 格式）' },
-  { name: 'await crypto.aesGcmEncryptHex(text, keyHex, ivHex?)', desc: 'AES-GCM 加密（Hex 格式）' },
-  { name: 'await crypto.aesGcmDecryptHex(cipherHex, keyHex)', desc: 'AES-GCM 解密（Hex 格式）' },
-  { name: 'await crypto.aesCbcEncryptHex(text, keyHex, ivHex?)', desc: 'AES-CBC 加密（Hex 格式）' },
-  { name: 'await crypto.aesCbcDecryptHex(cipherHex, keyHex)', desc: 'AES-CBC 解密（Hex 格式）' },
+  { name: 'await crypto.aesGcmEncrypt(text, keyBase64, ivBase64?)', desc: 'AES-GCM encrypt (Base64)' },
+  { name: 'await crypto.aesGcmDecrypt(cipherBase64, keyBase64)', desc: 'AES-GCM decrypt (Base64)' },
+  { name: 'await crypto.aesCbcEncrypt(text, keyBase64, ivBase64?)', desc: 'AES-CBC encrypt (Base64)' },
+  { name: 'await crypto.aesCbcDecrypt(cipherBase64, keyBase64)', desc: 'AES-CBC decrypt (Base64)' },
+  { name: 'await crypto.aesGcmEncryptHex(text, keyHex, ivHex?)', desc: 'AES-GCM encrypt (Hex)' },
+  { name: 'await crypto.aesGcmDecryptHex(cipherHex, keyHex)', desc: 'AES-GCM decrypt (Hex)' },
+  { name: 'await crypto.aesCbcEncryptHex(text, keyHex, ivHex?)', desc: 'AES-CBC encrypt (Hex)' },
+  { name: 'await crypto.aesCbcDecryptHex(cipherHex, keyHex)', desc: 'AES-CBC decrypt (Hex)' },
 ]
 
 const otherFunctions = [
-  { name: 'crypto.generateKey(bits)', desc: '生成随机密钥（Base64）' },
-  { name: 'crypto.generateIv(length)', desc: '生成随机 IV（Base64）' },
-  { name: 'crypto.randomBytes(length)', desc: '生成随机字节' },
-  { name: 'crypto.xor(data, key)', desc: 'XOR 加解密' },
-  { name: 'crypto.crc32(data)', desc: 'CRC32 校验' },
+  { name: 'crypto.generateKey(bits)', desc: 'Generate random key (Base64)' },
+  { name: 'crypto.generateIv(length)', desc: 'Generate random IV (Base64)' },
+  { name: 'crypto.randomBytes(length)', desc: 'Generate random bytes' },
+  { name: 'crypto.xor(data, key)', desc: 'XOR encrypt/decrypt' },
+  { name: 'crypto.crc32(data)', desc: 'CRC32 checksum' },
 ]
 
 const formData = ref({
@@ -273,17 +276,17 @@ function resetForm() {
 // 获取默认代码
 function getDefaultCode(type: ScriptType): string {
   if (type === 'before_publish') {
-    return `// 定义 process 函数处理 payload，点击"查看可用函数"查看更多
+    return `// Define process function to handle payload. Click "Functions" to see available APIs
 
 async function process(payload) {
-  // 在这里处理 payload
+  // do nothing
   return payload;
 }`
   } else {
-    return `// 定义 process 函数处理 payload，点击"查看可用函数"查看更多
+    return `// Define process function to handle payload. Click "Functions" to see available APIs
 
 async function process(payload, topic) {
-  // 在这里处理接收到的消息
+  // do nothing
   return payload;
 }`
   }
@@ -311,11 +314,11 @@ function handleAdd() {
 // 保存脚本
 async function handleSave() {
   if (!formData.value.name.trim()) {
-    ElMessage.warning('请输入脚本名称')
+    ElMessage.warning(t('errors.inputName'))
     return
   }
   if (!formData.value.code.trim()) {
-    ElMessage.warning('请输入脚本代码')
+    ElMessage.warning(t('script.code'))
     return
   }
 
@@ -330,7 +333,7 @@ async function handleSave() {
         enabled: true,
         description: formData.value.description || undefined,
       })
-      ElMessage.success('脚本创建成功')
+      ElMessage.success(t('script.saveSuccess'))
       isAdding.value = false
     } else if (selectedScript.value?.id) {
       await scriptStore.updateScript({
@@ -339,10 +342,10 @@ async function handleSave() {
         code: formData.value.code,
         description: formData.value.description || undefined,
       }, props.serverId)
-      ElMessage.success('脚本更新成功')
+      ElMessage.success(t('script.saveSuccess'))
     }
   } catch (error) {
-    ElMessage.error(`保存失败: ${error}`)
+    ElMessage.error(`${t('errors.saveFailed')}: ${error}`)
   } finally {
     saving.value = false
   }
@@ -353,15 +356,15 @@ async function handleDelete() {
   if (!selectedScript.value?.id) return
 
   try {
-    await ElMessageBox.confirm('确定要删除这个脚本吗？', '确认删除', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('script.deleteConfirm'), t('script.deleteTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
     })
 
     await scriptStore.deleteScript(selectedScript.value.id, props.serverId)
     selectedScript.value = null
-    ElMessage.success('脚本已删除')
+    ElMessage.success(t('script.deleteSuccess'))
   } catch (e) {
     // 用户取消
   }
@@ -373,7 +376,7 @@ async function handleToggle(script: Script, enabled: boolean) {
   try {
     await scriptStore.toggleScript(script.id, enabled, props.serverId)
   } catch (error) {
-    ElMessage.error(`操作失败: ${error}`)
+    ElMessage.error(`${t('errors.saveFailed')}: ${error}`)
   }
 }
 
@@ -383,7 +386,7 @@ function getTypeTag(type: ScriptType) {
 }
 
 function getTypeLabel(type: ScriptType) {
-  return type === 'before_publish' ? '发送前' : '接收后'
+  return type === 'before_publish' ? t('script.beforeSend') : t('script.afterReceive')
 }
 
 // 监听类型变化，更新默认代码
@@ -407,10 +410,10 @@ async function handleImportFile() {
     if (filePath) {
       const content = await readTextFile(filePath as string)
       formData.value.code = content
-      ElMessage.success('文件导入成功')
+      ElMessage.success(t('success.saved'))
     }
   } catch (error) {
-    ElMessage.error(`导入失败: ${error}`)
+    ElMessage.error(`${t('errors.loadFailed')}: ${error}`)
   }
 }
 </script>

@@ -17,11 +17,15 @@
     "@tauri-apps/plugin-opener": "^2",
     "element-plus": "^2.13.1",
     "pinia": "^3.0.4",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "vue-i18n": "^11.2.8"
   },
   "devDependencies": {
+    "@intlify/unplugin-vue-i18n": "^11.0.3",
     "@tauri-apps/cli": "^2",
+    "@types/js-yaml": "^4.0.9",
     "@vitejs/plugin-vue": "^5.2.1",
+    "js-yaml": "^4.1.1",
     "sass-embedded": "^1.97.2",
     "typescript": "~5.6.2",
     "unplugin-auto-import": "^21.0.0",

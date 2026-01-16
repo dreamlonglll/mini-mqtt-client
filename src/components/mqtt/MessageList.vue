@@ -3,7 +3,7 @@
     <div class="panel-header">
       <span class="panel-title">
         <el-icon><ChatDotRound /></el-icon>
-        消息列表
+        {{ $t('messages.title') }}
         <el-tag size="small" type="info" effect="plain" v-if="messages.length > 0">
           {{ messages.length }}
         </el-tag>
@@ -11,7 +11,7 @@
       <div class="header-actions">
         <el-input
           v-model="searchKeyword"
-          placeholder="搜索消息..."
+          :placeholder="$t('template.searchPlaceholder')"
           :prefix-icon="Search"
           size="small"
           style="width: 160px"
@@ -24,14 +24,14 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="all">全部</el-dropdown-item>
-              <el-dropdown-item command="publish">仅发布</el-dropdown-item>
-              <el-dropdown-item command="receive">仅接收</el-dropdown-item>
+              <el-dropdown-item command="all">{{ $t('template.allCategories') }}</el-dropdown-item>
+              <el-dropdown-item command="publish">{{ $t('messages.direction.sent') }}</el-dropdown-item>
+              <el-dropdown-item command="receive">{{ $t('messages.direction.received') }}</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
         <el-divider direction="vertical" />
-        <el-tooltip content="清空消息" placement="top">
+        <el-tooltip :content="$t('messages.clear')" placement="top">
           <el-button text size="small" :icon="Delete" @click="handleClear" />
         </el-tooltip>
         <!-- <el-tooltip content="导出消息" placement="top">
@@ -69,7 +69,7 @@
               type="danger"
               class="error-tag"
             >
-              脚本错误
+              {{ $t('script.testError') }}
             </el-tag>
             <el-tag
               size="small"
@@ -96,13 +96,7 @@
       </div>
 
       <div v-if="filteredMessages.length === 0" class="empty-state">
-        <el-empty description="暂无消息" :image-size="60">
-          <template #description>
-            <span v-if="messages.length === 0">
-              订阅 Topic 后，收到的消息将显示在这里
-            </span>
-            <span v-else>没有匹配的消息</span>
-          </template>
+        <el-empty :description="$t('messages.noMessages')" :image-size="60">
         </el-empty>
       </div>
     </div>
@@ -110,24 +104,24 @@
     <!-- 消息详情对话框 -->
     <el-dialog
       v-model="showDetailDialog"
-      :title="selectedMessage?.topic || '消息详情'"
+      :title="selectedMessage?.topic || $t('messages.viewPayload')"
       width="700px"
       class="message-detail-dialog"
     >
       <div v-if="selectedMessage" class="message-detail">
         <el-descriptions :column="3" border size="small">
-          <el-descriptions-item label="方向">
+          <el-descriptions-item :label="$t('messages.direction.sent')">
             <span class="msg-direction" :class="selectedMessage.direction">
-              {{ selectedMessage.direction === "publish" ? "发布" : "接收" }}
+              {{ selectedMessage.direction === "publish" ? $t('messages.direction.sent') : $t('messages.direction.received') }}
             </span>
           </el-descriptions-item>
-          <el-descriptions-item label="QoS">
+          <el-descriptions-item :label="$t('publish.qos')">
             {{ selectedMessage.qos }}
           </el-descriptions-item>
-          <el-descriptions-item label="Retain">
-            {{ selectedMessage.retain ? "是" : "否" }}
+          <el-descriptions-item :label="$t('publish.retain')">
+            {{ selectedMessage.retain ? "Yes" : "No" }}
           </el-descriptions-item>
-          <el-descriptions-item label="格式">
+          <el-descriptions-item :label="$t('publish.payloadType')">
             <el-tag
               size="small"
               :type="getFormatTagType(detectPayloadFormat(selectedMessage.payload))"
@@ -135,20 +129,20 @@
               {{ getFormatLabel(detectPayloadFormat(selectedMessage.payload)) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="时间" :span="2">
+          <el-descriptions-item label="Time" :span="2">
             {{ formatFullTime(selectedMessage.timestamp) }}
           </el-descriptions-item>
-          <el-descriptions-item label="主题" :span="3">
+          <el-descriptions-item :label="$t('publish.topic')" :span="3">
             <code class="topic-code">{{ selectedMessage.topic }}</code>
           </el-descriptions-item>
         </el-descriptions>
 
         <div class="payload-section">
           <div class="payload-header">
-            <span class="section-title">消息内容</span>
+            <span class="section-title">{{ $t('publish.payload') }}</span>
             <div class="payload-actions">
               <el-button size="small" text :icon="CopyDocument" @click="copyPayload">
-                复制内容
+                {{ $t('messages.copyPayload') }}
               </el-button>
               <el-button
                 size="small"
@@ -156,7 +150,7 @@
                 :icon="Promotion"
                 @click="copyToPublish"
               >
-                复制到发布
+                {{ $t('messages.copyToPublish') }}
               </el-button>
             </div>
           </div>
@@ -169,6 +163,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   ChatDotRound,
   Delete,
@@ -187,6 +182,8 @@ import { useAppStore } from "@/stores/app";
 import { useSubscriptionStore } from "@/stores/subscription";
 import MessagePayload from "./MessagePayload.vue";
 import type { MqttMessage } from "@/types/mqtt";
+
+const { t } = useI18n();
 
 type PayloadFormat = "json" | "binary" | "text";
 type DirectionFilter = "all" | "publish" | "receive";
@@ -250,12 +247,16 @@ const filteredMessages = computed(() => {
 
 // 过滤标签
 const filterLabel = computed(() => {
-  const labels: Record<DirectionFilter, string> = {
-    all: "全部",
-    publish: "仅发布",
-    receive: "仅接收",
-  };
-  return labels[directionFilter.value];
+  switch (directionFilter.value) {
+    case "all":
+      return t('template.allCategories');
+    case "publish":
+      return t('messages.direction.sent');
+    case "receive":
+      return t('messages.direction.received');
+    default:
+      return t('template.allCategories');
+  }
 });
 
 // 获取 payload 字符串
@@ -341,7 +342,8 @@ function getFormatLabel(format: PayloadFormat): string {
 const formatTime = (timestamp?: string) => {
   if (!timestamp) return "";
   const date = new Date(timestamp);
-  const timeStr = date.toLocaleTimeString("zh-CN", {
+  const locale = appStore.getDateLocale();
+  const timeStr = date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -354,7 +356,8 @@ const formatTime = (timestamp?: string) => {
 const formatFullTime = (timestamp?: string) => {
   if (!timestamp) return "";
   const date = new Date(timestamp);
-  return date.toLocaleString("zh-CN");
+  const locale = appStore.getDateLocale();
+  return date.toLocaleString(locale);
 };
 
 function handleFilterCommand(command: string) {
@@ -366,11 +369,13 @@ const handleClear = async () => {
   if (!serverId) return;
 
   try {
-    await ElMessageBox.confirm("确定要清空所有消息记录吗？", "确认清空", {
+    await ElMessageBox.confirm(t('messages.clearConfirm'), t('messages.clearTitle'), {
       type: "warning",
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
     });
     mqttStore.clearMessages(serverId);
-    ElMessage.success("消息已清空");
+    ElMessage.success(t('success.deleted'));
   } catch {
     // 用户取消
   }
@@ -389,7 +394,7 @@ function copyPayload() {
       ? getPayloadHexString(selectedMessage.value.payload)
       : getPayloadString(selectedMessage.value.payload);
     navigator.clipboard.writeText(payload);
-    ElMessage.success("已复制到剪贴板");
+    ElMessage.success(t('success.copied'));
   }
 }
 
@@ -408,7 +413,7 @@ function copyToPublish() {
       // 二进制数据设置为 hex 类型
       payloadType: format === "binary" ? "hex" : format,
     });
-    ElMessage.success("已复制到发布面板");
+    ElMessage.success(t('messages.copied'));
     showDetailDialog.value = false;
   }
 }

@@ -1,9 +1,11 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { getCurrentWindow, type Theme as TauriTheme } from "@tauri-apps/api/window";
+import i18n, { getActualLocale, type Locale, type ActualLocale } from "@/i18n";
 
 export type Theme = "light" | "dark" | "auto";
 export type ViewType = "messages" | "templates";
+export type { Locale, ActualLocale };
 
 // 复制到发布面板的消息数据
 export interface CopyToPublishData {
@@ -17,6 +19,10 @@ export interface CopyToPublishData {
 export const useAppStore = defineStore("app", () => {
   // 主题
   const theme = ref<Theme>("light");
+  
+  // 语言
+  const locale = ref<Locale>("auto");
+  const actualLocale = ref<ActualLocale>("zh-CN");
   
   // 主题监听取消函数
   let unlistenTheme: (() => void) | null = null;
@@ -127,6 +133,44 @@ export const useAppStore = defineStore("app", () => {
     }
   };
 
+  // ===== 语言相关 =====
+
+  // 应用语言设置
+  const applyLocale = () => {
+    const newActualLocale = getActualLocale(locale.value);
+    actualLocale.value = newActualLocale;
+    i18n.global.locale.value = newActualLocale;
+  };
+
+  // 设置语言
+  const setLocale = (newLocale: Locale) => {
+    locale.value = newLocale;
+    applyLocale();
+    saveLocale();
+  };
+
+  // 保存语言到本地存储
+  const saveLocale = () => {
+    localStorage.setItem("mqtt-client-locale", locale.value);
+  };
+
+  // 初始化语言
+  const initLocale = () => {
+    const stored = localStorage.getItem("mqtt-client-locale");
+    if (stored === "auto" || stored === "zh-CN" || stored === "en-US") {
+      locale.value = stored;
+    } else {
+      // 默认跟随系统
+      locale.value = "auto";
+    }
+    applyLocale();
+  };
+
+  // 获取用于时间格式化的 locale
+  const getDateLocale = (): string => {
+    return actualLocale.value === "zh-CN" ? "zh-CN" : "en-US";
+  };
+
   // 切换侧边栏
   const toggleSidebar = () => {
     sidebarCollapsed.value = !sidebarCollapsed.value;
@@ -149,12 +193,17 @@ export const useAppStore = defineStore("app", () => {
 
   return {
     theme,
+    locale,
+    actualLocale,
     sidebarCollapsed,
     currentView,
     copyToPublishData,
     toggleTheme,
     setTheme,
     initTheme,
+    setLocale,
+    initLocale,
+    getDateLocale,
     toggleSidebar,
     setCurrentView,
     setCopyToPublish,

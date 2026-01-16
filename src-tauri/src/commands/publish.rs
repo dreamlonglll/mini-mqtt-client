@@ -13,7 +13,7 @@ pub async fn publish_message(
     // 转换消息内容
     let payload_bytes = match message.format.as_str() {
         "hex" => hex::decode(message.payload.replace(" ", ""))
-            .map_err(|e| format!("HEX解码失败: {}", e))?,
+            .map_err(|e| format!("HEX decode failed: {}", e))?,
         _ => message.payload.as_bytes().to_vec(),
     };
 

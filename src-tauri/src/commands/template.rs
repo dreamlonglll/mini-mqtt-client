@@ -57,7 +57,7 @@ pub async fn import_templates(
     storage: State<'_, Storage>,
 ) -> Result<i32, String> {
     let templates: Vec<CommandTemplate> =
-        serde_json::from_str(&json_data).map_err(|e| format!("JSON解析错误: {}", e))?;
+        serde_json::from_str(&json_data).map_err(|e| format!("JSON parse error: {}", e))?;
 
     let mut imported = 0;
     for template in templates {
@@ -89,7 +89,7 @@ pub async fn duplicate_template(
 ) -> Result<i64, String> {
     let template = storage
         .get_template(id)
-        .ok_or("模板不存在")?;
+        .ok_or("Template not found")?;
 
     let req = CreateTemplateRequest {
         server_id: template.server_id,

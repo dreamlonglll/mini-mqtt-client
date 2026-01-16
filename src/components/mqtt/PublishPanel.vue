@@ -3,7 +3,7 @@
     <div class="panel-header">
       <span class="panel-title">
         <el-icon><Promotion /></el-icon>
-        发布消息
+        {{ $t('publish.send') }}
       </span>
       <div class="header-actions">
         <el-select v-model="payloadFormat" size="small" style="width: 90px" :disabled="props.scheduledPublishRunning">
@@ -21,7 +21,7 @@
           :class="{ 'is-running': props.scheduledPublishRunning }"
           @click="handleScheduledPublish"
         >
-          {{ props.scheduledPublishRunning ? '发布中...' : '定时发布' }}
+          {{ props.scheduledPublishRunning ? $t('scheduled.running') : $t('publish.scheduledPublish') }}
         </el-button>
       </div>
     </div>
@@ -32,7 +32,7 @@
         <div class="form-item topic-input">
           <el-input
             v-model="publishData.topic"
-            placeholder="Topic，例如: device/001/command"
+            :placeholder="$t('publish.topicPlaceholder')"
             size="default"
             :disabled="props.scheduledPublishRunning"
           >
@@ -65,10 +65,10 @@
           />
         </div>
         <div class="form-actions">
-          <el-tooltip content="从模板选择" placement="top">
+          <el-tooltip :content="$t('publish.openTemplates')" placement="top">
             <el-button :icon="FolderOpened" :disabled="props.scheduledPublishRunning" @click="handleOpenTemplates" />
           </el-tooltip>
-          <el-tooltip content="保存为模板" placement="top">
+          <el-tooltip :content="$t('publish.saveTemplate')" placement="top">
             <el-button :icon="Star" :disabled="props.scheduledPublishRunning" @click="handleSaveTemplate" />
           </el-tooltip>
           <el-button
@@ -78,7 +78,7 @@
             :disabled="!isConnected || props.scheduledPublishRunning"
             @click="handlePublish"
           >
-            发布
+            {{ $t('publish.send') }}
           </el-button>
         </div>
       </div>
@@ -88,6 +88,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { Promotion, Position, Star, FolderOpened, Timer, Loading } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { invoke } from "@tauri-apps/api/core";
@@ -99,6 +100,8 @@ import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
 import { validatePublishTopic, handleMqttError } from "@/utils/mqttErrorHandler";
 import { handleScriptError } from "@/utils/errorHandler";
+
+const { t } = useI18n();
 
 type PayloadFormat = "json" | "hex" | "text";
 
@@ -164,14 +167,7 @@ const isConnected = computed(() => {
 });
 
 const payloadPlaceholder = computed(() => {
-  switch (payloadFormat.value) {
-    case "json":
-      return 'JSON 格式，例如: {"action": "start", "value": 100}';
-    case "hex":
-      return "十六进制格式，例如: 48 65 6C 6C 6F";
-    default:
-      return "纯文本消息内容";
-  }
+  return t('publish.payloadPlaceholder');
 });
 
 const emit = defineEmits<{
@@ -192,7 +188,7 @@ const handleScheduledPublish = () => {
 
 const handleSaveTemplate = () => {
   if (!publishData.topic.trim()) {
-    ElMessage.warning("请先输入 Topic");
+    ElMessage.warning(t('errors.inputTopic'));
     return;
   }
   emit("saveTemplate", {
@@ -208,13 +204,13 @@ const handlePublish = async () => {
   // 验证 Topic
   const topicValidation = validatePublishTopic(publishData.topic);
   if (!topicValidation.valid) {
-    ElMessage.warning(topicValidation.error || "Topic 格式无效");
+    ElMessage.warning(topicValidation.error || t('errors.inputTopic'));
     return;
   }
 
   const serverId = serverStore.activeServerId;
   if (!serverId) {
-    ElMessage.warning("请先选择一个服务器");
+    ElMessage.warning(t('errors.selectServer'));
     return;
   }
 
@@ -222,7 +218,7 @@ const handlePublish = async () => {
   if (payloadFormat.value === "hex") {
     const hex = publishData.payload.replace(/\s/g, "");
     if (!/^[0-9A-Fa-f]*$/.test(hex)) {
-      ElMessage.warning("HEX 格式不正确");
+      ElMessage.warning(t('errors.hexInvalid'));
       return;
     }
   }
@@ -231,7 +227,7 @@ const handlePublish = async () => {
     try {
       JSON.parse(publishData.payload);
     } catch {
-      ElMessage.warning("JSON 格式不正确");
+      ElMessage.warning(t('errors.jsonInvalid'));
       return;
     }
   }
@@ -265,7 +261,7 @@ const handlePublish = async () => {
         scriptError: scriptError,
       });
       
-      ElMessage.error(`脚本处理失败: ${scriptError}`);
+      ElMessage.error(`${t('script.testError')}: ${scriptError}`);
       return;
     }
 
@@ -286,7 +282,7 @@ const handlePublish = async () => {
       retain: publishData.retain,
     });
 
-    ElMessage.success("消息已发布");
+    ElMessage.success(t('success.published'));
   } catch (error: any) {
     // 使用 MQTT 错误处理器
     handleMqttError(error?.message || String(error));

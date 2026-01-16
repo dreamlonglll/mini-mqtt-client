@@ -17,7 +17,7 @@
       <!-- Server 列表区域 -->
       <div class="section">
         <div class="section-header">
-          <span class="section-title">SERVER</span>
+          <span class="section-title">{{ $t('sidebar.server') }}</span>
           <el-button type="primary" size="small" :icon="Plus" circle @click="handleAddServer" />
         </div>
 
@@ -42,15 +42,15 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="edit">
                     <el-icon><Edit /></el-icon>
-                    <span>编辑</span>
+                    <span>{{ $t('sidebar.actions.edit') }}</span>
                   </el-dropdown-item>
                   <el-dropdown-item command="duplicate">
                     <el-icon><CopyDocument /></el-icon>
-                    <span>复制</span>
+                    <span>{{ $t('sidebar.actions.duplicate') }}</span>
                   </el-dropdown-item>
                   <el-dropdown-item command="delete" divided>
                     <el-icon><Delete /></el-icon>
-                    <span style="color: var(--el-color-danger)">删除</span>
+                    <span style="color: var(--el-color-danger)">{{ $t('sidebar.actions.delete') }}</span>
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -59,9 +59,9 @@
 
           <!-- 空状态 -->
           <div v-if="serverStore.servers.length === 0" class="empty-state">
-            <el-empty description="暂无 Server" :image-size="60">
+            <el-empty :description="$t('sidebar.noServer')" :image-size="60">
               <el-button type="primary" size="small" @click="handleAddServer">
-                添加 Server
+                {{ $t('sidebar.addServer') }}
               </el-button>
             </el-empty>
           </div>
@@ -74,7 +74,7 @@
       <!-- 订阅列表区域 -->
       <div v-if="serverStore.activeServer" class="section">
         <div class="section-header">
-          <span class="section-title">订阅</span>
+          <span class="section-title">{{ $t('sidebar.subscription') }}</span>
           <el-button type="primary" size="small" :icon="Plus" circle @click="handleAddSubscription" />
         </div>
 
@@ -106,7 +106,7 @@
           </div>
 
           <div v-if="currentSubscriptions.length === 0" class="empty-hint">
-            点击 + 添加订阅
+            {{ $t('sidebar.addSubscriptionHint') }}
           </div>
         </div>
       </div>
@@ -134,22 +134,22 @@
     <!-- 订阅对话框 -->
     <el-dialog
       v-model="showSubDialog"
-      :title="isEditingSubscription ? '编辑订阅' : '添加订阅'"
+      :title="isEditingSubscription ? $t('sidebar.editSubscription') : $t('sidebar.addSubscription')"
       width="420px"
       :close-on-click-modal="false"
     >
       <el-form :model="subFormData" label-width="80px">
-        <el-form-item label="Topic">
-          <el-input v-model="subFormData.topic" placeholder="例如: sensor/+/temperature" />
+        <el-form-item :label="$t('sidebar.topic')">
+          <el-input v-model="subFormData.topic" placeholder="e.g., sensor/+/temperature" />
         </el-form-item>
-        <el-form-item label="QoS">
+        <el-form-item :label="$t('publish.qos')">
           <el-radio-group v-model="subFormData.qos">
             <el-radio-button :value="0">QoS 0</el-radio-button>
             <el-radio-button :value="1">QoS 1</el-radio-button>
             <el-radio-button :value="2">QoS 2</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="颜色标记">
+        <el-form-item :label="$t('sidebar.colorMark')">
           <div class="color-picker-container">
             <div class="color-options">
               <div
@@ -164,7 +164,7 @@
                 class="color-option no-color"
                 :class="{ active: !subFormData.color }"
                 @click="subFormData.color = ''"
-                title="无颜色"
+                :title="$t('sidebar.noColor')"
               >
                 <el-icon><Close /></el-icon>
               </div>
@@ -179,9 +179,9 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showSubDialog = false">取消</el-button>
+        <el-button @click="showSubDialog = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="subLoading" @click="handleConfirmSubscription">
-          {{ isEditingSubscription ? '保存' : '订阅' }}
+          {{ isEditingSubscription ? $t('common.save') : $t('success.subscribed') }}
         </el-button>
       </template>
     </el-dialog>
@@ -190,6 +190,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Plus,
@@ -209,6 +210,8 @@ import { useMqttStore } from "@/stores/mqtt";
 import { ElMessage, ElMessageBox } from "element-plus";
 import ServerFormDialog from "@/components/mqtt/ServerFormDialog.vue";
 import type { MqttServer, Subscription } from "@/types/mqtt";
+
+const { t } = useI18n();
 
 const appStore = useAppStore();
 const serverStore = useServerStore();
@@ -238,13 +241,13 @@ const currentSubscriptions = computed(() => {
 const themeLabel = computed(() => {
   switch (appStore.theme) {
     case 'light':
-      return '浅色模式';
+      return t('sidebar.theme.light');
     case 'dark':
-      return '深色模式';
+      return t('sidebar.theme.dark');
     case 'auto':
-      return '跟随系统';
+      return t('sidebar.theme.auto');
     default:
-      return '浅色模式';
+      return t('sidebar.theme.light');
   }
 });
 
@@ -290,21 +293,21 @@ const handleServerAction = async (command: string, server: MqttServer) => {
       break;
     case "duplicate":
       await serverStore.duplicateServer(server.id!);
-      ElMessage.success("复制成功");
+      ElMessage.success(t('server.duplicateSuccess'));
       break;
     case "delete":
       try {
         await ElMessageBox.confirm(
-          `确定要删除 "${server.name}" 吗？`,
-          "确认删除",
+          t('sidebar.deleteServerConfirm', { name: server.name }),
+          t('common.confirm'),
           {
-            confirmButtonText: "删除",
-            cancelButtonText: "取消",
+            confirmButtonText: t('common.delete'),
+            cancelButtonText: t('common.cancel'),
             type: "warning",
           }
         );
         await serverStore.removeServer(server.id!);
-        ElMessage.success("删除成功");
+        ElMessage.success(t('server.deleteSuccess'));
       } catch {
         // 用户取消
       }
@@ -363,9 +366,9 @@ const handleEditSubscription = (sub: Subscription) => {
 
 const handleDeleteSubscription = async (sub: Subscription) => {
   try {
-    await ElMessageBox.confirm(`确定要取消订阅 "${sub.topic}" 吗？`, "确认", {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
+    await ElMessageBox.confirm(t('sidebar.deleteSubscriptionConfirm', { topic: sub.topic }), t('common.confirm'), {
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
       type: "warning",
     });
     await subscriptionStore.removeSubscription(
@@ -373,10 +376,10 @@ const handleDeleteSubscription = async (sub: Subscription) => {
       serverStore.activeServerId!,
       sub.topic
     );
-    ElMessage.success("订阅已取消");
+    ElMessage.success(t('success.unsubscribed'));
   } catch (error) {
     if (error !== "cancel") {
-      ElMessage.error(`取消订阅失败: ${error}`);
+      ElMessage.error(`${t('errors.unsubscribeFailed')}: ${error}`);
     }
   }
 };
@@ -390,21 +393,21 @@ const handleToggleSubscription = async (sub: Subscription, isActive: boolean) =>
       sub.qos,
       isActive
     );
-    ElMessage.success(isActive ? "已恢复订阅" : "已暂停订阅");
+    ElMessage.success(isActive ? t('success.resumed') : t('success.paused'));
   } catch (error) {
-    ElMessage.error(`操作失败: ${error}`);
+    ElMessage.error(`${t('errors.subscribeFailed')}: ${error}`);
   }
 };
 
 const handleConfirmSubscription = async () => {
   if (!subFormData.topic.trim()) {
-    ElMessage.warning("请输入 Topic");
+    ElMessage.warning(t('errors.inputTopic'));
     return;
   }
 
   const serverId = serverStore.activeServerId;
   if (!serverId) {
-    ElMessage.warning("请先选择一个服务器");
+    ElMessage.warning(t('errors.selectServer'));
     return;
   }
 
@@ -418,7 +421,7 @@ const handleConfirmSubscription = async () => {
         qos: subFormData.qos,
         color: subFormData.color || undefined,
       });
-      ElMessage.success("订阅已更新");
+      ElMessage.success(t('success.saved'));
     } else {
       // 新增模式
       const newSub = await subscriptionStore.addSubscription(
@@ -433,12 +436,12 @@ const handleConfirmSubscription = async () => {
           color: subFormData.color,
         });
       }
-      ElMessage.success("订阅成功");
+      ElMessage.success(t('success.subscribed'));
     }
     showSubDialog.value = false;
   } catch (error) {
-    console.error("订阅失败:", error);
-    ElMessage.error(`${isEditingSubscription.value ? '更新' : '订阅'}失败: ${error}`);
+    console.error("Subscribe failed:", error);
+    ElMessage.error(`${t('errors.subscribeFailed')}: ${error}`);
   } finally {
     subLoading.value = false;
   }

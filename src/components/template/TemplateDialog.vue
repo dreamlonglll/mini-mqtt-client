@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="isEdit ? '编辑模板' : '新建模板'"
+    :title="isEdit ? $t('script.editScript') : $t('template.addTemplate')"
     width="640px"
     destroy-on-close
     :close-on-click-modal="false"
@@ -16,21 +16,21 @@
     >
       <!-- 基本信息 -->
       <div class="form-section">
-        <div class="section-title">基本信息</div>
+        <div class="section-title">{{ $t('template.name') }}</div>
 
-        <el-form-item label="模板名称" prop="name">
+        <el-form-item :label="$t('template.name')" prop="name">
           <el-input
             v-model="form.name"
-            placeholder="给模板起个容易识别的名称"
+            :placeholder="$t('template.namePlaceholder')"
             maxlength="50"
             show-word-limit
           />
         </el-form-item>
 
-        <el-form-item label="分类" prop="category">
+        <el-form-item :label="$t('template.category')" prop="category">
           <el-select
             v-model="form.category"
-            placeholder="选择或创建分类"
+            :placeholder="$t('template.categoryPlaceholder')"
             filterable
             allow-create
             default-first-option
@@ -46,12 +46,12 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="$t('script.description')" prop="description">
           <el-input
             v-model="form.description"
             type="textarea"
             :rows="2"
-            placeholder="可选：描述模板的用途"
+            :placeholder="$t('script.descriptionPlaceholder')"
             maxlength="200"
           />
         </el-form-item>
@@ -59,12 +59,12 @@
 
       <!-- MQTT 配置 -->
       <div class="form-section">
-        <div class="section-title">MQTT 配置</div>
+        <div class="section-title">MQTT</div>
 
-        <el-form-item label="主题" prop="topic">
+        <el-form-item :label="$t('publish.topic')" prop="topic">
           <el-input
             v-model="form.topic"
-            placeholder="例如: device/001/command"
+            :placeholder="$t('publish.topicPlaceholder')"
           >
             <template #prefix>
               <el-icon><Position /></el-icon>
@@ -85,7 +85,7 @@
           <el-col :span="12">
             <el-form-item label="Retain" prop="retain">
               <el-switch v-model="form.retain" />
-              <span class="form-hint">保留消息</span>
+              <span class="form-hint">{{ $t('publish.retain') }}</span>
             </el-form-item>
           </el-col>
         </el-row>
@@ -94,7 +94,7 @@
       <!-- 消息内容 -->
       <div class="form-section">
         <div class="section-title">
-          <span>消息内容</span>
+          <span>{{ $t('publish.payload') }}</span>
           <el-radio-group v-model="form.payload_type" size="small" class="type-selector">
             <el-radio-button value="json">JSON</el-radio-button>
             <el-radio-button value="text">TEXT</el-radio-button>
@@ -120,7 +120,7 @@
                 @click="formatJson"
               >
                 <el-icon><MagicStick /></el-icon>
-                格式化
+                Format
               </el-button>
               <el-button
                 v-if="form.payload_type === 'json'"
@@ -129,7 +129,7 @@
                 @click="compressJson"
               >
                 <el-icon><Minus /></el-icon>
-                压缩
+                Minify
               </el-button>
               <span v-if="payloadError" class="error-text">
                 <el-icon><WarningFilled /></el-icon>
@@ -143,9 +143,9 @@
 
     <template #footer>
       <div class="dialog-footer">
-        <el-button @click="$emit('update:visible', false)">取消</el-button>
+        <el-button @click="$emit('update:visible', false)">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">
-          {{ isEdit ? '保存修改' : '创建模板' }}
+          {{ isEdit ? $t('common.save') : $t('template.addTemplate') }}
         </el-button>
       </div>
     </template>
@@ -154,6 +154,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import {
@@ -163,6 +164,8 @@ import {
   WarningFilled
 } from '@element-plus/icons-vue'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   visible: boolean
@@ -198,14 +201,14 @@ const form = ref({
 // 表单验证规则
 const rules: FormRules = {
   name: [
-    { required: true, message: '请输入模板名称', trigger: 'blur' },
-    { min: 1, max: 50, message: '名称长度在 1-50 个字符', trigger: 'blur' }
+    { required: true, message: t('errors.inputName'), trigger: 'blur' },
+    { min: 1, max: 50, message: 'Name must be 1-50 characters', trigger: 'blur' }
   ],
   topic: [
-    { required: true, message: '请输入MQTT主题', trigger: 'blur' }
+    { required: true, message: t('errors.inputTopic'), trigger: 'blur' }
   ],
   payload: [
-    { required: true, message: '请输入消息内容', trigger: 'blur' }
+    { required: true, message: t('errors.inputPayload'), trigger: 'blur' }
   ]
 }
 
@@ -217,7 +220,7 @@ const payloadPlaceholder = computed(() => {
     case 'hex':
       return '48 65 6C 6C 6F 20 57 6F 72 6C 64'
     default:
-      return '输入纯文本消息内容...'
+      return t('publish.payloadPlaceholder')
   }
 })
 
@@ -281,13 +284,13 @@ function validatePayload(): boolean {
       payloadError.value = ''
       return true
     } catch (e) {
-      payloadError.value = 'JSON 格式错误'
+      payloadError.value = t('errors.jsonInvalid')
       return false
     }
   } else if (form.value.payload_type === 'hex' && form.value.payload.trim()) {
     const hex = form.value.payload.replace(/\s/g, '')
     if (!/^[0-9A-Fa-f]*$/.test(hex)) {
-      payloadError.value = 'HEX 格式错误'
+      payloadError.value = t('errors.hexInvalid')
       return false
     }
     payloadError.value = ''
@@ -304,7 +307,7 @@ function formatJson() {
     form.value.payload = JSON.stringify(parsed, null, 2)
     payloadError.value = ''
   } catch (e) {
-    payloadError.value = 'JSON 格式错误，无法格式化'
+    payloadError.value = t('errors.jsonInvalid')
   }
 }
 
@@ -315,7 +318,7 @@ function compressJson() {
     form.value.payload = JSON.stringify(parsed)
     payloadError.value = ''
   } catch (e) {
-    payloadError.value = 'JSON 格式错误，无法压缩'
+    payloadError.value = t('errors.jsonInvalid')
   }
 }
 
@@ -360,7 +363,7 @@ async function handleSubmit() {
     }
     emit('saved')
   } catch (error) {
-    ElMessage.error('保存失败: ' + error)
+    ElMessage.error(`${t('errors.saveFailed')}: ${error}`)
   } finally {
     submitting.value = false
   }

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    :title="isRunning ? '定时发布 - 运行中' : (isCompleted ? '定时发布 - 已完成' : '定时发布')"
+    :title="isRunning ? `${$t('scheduled.title')} - ${$t('scheduled.running')}` : (isCompleted ? `${$t('scheduled.title')}` : $t('scheduled.title'))"
     width="700px"
     :close-on-click-modal="false"
     :close-on-press-escape="!isRunning"
@@ -12,16 +12,16 @@
       <!-- 命令列表 -->
       <div class="section">
         <div class="section-header">
-          <span class="section-title">命令列表</span>
+          <span class="section-title">{{ $t('scheduled.selectTemplate') }}</span>
           <div class="section-actions">
             <el-checkbox
               v-model="selectAll"
               :indeterminate="isIndeterminate"
               @change="(val: boolean | string | number) => handleSelectAll(Boolean(val))"
             >
-              全选
+              {{ $t('template.allCategories') }}
             </el-checkbox>
-            <span class="selected-count">已选择 {{ selectedIds.length }} 条命令</span>
+            <span class="selected-count">{{ $t('scheduled.selectedTemplates', { count: selectedIds.length }) }}</span>
           </div>
         </div>
         <div class="command-list" v-loading="loading">
@@ -52,19 +52,19 @@
               </div>
             </div>
           </div>
-          <el-empty v-if="templates.length === 0" description="暂无保存的命令模板" :image-size="60" />
+          <el-empty v-if="templates.length === 0" :description="$t('template.noTemplate')" :image-size="60" />
         </div>
       </div>
 
       <!-- 发送配置 -->
       <div class="section">
         <div class="section-header">
-          <span class="section-title">发送配置</span>
+          <span class="section-title">{{ $t('scheduled.mode') }}</span>
         </div>
         <el-form :model="config" label-width="100px" class="config-form">
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="发送间隔">
+              <el-form-item :label="$t('scheduled.intervalSeconds')">
                 <el-input-number
                   v-model="config.interval"
                   :min="100"
@@ -76,7 +76,7 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="每轮间隔">
+              <el-form-item label="Round Interval">
                 <el-input-number
                   v-model="config.roundInterval"
                   :min="0"
@@ -88,16 +88,16 @@
               </el-form-item>
             </el-col>
           </el-row>
-          <el-form-item label="发送顺序">
+          <el-form-item label="Order">
             <el-radio-group v-model="config.order">
-              <el-radio value="selection">按勾选顺序</el-radio>
-              <el-radio value="name">按名称排序</el-radio>
+              <el-radio value="selection">Selection Order</el-radio>
+              <el-radio value="name">Name Order</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="循环模式">
+          <el-form-item label="Loop Mode">
             <el-radio-group v-model="config.loopMode">
-              <el-radio value="infinite">无限循环</el-radio>
-              <el-radio value="count">指定次数</el-radio>
+              <el-radio value="infinite">Infinite</el-radio>
+              <el-radio value="count">Count</el-radio>
             </el-radio-group>
             <el-input-number
               v-if="config.loopMode === 'count'"
@@ -116,29 +116,29 @@
       <!-- 发送状态 -->
       <div class="section">
         <div class="section-header">
-          <span class="section-title">发送状态</span>
+          <span class="section-title">{{ $t('scheduled.status') }}</span>
         </div>
         <div class="status-panel">
           <div class="status-indicator" :class="{ running: isRunning, completed: isCompleted }">
             <el-icon v-if="isRunning" class="spinning"><Loading /></el-icon>
             <el-icon v-else><SuccessFilled /></el-icon>
-            <span>{{ isRunning ? '正在发送...' : '发布完成' }}</span>
+            <span>{{ isRunning ? $t('scheduled.running') : $t('scheduled.completed') }}</span>
           </div>
           <div class="status-info">
             <div class="info-row">
-              <span class="label">当前命令:</span>
+              <span class="label">Topic:</span>
               <code class="value">{{ currentCommand?.topic || '-' }}</code>
             </div>
             <div class="info-row">
-              <span class="label">当前轮次:</span>
-              <span class="value">第 {{ currentRound }} 轮</span>
+              <span class="label">Round:</span>
+              <span class="value">{{ currentRound }}</span>
             </div>
             <div class="info-row">
-              <span class="label">已发送:</span>
-              <span class="value">{{ sentCount }} 条消息</span>
+              <span class="label">Sent:</span>
+              <span class="value">{{ sentCount }}</span>
             </div>
             <div class="info-row">
-              <span class="label">成功/失败:</span>
+              <span class="label">Success/Fail:</span>
               <span class="value success">{{ successCount }}</span>
               <span> / </span>
               <span class="value error">{{ failCount }}</span>
@@ -155,8 +155,8 @@
       <!-- 发送日志 -->
       <div class="section">
         <div class="section-header">
-          <span class="section-title">发送日志</span>
-          <el-button text size="small" @click="logs = []">清空</el-button>
+          <span class="section-title">Logs</span>
+          <el-button text size="small" @click="logs = []">{{ $t('messages.clear') }}</el-button>
         </div>
         <div class="log-list" ref="logListRef">
           <div
@@ -169,14 +169,14 @@
               <span class="log-time">[{{ log.time }}]</span>
               <span class="log-topic">{{ log.topic }}</span>
               <el-tag :type="log.status === 'success' ? 'success' : 'danger'" size="small">
-                {{ log.status === 'success' ? '成功' : '失败' }}
+                {{ log.status === 'success' ? 'OK' : 'Fail' }}
               </el-tag>
             </div>
             <div class="log-payload">
               <code>{{ truncatePayload(log.payload) }}</code>
             </div>
           </div>
-          <div v-if="logs.length === 0" class="empty-log">暂无发送记录</div>
+          <div v-if="logs.length === 0" class="empty-log">{{ $t('messages.noMessages') }}</div>
         </div>
       </div>
     </div>
@@ -184,26 +184,26 @@
     <template #footer>
       <!-- 配置视图按钮 -->
       <template v-if="!isRunning && !isCompleted">
-        <el-button @click="handleClose">取消</el-button>
+        <el-button @click="handleClose">{{ $t('common.cancel') }}</el-button>
         <el-button
           type="primary"
           :disabled="selectedIds.length === 0"
           @click="handleStart"
         >
-          开始发布
+          {{ $t('scheduled.start') }}
         </el-button>
       </template>
       <!-- 运行中按钮 -->
       <template v-else-if="isRunning">
-        <el-button @click="handleMinimize">最小化</el-button>
+        <el-button @click="handleMinimize">Minimize</el-button>
         <el-button type="danger" @click="handleStop">
-          停止发布
+          {{ $t('scheduled.stop') }}
         </el-button>
       </template>
       <!-- 完成后按钮 -->
       <template v-else>
-        <el-button @click="handleBackToConfig">返回配置</el-button>
-        <el-button type="primary" @click="handleClose">关闭</el-button>
+        <el-button @click="handleBackToConfig">Back</el-button>
+        <el-button type="primary" @click="handleClose">{{ $t('common.close') }}</el-button>
       </template>
     </template>
   </el-dialog>
@@ -211,6 +211,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Position, Loading, SuccessFilled } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
@@ -218,6 +219,8 @@ import { useTemplateStore, type CommandTemplate } from '@/stores/template'
 import { useMqttStore } from '@/stores/mqtt'
 import { ScriptEngine } from '@/utils/scriptEngine'
 import type { Script } from '@/stores/script'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   visible: boolean
@@ -402,7 +405,7 @@ function addLog(topic: string, payload: string, status: 'success' | 'error', mes
 // 开始发布
 async function handleStart() {
   if (selectedIds.value.length === 0) {
-    ElMessage.warning('请至少选择一条命令')
+    ElMessage.warning(t('scheduled.noTemplateSelected'))
     return
   }
   
@@ -472,7 +475,7 @@ async function publishNext() {
     // 检查是否达到循环次数
     if (config.value.loopMode === 'count' && currentRound.value >= config.value.loopCount) {
       stopPublishing(true)
-      ElMessage.success('定时发布完成')
+      ElMessage.success(t('success.published'))
       return
     }
     
@@ -494,7 +497,7 @@ async function publishNext() {
 // 停止发布
 function handleStop() {
   stopPublishing(true)
-  ElMessage.info('已停止定时发布')
+  ElMessage.info(t('scheduled.stop'))
 }
 
 function stopPublishing(keepView: boolean = false) {

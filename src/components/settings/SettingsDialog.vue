@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    title="系统设置"
+    :title="$t('settings.title')"
     width="500px"
     :close-on-click-modal="false"
     @open="loadSettings"
@@ -9,8 +9,8 @@
     <div class="settings-content">
       <!-- 主题设置 -->
       <div class="setting-section">
-        <div class="setting-title">外观主题</div>
-        <div class="setting-desc">选择应用的外观主题，立即生效</div>
+        <div class="setting-title">{{ $t('settings.theme.title') }}</div>
+        <div class="setting-desc">{{ $t('settings.theme.desc') }}</div>
         <el-radio-group 
           v-model="currentTheme" 
           @change="(val: string | number | boolean | undefined) => handleThemeChange(val as Theme)"
@@ -18,31 +18,53 @@
         >
           <el-radio-button value="light">
             <el-icon><Sunny /></el-icon>
-            浅色
+            {{ $t('settings.theme.light') }}
           </el-radio-button>
           <el-radio-button value="dark">
             <el-icon><Moon /></el-icon>
-            深色
+            {{ $t('settings.theme.dark') }}
           </el-radio-button>
           <el-radio-button value="auto">
             <el-icon><Platform /></el-icon>
-            跟随系统
+            {{ $t('settings.theme.auto') }}
+          </el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <!-- 语言设置 -->
+      <div class="setting-section">
+        <div class="setting-title">{{ $t('settings.language.title') }}</div>
+        <div class="setting-desc">{{ $t('settings.language.desc') }}</div>
+        <el-radio-group 
+          v-model="currentLocale" 
+          @change="(val: string | number | boolean | undefined) => handleLocaleChange(val as Locale)"
+          class="theme-radio-group"
+        >
+          <el-radio-button value="zh-CN">
+            {{ $t('settings.language.zhCN') }}
+          </el-radio-button>
+          <el-radio-button value="en-US">
+            {{ $t('settings.language.enUS') }}
+          </el-radio-button>
+          <el-radio-button value="auto">
+            <el-icon><Platform /></el-icon>
+            {{ $t('settings.language.auto') }}
           </el-radio-button>
         </el-radio-group>
       </div>
 
       <!-- 数据存储设置 -->
       <div class="setting-section">
-        <div class="setting-title">数据存储</div>
-        <div class="setting-desc">配置和脚本等数据的存储位置</div>
+        <div class="setting-title">{{ $t('settings.storage.title') }}</div>
+        <div class="setting-desc">{{ $t('settings.storage.desc') }}</div>
         <div class="setting-row">
           <el-tooltip :content="currentDataPath" placement="top">
             <el-input :model-value="currentDataPath" readonly size="small" class="path-input" />
           </el-tooltip>
-          <el-tooltip content="更改位置" placement="top">
+          <el-tooltip :content="$t('settings.storage.changeLocation')" placement="top">
             <el-button size="small" :icon="FolderOpened" @click="handleSelectFolder" />
           </el-tooltip>
-          <el-tooltip content="复制路径" placement="top">
+          <el-tooltip :content="$t('settings.storage.copyPath')" placement="top">
             <el-button size="small" :icon="CopyDocument" @click="handleCopyPath" />
           </el-tooltip>
         </div>
@@ -54,23 +76,23 @@
           class="migrate-alert"
         >
           <template #title>
-            <span>将迁移数据到新位置：{{ truncatePath(newDataPath) }}</span>
+            <span>{{ $t('settings.storage.migrateAlert') }}: {{ truncatePath(newDataPath) }}</span>
           </template>
         </el-alert>
       </div>
 
       <!-- 日志设置 -->
       <div class="setting-section">
-        <div class="setting-title">日志</div>
-        <div class="setting-desc">错误日志按天分割，最多保留 10 个日志文件</div>
+        <div class="setting-title">{{ $t('settings.log.title') }}</div>
+        <div class="setting-desc">{{ $t('settings.log.desc') }}</div>
         <div class="setting-row">
           <el-tooltip :content="logPath" placement="top">
             <el-input :model-value="logPath" readonly size="small" class="path-input" />
           </el-tooltip>
-          <el-tooltip content="打开日志目录" placement="top">
+          <el-tooltip :content="$t('settings.log.openDir')" placement="top">
             <el-button size="small" :icon="FolderOpened" @click="handleOpenLogFolder" />
           </el-tooltip>
-          <el-tooltip content="清空日志" placement="top">
+          <el-tooltip :content="$t('settings.log.clear')" placement="top">
             <el-button size="small" :icon="Delete" type="danger" plain @click="handleClearLogs" />
           </el-tooltip>
         </div>
@@ -78,8 +100,8 @@
 
       <!-- 检查更新 -->
       <div class="setting-section">
-        <div class="setting-title">检查更新</div>
-        <div class="setting-desc">当前版本：v{{ currentVersion }}</div>
+        <div class="setting-title">{{ $t('settings.update.title') }}</div>
+        <div class="setting-desc">{{ $t('settings.update.currentVersion') }}: v{{ currentVersion }}</div>
         <div class="setting-row">
           <el-button 
             size="small" 
@@ -87,14 +109,14 @@
             :loading="checkingUpdate"
             @click="handleCheckUpdate"
           >
-            检查更新
+            {{ $t('settings.update.check') }}
           </el-button>
           <template v-if="updateInfo">
             <el-tag v-if="updateInfo.hasUpdate" type="success" effect="plain">
-              发现新版本：{{ updateInfo.latestVersion }}
+              {{ $t('settings.update.newVersion') }}: {{ updateInfo.latestVersion }}
             </el-tag>
             <el-tag v-else type="info" effect="plain">
-              已是最新版本
+              {{ $t('settings.update.upToDate') }}
             </el-tag>
             <el-button 
               v-if="updateInfo.hasUpdate"
@@ -103,7 +125,7 @@
               :icon="Download"
               @click="handleOpenRelease"
             >
-              前往下载
+              {{ $t('settings.update.download') }}
             </el-button>
           </template>
         </div>
@@ -111,14 +133,14 @@
     </div>
 
     <template #footer>
-      <el-button @click="handleClose">取消</el-button>
+      <el-button @click="handleClose">{{ $t('common.cancel') }}</el-button>
       <el-button 
         type="primary" 
         :loading="saving"
         :disabled="!hasChanges"
         @click="handleSave"
       >
-        保存
+        {{ $t('common.save') }}
       </el-button>
     </template>
   </el-dialog>
@@ -126,12 +148,13 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Sunny, Moon, Platform, FolderOpened, CopyDocument, Delete, Refresh, Download } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import { getVersion } from '@tauri-apps/api/app'
-import { useAppStore, type Theme } from '@/stores/app'
+import { useAppStore, type Theme, type Locale } from '@/stores/app'
 
 const GITHUB_REPO = 'dreamlonglll/mini-mqtt-client'
 
@@ -144,6 +167,7 @@ const emit = defineEmits<{
 }>()
 
 const appStore = useAppStore()
+const { t } = useI18n()
 
 const dialogVisible = computed({
   get: () => props.visible,
@@ -154,6 +178,8 @@ const dialogVisible = computed({
 const saving = ref(false)
 const currentTheme = ref<Theme>('light')
 const originalTheme = ref<Theme>('light')
+const currentLocale = ref<Locale>('auto')
+const originalLocale = ref<Locale>('auto')
 const currentDataPath = ref('')
 const newDataPath = ref('')
 const logPath = ref('')
@@ -163,13 +189,17 @@ const updateInfo = ref<{ hasUpdate: boolean; latestVersion: string } | null>(nul
 
 // 是否有更改
 const hasChanges = computed(() => {
-  return currentTheme.value !== originalTheme.value || newDataPath.value !== ''
+  return currentTheme.value !== originalTheme.value || 
+         currentLocale.value !== originalLocale.value ||
+         newDataPath.value !== ''
 })
 
 // 加载设置
 async function loadSettings() {
   currentTheme.value = appStore.theme
   originalTheme.value = appStore.theme
+  currentLocale.value = appStore.locale
+  originalLocale.value = appStore.locale
   newDataPath.value = ''
   updateInfo.value = null
   
@@ -197,6 +227,11 @@ function handleThemeChange(theme: Theme) {
   appStore.setTheme(theme)
 }
 
+// 语言变化
+function handleLocaleChange(locale: Locale) {
+  appStore.setLocale(locale)
+}
+
 // 选择文件夹
 async function handleSelectFolder() {
   try {
@@ -205,7 +240,7 @@ async function handleSelectFolder() {
       newDataPath.value = path
     }
   } catch (e) {
-    ElMessage.error(`选择文件夹失败: ${e}`)
+    ElMessage.error(`${t('errors.selectFolderFailed')}: ${e}`)
   }
 }
 
@@ -213,9 +248,9 @@ async function handleSelectFolder() {
 async function handleCopyPath() {
   try {
     await navigator.clipboard.writeText(currentDataPath.value)
-    ElMessage.success('路径已复制到剪贴板')
+    ElMessage.success(t('success.copied'))
   } catch (e) {
-    ElMessage.error('复制失败')
+    ElMessage.error(t('errors.copyFailed'))
   }
 }
 
@@ -224,7 +259,7 @@ async function handleOpenLogFolder() {
   try {
     await revealItemInDir(logPath.value)
   } catch (e) {
-    ElMessage.error(`打开日志目录失败: ${e}`)
+    ElMessage.error(`${t('errors.openFolderFailed')}: ${e}`)
   }
 }
 
@@ -232,20 +267,20 @@ async function handleOpenLogFolder() {
 async function handleClearLogs() {
   try {
     await ElMessageBox.confirm(
-      '确定要清空所有日志文件吗？此操作不可撤销。',
-      '清空日志',
+      t('settings.log.clearConfirm'),
+      t('settings.log.clearTitle'),
       {
-        confirmButtonText: '清空',
-        cancelButtonText: '取消',
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
       }
     )
     
     await invoke('clear_logs')
-    ElMessage.success('日志已清空')
+    ElMessage.success(t('settings.log.clearSuccess'))
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error(`清空日志失败: ${e}`)
+      ElMessage.error(`${t('errors.deleteFailed')}: ${e}`)
     }
   }
 }
@@ -270,11 +305,11 @@ async function handleSave() {
     // 如果有新的数据路径
     if (newDataPath.value) {
       const action = await ElMessageBox.confirm(
-        '是否将现有数据迁移到新位置？',
-        '更改数据存储位置',
+        t('settings.storage.migrateConfirm'),
+        t('settings.storage.migrateTitle'),
         {
-          confirmButtonText: '迁移数据',
-          cancelButtonText: '仅更改路径',
+          confirmButtonText: t('settings.storage.migrateBtn'),
+          cancelButtonText: t('settings.storage.changeOnlyBtn'),
           distinguishCancelAndClose: true,
           type: 'info',
         }
@@ -289,16 +324,16 @@ async function handleSave() {
       await invoke('migrate_data_path', { newPath: newDataPath.value, migrate: shouldMigrate })
       
       if (shouldMigrate) {
-        ElMessage.success('数据迁移完成，请重启应用')
+        ElMessage.success(t('settings.storage.migrateSuccess'))
       } else {
-        ElMessage.success('存储位置已更改，请重启应用')
+        ElMessage.success(t('settings.storage.changeSuccess'))
       }
     }
     
     dialogVisible.value = false
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error(`保存设置失败: ${e}`)
+      ElMessage.error(`${t('errors.saveFailed')}: ${e}`)
     }
   } finally {
     saving.value = false
@@ -310,6 +345,10 @@ function handleClose() {
   // 如果主题已更改但未保存，恢复原始主题
   if (currentTheme.value !== originalTheme.value && !saving.value) {
     appStore.setTheme(originalTheme.value)
+  }
+  // 如果语言已更改但未保存，恢复原始语言
+  if (currentLocale.value !== originalLocale.value && !saving.value) {
+    appStore.setLocale(originalLocale.value)
   }
   dialogVisible.value = false
 }
@@ -332,10 +371,10 @@ async function handleCheckUpdate() {
     updateInfo.value = { hasUpdate, latestVersion: `v${latestVersion}` }
     
     if (!hasUpdate) {
-      ElMessage.success('已是最新版本')
+      ElMessage.success(t('settings.update.upToDate'))
     }
   } catch (e) {
-    ElMessage.error(`检查更新失败: ${e}`)
+    ElMessage.error(`${t('errors.checkUpdateFailed')}: ${e}`)
   } finally {
     checkingUpdate.value = false
   }
@@ -360,7 +399,7 @@ async function handleOpenRelease() {
   try {
     await openUrl(`https://github.com/${GITHUB_REPO}/releases/latest`)
   } catch (e) {
-    ElMessage.error(`打开浏览器失败: ${e}`)
+    ElMessage.error(`${t('errors.openBrowserFailed')}: ${e}`)
   }
 }
 </script>

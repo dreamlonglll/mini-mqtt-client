@@ -4,14 +4,14 @@
     <div class="drawer-toolbar">
       <el-input
         v-model="searchKeyword"
-        placeholder="搜索模板..."
+        :placeholder="$t('template.searchPlaceholder')"
         :prefix-icon="Search"
         clearable
         size="default"
         @input="handleSearch"
       />
       <el-button type="primary" :icon="Plus" @click="handleCreate">
-        新建
+        {{ $t('template.addTemplate') }}
       </el-button>
     </div>
 
@@ -23,7 +23,7 @@
         effect="plain"
         @click="selectedCategory = null"
       >
-        全部
+        {{ $t('template.allCategories') }}
       </el-tag>
       <el-tag
         v-for="cat in categories"
@@ -50,10 +50,10 @@
             <el-button :icon="MoreFilled" text size="small" class="more-btn" />
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="edit" :icon="Edit">编辑</el-dropdown-item>
-                <el-dropdown-item command="duplicate" :icon="CopyDocument">复制</el-dropdown-item>
+                <el-dropdown-item command="edit" :icon="Edit">{{ $t('common.edit') }}</el-dropdown-item>
+                <el-dropdown-item command="duplicate" :icon="CopyDocument">{{ $t('common.copy') }}</el-dropdown-item>
                 <el-dropdown-item command="delete" :icon="Delete" divided>
-                  <span style="color: var(--el-color-danger)">删除</span>
+                  <span style="color: var(--el-color-danger)">{{ $t('common.delete') }}</span>
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -78,7 +78,7 @@
             <span v-if="template.retain" class="meta-item retain">Retain</span>
           </div>
           <el-button type="primary" size="small" @click="handleUse(template)">
-            发送
+            {{ $t('publish.send') }}
           </el-button>
         </div>
       </div>
@@ -86,11 +86,11 @@
       <!-- 空状态 -->
       <el-empty
         v-if="!loading && filteredTemplates.length === 0"
-        description="暂无模板"
+        :description="$t('template.noTemplate')"
         :image-size="80"
       >
         <el-button type="primary" @click="handleCreate">
-          创建第一个模板
+          {{ $t('template.addTemplate') }}
         </el-button>
       </el-empty>
     </div>
@@ -108,6 +108,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search,
@@ -120,6 +121,8 @@ import {
 } from '@element-plus/icons-vue'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
 import TemplateDialog from './TemplateDialog.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   serverId: number
@@ -207,7 +210,7 @@ async function handleUse(template: CommandTemplate) {
     const used = await templateStore.useTemplate(template.id!)
     emit('use', used)
   } catch (error) {
-    ElMessage.error('加载模板失败')
+    ElMessage.error(t('errors.loadFailed'))
   }
 }
 
@@ -221,34 +224,34 @@ async function handleCommand(command: string, template: CommandTemplate) {
     case 'duplicate':
       try {
         const { value: newName } = await ElMessageBox.prompt(
-          '请输入新模板名称',
-          '复制模板',
+          t('template.namePlaceholder'),
+          t('common.copy'),
           {
-            inputValue: `${template.name} - 副本`,
+            inputValue: `${template.name} - Copy`,
             inputPattern: /\S+/,
-            inputErrorMessage: '名称不能为空'
+            inputErrorMessage: t('errors.inputName')
           }
         )
         await templateStore.duplicateTemplate(template.id!, newName)
-        ElMessage.success('模板已复制')
+        ElMessage.success(t('server.duplicateSuccess'))
       } catch (error) {
         if (error !== 'cancel') {
-          ElMessage.error('复制失败')
+          ElMessage.error(t('errors.saveFailed'))
         }
       }
       break
     case 'delete':
       try {
         await ElMessageBox.confirm(
-          `确定要删除模板 "${template.name}" 吗？`,
-          '删除确认',
-          { type: 'warning' }
+          t('template.deleteConfirm'),
+          t('template.deleteTitle'),
+          { type: 'warning', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') }
         )
         await templateStore.deleteTemplate(template.id!)
-        ElMessage.success('模板已删除')
+        ElMessage.success(t('template.deleteSuccess'))
       } catch (error) {
         if (error !== 'cancel') {
-          ElMessage.error('删除失败')
+          ElMessage.error(t('errors.deleteFailed'))
         }
       }
       break
@@ -259,7 +262,7 @@ async function handleCommand(command: string, template: CommandTemplate) {
 function handleSaved() {
   showDialog.value = false
   editingTemplate.value = null
-  ElMessage.success('模板已保存')
+  ElMessage.success(t('success.saved'))
 }
 </script>
 

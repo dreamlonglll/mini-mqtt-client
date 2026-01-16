@@ -23,12 +23,12 @@ pub fn migrate_data_path(
     
     // 验证新路径
     if !new_path.is_absolute() {
-        return Err("请提供绝对路径".to_string());
+        return Err("Please provide an absolute path".to_string());
     }
     
     // 确保目标目录存在
     if let Some(parent) = new_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("无法创建目录: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
     }
     
     // 如果需要迁移，复制当前数据到新位置
@@ -36,7 +36,7 @@ pub fn migrate_data_path(
         let current_path = storage.get_file_path();
         if current_path.exists() {
             fs::copy(current_path, &new_path)
-                .map_err(|e| format!("复制数据文件失败: {}", e))?;
+                .map_err(|e| format!("Failed to copy data file: {}", e))?;
         }
     }
     
@@ -53,7 +53,7 @@ pub fn migrate_data_path(
     let config = serde_yaml::to_string(&config_map).map_err(|e| e.to_string())?;
     
     fs::write(&config_path, config)
-        .map_err(|e| format!("保存配置失败: {}", e))?;
+        .map_err(|e| format!("Failed to save config: {}", e))?;
     
     Ok(())
 }
@@ -66,13 +66,13 @@ pub async fn select_data_folder(app_handle: AppHandle) -> Result<Option<String>,
     let folder = app_handle
         .dialog()
         .file()
-        .set_title("选择数据存储目录")
+        .set_title("Select Data Directory")
         .blocking_pick_folder();
     
     match folder {
         Some(file_path) => {
             // FilePath 需要转换为 PathBuf
-            let path_buf = file_path.as_path().ok_or("无效的路径")?;
+            let path_buf = file_path.as_path().ok_or("Invalid path")?;
             let data_file = path_buf.join("data.yaml");
             Ok(Some(data_file.to_string_lossy().to_string()))
         }

@@ -12,7 +12,7 @@
   <!-- 模板管理抽屉 -->
   <el-drawer
     v-model="showTemplateDrawer"
-    title="命令模板"
+    :title="$t('template.drawerTitle')"
     direction="rtl"
     size="480px"
     :close-on-click-modal="true"
@@ -52,6 +52,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import MainContent from "@/components/mqtt/MainContent.vue";
 import TemplateDrawer from "@/components/template/TemplateDrawer.vue";
@@ -64,6 +65,8 @@ import { useMqttStore } from "@/stores/mqtt";
 import { useServerStore } from "@/stores/server";
 import { useTemplateStore, type CommandTemplate } from "@/stores/template";
 import { ElMessage } from "element-plus";
+
+const { t } = useI18n();
 
 const appStore = useAppStore();
 const mqttStore = useMqttStore();
@@ -93,6 +96,8 @@ const showScriptDialog = ref(false);
 onMounted(() => {
   // 初始化主题
   appStore.initTheme();
+  // 初始化语言
+  appStore.initLocale();
   // 初始化 MQTT 事件监听
   mqttStore.initListeners();
 });
@@ -100,7 +105,7 @@ onMounted(() => {
 // 处理保存模板请求
 function handleSaveTemplate(data: { topic: string; payload: string; qos: number; retain: boolean; payloadType: string }) {
   if (!activeServerId.value) {
-    ElMessage.warning("请先选择一个服务器");
+    ElMessage.warning(t('errors.selectServer'));
     return;
   }
   
@@ -125,13 +130,13 @@ function handleSaveTemplate(data: { topic: string; payload: string; qos: number;
 function handleTemplateSaved() {
   showSaveTemplateDialog.value = false;
   templateToSave.value = null;
-  ElMessage.success("模板已保存");
+  ElMessage.success(t('template.saveSuccess'));
 }
 
 // 打开模板管理抽屉
 function handleOpenTemplates() {
   if (!activeServerId.value) {
-    ElMessage.warning("请先选择一个服务器");
+    ElMessage.warning(t('errors.selectServer'));
     return;
   }
   showTemplateDrawer.value = true;
@@ -149,13 +154,13 @@ function handleUseTemplate(template: CommandTemplate) {
   });
   // 关闭抽屉
   showTemplateDrawer.value = false;
-  ElMessage.success(`已加载: ${template.name}`);
+  ElMessage.success(`${t('template.loadSuccess')}: ${template.name}`);
 }
 
 // 打开定时发布对话框
 function handleScheduledPublish() {
   if (!activeServerId.value) {
-    ElMessage.warning("请先选择一个服务器");
+    ElMessage.warning(t('errors.selectServer'));
     return;
   }
   showScheduledPublishDialog.value = true;
@@ -174,7 +179,7 @@ function handleOpenSettings() {
 // 打开脚本管理
 function handleOpenScripts() {
   if (!activeServerId.value) {
-    ElMessage.warning("请先选择一个服务器");
+    ElMessage.warning(t('errors.selectServer'));
     return;
   }
   showScriptDialog.value = true;

@@ -14,7 +14,7 @@
           {{ statusText }}
         </el-tag>
       </template>
-      <span v-else class="welcome-text">欢迎使用 Mini MQTT Client</span>
+      <span v-else class="welcome-text">{{ $t('header.welcome') }}</span>
     </div>
 
     <!-- 中间：协议和配置信息 -->
@@ -46,7 +46,7 @@
           :loading="connecting"
           @click="handleConnect"
         >
-          连接
+          {{ $t('header.connect') }}
         </el-button>
         <el-button
           v-else-if="connectionStatus === 'connected'"
@@ -56,13 +56,13 @@
           :icon="SwitchButton"
           @click="handleDisconnect"
         >
-          断开
+          {{ $t('header.disconnect') }}
         </el-button>
         <el-button v-else type="warning" size="small" :loading="true" disabled>
-          连接中
+          {{ $t('header.connecting') }}
         </el-button>
       </template>
-      <el-tooltip content="设置" placement="bottom">
+      <el-tooltip :content="$t('header.settings')" placement="bottom">
         <el-button :icon="Setting" circle size="small" @click="handleSettings" />
       </el-tooltip>
     </div>
@@ -71,6 +71,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   Connection,
   SwitchButton,
@@ -81,6 +82,8 @@ import { useServerStore } from "@/stores/server";
 import { useMqttStore } from "@/stores/mqtt";
 import { useSubscriptionStore } from "@/stores/subscription";
 import type { MqttServer } from "@/types/mqtt";
+
+const { t } = useI18n();
 
 const serverStore = useServerStore();
 const mqttStore = useMqttStore();
@@ -103,13 +106,13 @@ const connectionStatus = computed(() => {
 const statusText = computed(() => {
   switch (connectionStatus.value) {
     case "connected":
-      return "已连接";
+      return t('header.status.connected');
     case "connecting":
-      return "连接中...";
+      return t('header.status.connecting');
     case "error":
-      return "连接错误";
+      return t('header.status.error');
     default:
-      return "未连接";
+      return t('header.status.disconnected');
   }
 });
 
@@ -159,7 +162,7 @@ const handleConnect = async () => {
   try {
     await mqttStore.connect(server.server.id);
   } catch (e) {
-    ElMessage.error(`连接失败: ${e}`);
+    ElMessage.error(`${t('errors.connectFailed')}: ${e}`);
   } finally {
     connecting.value = false;
   }
@@ -172,7 +175,7 @@ const handleDisconnect = async () => {
   try {
     await mqttStore.disconnect(server.server.id);
   } catch (e) {
-    ElMessage.error(`断开失败: ${e}`);
+    ElMessage.error(`${t('errors.disconnectFailed')}: ${e}`);
   }
 };
 

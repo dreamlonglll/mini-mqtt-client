@@ -4,9 +4,9 @@
       <div class="header-info">
         <h2 class="title">
           <el-icon><Files /></el-icon>
-          命令模板
+          {{ $t('template.title') }}
         </h2>
-        <span class="subtitle">管理和快速发送MQTT消息模板</span>
+        <span class="subtitle">{{ $t('template.drawerTitle') }}</span>
       </div>
       <el-button text @click="$emit('close')">
         <el-icon><Close /></el-icon>
@@ -21,7 +21,7 @@
           :server-id="serverId"
           @use="handleUseTemplate"
         />
-        <el-empty v-else description="请先选择一个服务器" :image-size="100" />
+        <el-empty v-else :description="$t('errors.selectServer')" :image-size="100" />
       </div>
 
       <!-- 右侧：快速发送面板 -->

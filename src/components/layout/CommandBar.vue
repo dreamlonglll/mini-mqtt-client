@@ -2,7 +2,7 @@
   <div class="command-bar">
     <div class="command-bar-content">
       <el-icon class="command-icon"><Histogram /></el-icon>
-      <span class="command-label">快捷命令</span>
+      <span class="command-label">{{ $t('template.title') }}</span>
       <el-divider direction="vertical" />
       
       <div class="command-list">
@@ -25,17 +25,17 @@
           :icon="Plus"
           @click="handleOpenTemplates"
         >
-          添加命令模板
+          {{ $t('template.addTemplate') }}
         </el-button>
       </div>
     </div>
     
     <div class="command-bar-actions">
       <el-button size="small" :icon="FolderOpened" text @click="handleOpenTemplates">
-        管理模板
+        {{ $t('publish.openTemplates') }}
       </el-button>
       <el-button size="small" :icon="Document" text @click="handleOpenScripts">
-        管理脚本
+        {{ $t('publish.openScripts') }}
       </el-button>
     </div>
   </div>
@@ -43,11 +43,14 @@
 
 <script setup lang="ts">
 import { computed, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { Histogram, Plus, FolderOpened, Document } from "@element-plus/icons-vue";
 import { useTemplateStore, type CommandTemplate } from "@/stores/template";
 import { useServerStore } from "@/stores/server";
 import { useAppStore } from "@/stores/app";
 import { ElMessage } from "element-plus";
+
+const { t } = useI18n();
 
 const templateStore = useTemplateStore();
 const serverStore = useServerStore();
@@ -79,9 +82,9 @@ async function handleQuickSend(template: CommandTemplate) {
       retain: used.retain,
       payloadType: used.payload_type,
     });
-    ElMessage.success(`已加载: ${template.name}`);
+    ElMessage.success(`${t('template.loadSuccess')}: ${template.name}`);
   } catch (error) {
-    ElMessage.error("加载模板失败");
+    ElMessage.error(t('errors.loadFailed'));
   }
 }
 
