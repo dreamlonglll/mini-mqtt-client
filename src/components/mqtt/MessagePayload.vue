@@ -5,26 +5,21 @@
       <pre>{{ preview ? displayPayload : displayPayloadWithLineBreaks }}</pre>
     </div>
 
-    <!-- 二进制/HEX 格式 -->
+    <!-- 二进制/HEX 格式 - 始终显示完整内容 -->
     <div v-else-if="detectedFormat === 'binary'" class="payload-content hex-content">
       <div class="hex-display">
-        <template v-if="preview">
-          <span class="hex-preview">{{ hexPreview }}</span>
-        </template>
-        <template v-else>
-          <div class="hex-row" v-for="(row, index) in hexRows" :key="index">
-            <span class="offset">{{ formatOffset(index * 16) }}</span>
-            <span class="hex-bytes">
-              <span
-                v-for="(byte, i) in row.bytes"
-                :key="i"
-                class="byte"
-                :class="{ separator: i === 7 }"
-              >{{ byte }}</span>
-            </span>
-            <span class="ascii">{{ row.ascii }}</span>
-          </div>
-        </template>
+        <div class="hex-row" v-for="(row, index) in hexRows" :key="index">
+          <span class="offset">{{ formatOffset(index * 16) }}</span>
+          <span class="hex-bytes">
+            <span
+              v-for="(byte, i) in row.bytes"
+              :key="i"
+              class="byte"
+              :class="{ separator: i === 7 }"
+            >{{ byte }}</span>
+          </span>
+          <span class="ascii">{{ row.ascii }}</span>
+        </div>
       </div>
     </div>
 
@@ -105,12 +100,9 @@ const detectedFormat = computed<PayloadFormat>(() => {
 });
 
 // 显示的 payload（用于预览或文本显示）
+// 始终显示完整内容，不做截断
 const displayPayload = computed(() => {
-  const str = payloadString.value;
-  if (props.preview && str.length > 200) {
-    return str.substring(0, 200) + "...";
-  }
-  return str;
+  return payloadString.value;
 });
 
 // 带换行符标记的 payload（用于详情展示）
@@ -118,16 +110,6 @@ const displayPayloadWithLineBreaks = computed(() => {
   const str = payloadString.value;
   // 在换行符前添加 ↵ 符号标记原始换行位置
   return str.replace(/\r?\n/g, '↵$&');
-});
-
-// HEX 预览（简化显示）
-const hexPreview = computed(() => {
-  const bytes = payloadBytes.value;
-  const previewBytes = Array.from(bytes.slice(0, 16));
-  const hexStr = previewBytes
-    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-    .join(" ");
-  return bytes.length > 16 ? hexStr + " ..." : hexStr;
 });
 
 // HEX 行数据
@@ -176,8 +158,9 @@ defineExpose({
 
 .message-payload.preview {
   .payload-content {
-    max-height: 60px;
-    overflow: hidden;
+    // 移除高度限制，始终显示完整内容
+    max-height: none;
+    overflow: visible;
   }
 }
 
