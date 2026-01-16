@@ -218,7 +218,8 @@ server:
   clientId: Client ID
   clientIdPlaceholder: 留空则自动生成
   protocol: 协议版本
-  keepAlive: Keep Alive (秒)
+  keepAlive: Keep Alive
+  keepAliveUnit: 秒
   useTls: 使用 TLS
   cleanSession: Clean Session
   username: 用户名

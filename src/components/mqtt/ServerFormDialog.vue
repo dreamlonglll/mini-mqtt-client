@@ -83,7 +83,10 @@
         <!-- 高级配置 -->
         <el-tab-pane :label="$t('server.advanced')" name="advanced">
           <el-form-item :label="$t('server.keepAlive')" prop="keep_alive">
-            <el-input-number v-model="formData.keep_alive" :min="0" :max="65535" />
+            <div class="keep-alive-input">
+              <el-input-number v-model="formData.keep_alive" :min="0" :max="65535" />
+              <span class="unit-label">{{ $t('server.keepAliveUnit') }}</span>
+            </div>
           </el-form-item>
           <el-form-item :label="$t('server.cleanSession')">
             <el-switch v-model="formData.clean_session" />
@@ -370,6 +373,17 @@ const handleSave = async () => {
 .form-hint {
   margin-left: 8px;
   font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.keep-alive-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unit-label {
+  font-size: 13px;
   color: var(--app-text-secondary);
 }
 </style>

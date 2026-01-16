@@ -218,7 +218,8 @@ server:
   clientId: Client ID
   clientIdPlaceholder: Leave empty to auto-generate
   protocol: Protocol Version
-  keepAlive: Keep Alive (seconds)
+  keepAlive: Keep Alive
+  keepAliveUnit: seconds
   useTls: Use TLS
   cleanSession: Clean Session
   username: Username
