@@ -17,11 +17,16 @@
       <!-- Server 列表区域 -->
       <div class="section">
         <div class="section-header">
-          <span class="section-title">{{ $t('sidebar.server') }}</span>
+          <div class="section-title-wrapper" @click="isServerListCollapsed = !isServerListCollapsed">
+            <el-icon class="collapse-icon" :class="{ collapsed: isServerListCollapsed }">
+              <CaretBottom />
+            </el-icon>
+            <span class="section-title">{{ $t('sidebar.server') }}</span>
+          </div>
           <el-button type="primary" size="small" :icon="Plus" circle @click="handleAddServer" />
         </div>
 
-        <div class="server-list">
+        <div class="server-list" v-show="!isServerListCollapsed">
           <div
             v-for="serverState in serverStore.servers"
             :key="serverState.server.id"
@@ -204,6 +209,7 @@ import {
   Moon,
   Sunny,
   Platform,
+  CaretBottom,
 } from "@element-plus/icons-vue";
 import { useAppStore } from "@/stores/app";
 import { useServerStore } from "@/stores/server";
@@ -220,6 +226,7 @@ const serverStore = useServerStore();
 const subscriptionStore = useSubscriptionStore();
 const mqttStore = useMqttStore();
 const appVersion = ref("");
+const isServerListCollapsed = ref(false);
 
 // 格式化服务器地址为 协议://host:port 格式
 const formatServerAddress = (server: MqttServer): string => {
@@ -512,12 +519,36 @@ const handleConfirmSubscription = async () => {
   padding: 0 4px;
 }
 
+.section-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  
+  &:hover {
+    .section-title {
+      color: var(--app-text-color);
+    }
+  }
+}
+
+.collapse-icon {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  transition: transform 0.2s ease;
+  
+  &.collapsed {
+    transform: rotate(-90deg);
+  }
+}
+
 .section-title {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--app-text-secondary);
+  transition: color 0.2s ease;
 }
 
 .server-list,
