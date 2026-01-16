@@ -73,13 +73,22 @@
             </el-form-item>
             <el-form-item label="脚本代码" required>
               <div class="code-editor-wrapper">
-                <div class="code-hint">
-                  <code v-if="formData.script_type === 'before_publish'">
-                    定义 process(payload) 函数，返回处理后的 payload
-                  </code>
-                  <code v-else>
-                    定义 process(payload, topic) 函数，返回处理后的 payload
-                  </code>
+                <div class="code-header">
+                  <div class="code-hint">
+                    <code v-if="formData.script_type === 'before_publish'">
+                      定义 process(payload) 函数，返回处理后的 payload
+                    </code>
+                    <code v-else>
+                      定义 process(payload, topic) 函数，返回处理后的 payload
+                    </code>
+                  </div>
+                  <el-button 
+                    size="small" 
+                    :icon="FolderOpened"
+                    @click="handleImportFile"
+                  >
+                    导入文件
+                  </el-button>
                 </div>
                 <el-input
                   v-model="formData.code"
@@ -166,9 +175,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Plus, Delete, Document } from '@element-plus/icons-vue'
+import { Plus, Delete, Document, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useScriptStore, type Script, type ScriptType } from '@/stores/script'
+import { open } from '@tauri-apps/plugin-dialog'
+import { readTextFile } from '@tauri-apps/plugin-fs'
 
 const props = defineProps<{
   visible: boolean
@@ -387,6 +398,27 @@ watch(() => formData.value.script_type, (newType) => {
     formData.value.code = getDefaultCode(newType)
   }
 })
+
+// 导入文件
+async function handleImportFile() {
+  try {
+    const filePath = await open({
+      multiple: false,
+      filters: [{
+        name: 'Script Files',
+        extensions: ['js', 'txt']
+      }]
+    })
+    
+    if (filePath) {
+      const content = await readTextFile(filePath as string)
+      formData.value.code = content
+      ElMessage.success('文件导入成功')
+    }
+  } catch (error) {
+    ElMessage.error(`导入失败: ${error}`)
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -482,11 +514,19 @@ watch(() => formData.value.script_type, (newType) => {
   width: 100%;
 }
 
-.code-hint {
+.code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 8px;
+}
+
+.code-hint {
   padding: 8px 12px;
   background-color: var(--sidebar-hover);
   border-radius: 4px;
+  flex: 1;
+  margin-right: 8px;
   
   code {
     font-family: 'Fira Code', 'Consolas', monospace;
