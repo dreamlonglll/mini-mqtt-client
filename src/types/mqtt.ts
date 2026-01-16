@@ -62,7 +62,19 @@ export interface Subscription {
   topic: string;
   qos: number;
   is_active: boolean;
+  /** 订阅的颜色标记（用于消息列表中高亮显示） */
+  color?: string;
   created_at?: string;
+}
+
+/**
+ * 更新订阅请求
+ */
+export interface UpdateSubscriptionRequest {
+  id: number;
+  topic?: string;
+  qos?: number;
+  color?: string;
 }
 
 /**

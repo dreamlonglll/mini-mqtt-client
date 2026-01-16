@@ -29,7 +29,18 @@ pub struct Subscription {
     pub qos: i32,
     #[serde(default = "default_true")]
     pub is_active: bool,
+    /// 订阅的颜色标记（用于消息列表中高亮显示）
+    #[serde(default)]
+    pub color: Option<String>,
     pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSubscriptionRequest {
+    pub id: i64,
+    pub topic: Option<String>,
+    pub qos: Option<i32>,
+    pub color: Option<String>,
 }
 
 fn default_true() -> bool {

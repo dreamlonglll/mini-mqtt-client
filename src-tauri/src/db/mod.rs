@@ -1,6 +1,6 @@
 pub mod models;
 
-use models::{CommandTemplate, CreateTemplateRequest, CreateScriptRequest, MessageHistory, MqttServer, Script, Subscription, UpdateTemplateRequest, UpdateScriptRequest};
+use models::{CommandTemplate, CreateTemplateRequest, CreateScriptRequest, MessageHistory, MqttServer, Script, Subscription, UpdateSubscriptionRequest, UpdateTemplateRequest, UpdateScriptRequest};
 use parking_lot::RwLock;
 use std::fs;
 use std::path::PathBuf;
@@ -170,6 +170,26 @@ impl Storage {
         }
         drop(data);
         self.save()
+    }
+
+    pub fn update_subscription(&self, req: UpdateSubscriptionRequest) -> Result<Subscription, String> {
+        let mut data = self.data.write();
+        if let Some(sub) = data.subscriptions.iter_mut().find(|s| s.id == Some(req.id)) {
+            if let Some(topic) = req.topic {
+                sub.topic = topic;
+            }
+            if let Some(qos) = req.qos {
+                sub.qos = qos;
+            }
+            // color 可以设置为 None（清除颜色）
+            sub.color = req.color;
+            let result = sub.clone();
+            drop(data);
+            self.save()?;
+            Ok(result)
+        } else {
+            Err("Subscription not found".to_string())
+        }
     }
 
     pub fn delete_subscription(&self, id: i64) -> Result<(), String> {

@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { Subscription } from "@/types/mqtt";
+import type { Subscription, UpdateSubscriptionRequest } from "@/types/mqtt";
 import { validateSubscribeTopic } from "@/utils/mqttErrorHandler";
 
 export const useSubscriptionStore = defineStore("subscription", () => {
@@ -85,6 +85,78 @@ export const useSubscriptionStore = defineStore("subscription", () => {
     }
   }
 
+  async function updateSubscription(
+    serverId: number,
+    oldTopic: string,
+    request: UpdateSubscriptionRequest
+  ) {
+    // 如果 topic 改变了，需要验证新 topic
+    if (request.topic) {
+      const validation = validateSubscribeTopic(request.topic);
+      if (!validation.valid) {
+        throw new Error(validation.error || "Topic 格式无效");
+      }
+    }
+
+    const result = await invoke<Subscription>("update_subscription", {
+      serverId,
+      oldTopic,
+      request,
+    });
+
+    const serverSubs = subscriptions.value.get(serverId) || [];
+    const index = serverSubs.findIndex((s) => s.id === request.id);
+    if (index !== -1) {
+      serverSubs[index] = result;
+      subscriptions.value.set(serverId, serverSubs);
+    }
+
+    return result;
+  }
+
+  // 根据 topic 获取订阅（用于消息列表查找颜色）
+  function getSubscriptionByTopic(serverId: number, topic: string): Subscription | undefined {
+    const serverSubs = subscriptions.value.get(serverId) || [];
+    // 先精确匹配
+    let sub = serverSubs.find((s) => s.topic === topic);
+    if (sub) return sub;
+    
+    // 再模糊匹配（支持通配符）
+    for (const s of serverSubs) {
+      if (matchTopic(s.topic, topic)) {
+        return s;
+      }
+    }
+    return undefined;
+  }
+
+  // MQTT topic 通配符匹配
+  function matchTopic(pattern: string, topic: string): boolean {
+    // # 匹配任意层级
+    if (pattern === "#") return true;
+    
+    const patternParts = pattern.split("/");
+    const topicParts = topic.split("/");
+    
+    for (let i = 0; i < patternParts.length; i++) {
+      const p = patternParts[i];
+      
+      // # 匹配剩余所有层级
+      if (p === "#") return true;
+      
+      // + 匹配单层级
+      if (p === "+") {
+        if (i >= topicParts.length) return false;
+        continue;
+      }
+      
+      // 精确匹配
+      if (p !== topicParts[i]) return false;
+    }
+    
+    return patternParts.length === topicParts.length;
+  }
+
   return {
     subscriptions,
     loading,
@@ -93,5 +165,7 @@ export const useSubscriptionStore = defineStore("subscription", () => {
     addSubscription,
     removeSubscription,
     toggleSubscription,
+    updateSubscription,
+    getSubscriptionByTopic,
   };
 });

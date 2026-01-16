@@ -58,6 +58,7 @@ pub fn run() {
             remove_subscription,
             get_subscriptions,
             toggle_subscription,
+            update_subscription,
             // 消息命令
             publish_message,
             get_message_history,

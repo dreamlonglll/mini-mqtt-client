@@ -1,4 +1,4 @@
-use crate::db::models::Subscription;
+use crate::db::models::{Subscription, UpdateSubscriptionRequest};
 use crate::db::Storage;
 use crate::mqtt::MqttManager;
 use tauri::State;
@@ -18,6 +18,7 @@ pub async fn add_subscription(
         topic: topic.clone(),
         qos,
         is_active: true,
+        color: None,
         created_at: None,
     };
 
@@ -91,4 +92,50 @@ pub async fn toggle_subscription(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn update_subscription(
+    storage: State<'_, Storage>,
+    mqtt_manager: State<'_, MqttManager>,
+    server_id: i64,
+    old_topic: String,
+    request: UpdateSubscriptionRequest,
+) -> Result<Subscription, String> {
+    let new_topic = request.topic.clone();
+    let new_qos = request.qos;
+
+    // 更新存储
+    let subscription = storage.update_subscription(request)?;
+
+    // 如果已连接且 topic 或 qos 改变，需要重新订阅
+    if mqtt_manager.is_connected(server_id) && subscription.is_active {
+        // 如果 topic 改变了，先取消订阅旧的
+        if let Some(ref topic) = new_topic {
+            if topic != &old_topic {
+                mqtt_manager
+                    .unsubscribe(server_id, old_topic)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                mqtt_manager
+                    .subscribe(server_id, topic.clone(), subscription.qos as u8)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            } else if new_qos.is_some() {
+                // topic 没变但 qos 变了，重新订阅
+                mqtt_manager
+                    .subscribe(server_id, topic.clone(), subscription.qos as u8)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        } else if new_qos.is_some() {
+            // 只有 qos 变了
+            mqtt_manager
+                .subscribe(server_id, subscription.topic.clone(), subscription.qos as u8)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(subscription)
 }

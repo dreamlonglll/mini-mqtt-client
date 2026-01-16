@@ -91,10 +91,16 @@
                 size="small"
                 @change="(val: string | number | boolean) => handleToggleSubscription(sub, Boolean(val))"
               />
+              <span 
+                v-if="sub.color" 
+                class="sub-color-indicator" 
+                :style="{ backgroundColor: sub.color }"
+              />
               <span class="sub-topic text-ellipsis">{{ sub.topic }}</span>
               <el-tag size="small" effect="plain" type="info">Q{{ sub.qos }}</el-tag>
             </div>
             <div class="sub-actions">
+              <el-button text size="small" :icon="Edit" @click="handleEditSubscription(sub)" />
               <el-button text size="small" type="danger" :icon="Close" @click="handleDeleteSubscription(sub)" />
             </div>
           </div>
@@ -128,7 +134,7 @@
     <!-- 订阅对话框 -->
     <el-dialog
       v-model="showSubDialog"
-      title="添加订阅"
+      :title="isEditingSubscription ? '编辑订阅' : '添加订阅'"
       width="420px"
       :close-on-click-modal="false"
     >
@@ -143,11 +149,39 @@
             <el-radio-button :value="2">QoS 2</el-radio-button>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="颜色标记">
+          <div class="color-picker-container">
+            <div class="color-options">
+              <div
+                v-for="color in colorOptions"
+                :key="color"
+                class="color-option"
+                :class="{ active: subFormData.color === color }"
+                :style="{ backgroundColor: color }"
+                @click="subFormData.color = color"
+              />
+              <div
+                class="color-option no-color"
+                :class="{ active: !subFormData.color }"
+                @click="subFormData.color = ''"
+                title="无颜色"
+              >
+                <el-icon><Close /></el-icon>
+              </div>
+            </div>
+            <el-color-picker
+              v-model="subFormData.color"
+              size="small"
+              show-alpha
+              :predefine="colorOptions"
+            />
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showSubDialog = false">取消</el-button>
         <el-button type="primary" :loading="subLoading" @click="handleConfirmSubscription">
-          订阅
+          {{ isEditingSubscription ? '保存' : '订阅' }}
         </el-button>
       </template>
     </el-dialog>
@@ -285,15 +319,45 @@ const handleServerSaved = () => {
 // ===== 订阅相关 =====
 const showSubDialog = ref(false);
 const subLoading = ref(false);
+const isEditingSubscription = ref(false);
+const editingSubscriptionId = ref<number | null>(null);
+const editingOldTopic = ref("");
+
+// 预设颜色选项
+const colorOptions = [
+  "#F56C6C", // 红色
+  "#E6A23C", // 橙色
+  "#F2D849", // 黄色
+  "#67C23A", // 绿色
+  "#409EFF", // 蓝色
+  "#9B59B6", // 紫色
+  "#FF69B4", // 粉色
+  "#00CED1", // 青色
+];
 
 const subFormData = reactive({
   topic: "",
   qos: 0,
+  color: "",
 });
 
 const handleAddSubscription = () => {
   subFormData.topic = "";
   subFormData.qos = 0;
+  subFormData.color = "";
+  isEditingSubscription.value = false;
+  editingSubscriptionId.value = null;
+  editingOldTopic.value = "";
+  showSubDialog.value = true;
+};
+
+const handleEditSubscription = (sub: Subscription) => {
+  subFormData.topic = sub.topic;
+  subFormData.qos = sub.qos;
+  subFormData.color = sub.color || "";
+  isEditingSubscription.value = true;
+  editingSubscriptionId.value = sub.id!;
+  editingOldTopic.value = sub.topic;
   showSubDialog.value = true;
 };
 
@@ -346,16 +410,35 @@ const handleConfirmSubscription = async () => {
 
   subLoading.value = true;
   try {
-    await subscriptionStore.addSubscription(
-      serverId,
-      subFormData.topic,
-      subFormData.qos
-    );
-    ElMessage.success("订阅成功");
+    if (isEditingSubscription.value && editingSubscriptionId.value) {
+      // 编辑模式
+      await subscriptionStore.updateSubscription(serverId, editingOldTopic.value, {
+        id: editingSubscriptionId.value,
+        topic: subFormData.topic,
+        qos: subFormData.qos,
+        color: subFormData.color || undefined,
+      });
+      ElMessage.success("订阅已更新");
+    } else {
+      // 新增模式
+      const newSub = await subscriptionStore.addSubscription(
+        serverId,
+        subFormData.topic,
+        subFormData.qos
+      );
+      // 如果设置了颜色，需要再更新一次
+      if (subFormData.color && newSub.id) {
+        await subscriptionStore.updateSubscription(serverId, subFormData.topic, {
+          id: newSub.id,
+          color: subFormData.color,
+        });
+      }
+      ElMessage.success("订阅成功");
+    }
     showSubDialog.value = false;
   } catch (error) {
     console.error("订阅失败:", error);
-    ElMessage.error(`订阅失败: ${error}`);
+    ElMessage.error(`${isEditingSubscription.value ? '更新' : '订阅'}失败: ${error}`);
   } finally {
     subLoading.value = false;
   }
@@ -514,6 +597,13 @@ const handleConfirmSubscription = async () => {
   flex: 1;
 }
 
+.sub-color-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .sub-topic {
   font-size: 12px;
   font-family: "Fira Code", "Consolas", monospace;
@@ -550,5 +640,48 @@ const handleConfirmSubscription = async () => {
 
 :deep(.el-divider) {
   margin: 8px 0;
+}
+
+.color-picker-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.color-options {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.color-option {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    transform: scale(1.1);
+  }
+
+  &.active {
+    border-color: var(--app-text-color);
+    box-shadow: 0 0 0 2px var(--sidebar-bg);
+  }
+
+  &.no-color {
+    background-color: var(--sidebar-bg);
+    border: 1px dashed var(--app-border-color);
+    
+    .el-icon {
+      font-size: 12px;
+      color: var(--app-text-secondary);
+    }
+  }
 }
 </style>
