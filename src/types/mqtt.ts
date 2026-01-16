@@ -16,6 +16,7 @@ export interface MqttServer {
   ca_cert?: string;
   client_cert?: string;
   client_key?: string;
+  client_key_password?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -117,5 +118,6 @@ export function createDefaultServer(): MqttServer {
     ca_cert: "",
     client_cert: "",
     client_key: "",
+    client_key_password: "",
   };
 }

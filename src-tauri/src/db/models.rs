@@ -16,6 +16,7 @@ pub struct MqttServer {
     pub ca_cert: Option<String>,
     pub client_cert: Option<String>,
     pub client_key: Option<String>,
+    pub client_key_password: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }

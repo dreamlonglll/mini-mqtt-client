@@ -75,6 +75,7 @@ impl MqttManager {
                 server.ca_cert.as_deref(),
                 server.client_cert.as_deref(),
                 server.client_key.as_deref(),
+                server.client_key_password.as_deref(),
             )?;
             options.set_transport(Transport::tls_with_config(tls_config));
         }
@@ -286,6 +287,7 @@ impl MqttManager {
         ca_cert: Option<&str>,
         client_cert: Option<&str>,
         client_key: Option<&str>,
+        client_key_password: Option<&str>,
     ) -> Result<rumqttc::TlsConfiguration, String> {
         use std::io::BufReader;
 
@@ -324,10 +326,7 @@ impl MqttManager {
                 }
 
                 // 解析客户端私钥
-                let mut key_reader = BufReader::new(key_pem.as_bytes());
-                let key = rustls_pemfile::private_key(&mut key_reader)
-                    .map_err(|e| format!("Failed to read private key: {}", e))?
-                    .ok_or("No private key found in PEM")?;
+                let key = Self::parse_private_key(key_pem, client_key_password)?;
 
                 builder
                     .with_client_auth_cert(certs, key)
@@ -340,5 +339,45 @@ impl MqttManager {
         };
 
         Ok(rumqttc::TlsConfiguration::Rustls(Arc::new(client_config)))
+    }
+
+    /// 解析私钥，支持加密和未加密格式
+    fn parse_private_key(
+        key_pem: &str,
+        password: Option<&str>,
+    ) -> Result<rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer<'static>, String> {
+        use std::io::BufReader;
+        use rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer;
+        use pkcs8::der::Decode;
+
+        // 首先尝试解析未加密的私钥
+        let mut key_reader = BufReader::new(key_pem.as_bytes());
+        if let Ok(Some(key)) = rustls_pemfile::private_key(&mut key_reader) {
+            return Ok(key);
+        }
+
+        // 如果提供了密码，尝试解析加密的私钥
+        if let Some(pwd) = password {
+            if !pwd.is_empty() {
+                // 尝试从 PEM 解析加密的私钥
+                let pem = pem::parse(key_pem)
+                    .map_err(|e| format!("Failed to parse PEM: {}", e))?;
+                
+                if pem.tag() == "ENCRYPTED PRIVATE KEY" {
+                    // 解析加密的 PKCS#8
+                    let encrypted = pkcs8::EncryptedPrivateKeyInfo::from_der(pem.contents())
+                        .map_err(|e| format!("Failed to parse encrypted private key: {}", e))?;
+                    
+                    let decrypted = encrypted.decrypt(pwd)
+                        .map_err(|e| format!("Failed to decrypt private key (wrong password?): {}", e))?;
+                    
+                    let der_bytes = decrypted.as_bytes().to_vec();
+                    
+                    return Ok(PrivateKeyDer::Pkcs8(der_bytes.into()));
+                }
+            }
+        }
+
+        Err("No valid private key found in PEM. If the key is encrypted, please provide the password.".to_string())
     }
 }

@@ -121,6 +121,15 @@
                 placeholder="PEM 格式私钥内容（可选）"
               />
             </el-form-item>
+
+            <el-form-item label="私钥密码" prop="client_key_password">
+              <el-input
+                v-model="formData.client_key_password"
+                type="password"
+                placeholder="私钥密码（如果私钥已加密）"
+                show-password
+              />
+            </el-form-item>
           </template>
         </el-tab-pane>
       </el-tabs>
@@ -177,6 +186,7 @@ interface FormData {
   ca_cert?: string;
   client_cert?: string;
   client_key?: string;
+  client_key_password?: string;
 }
 
 const formData = reactive<FormData>({
@@ -194,6 +204,7 @@ const formData = reactive<FormData>({
   ca_cert: "",
   client_cert: "",
   client_key: "",
+  client_key_password: "",
 });
 
 // 协议变化时自动更新端口和TLS
@@ -252,6 +263,7 @@ watch(
         formData.ca_cert = props.server.ca_cert || "";
         formData.client_cert = props.server.client_cert || "";
         formData.client_key = props.server.client_key || "";
+        formData.client_key_password = props.server.client_key_password || "";
         // 根据 use_tls 推断协议
         formData.protocol = props.server.use_tls ? "mqtts" : "mqtt";
       } else {
@@ -271,6 +283,7 @@ watch(
         formData.ca_cert = "";
         formData.client_cert = "";
         formData.client_key = "";
+        formData.client_key_password = "";
       }
     }
   }
@@ -300,6 +313,7 @@ const handleSave = async () => {
     ca_cert: formData.ca_cert || undefined,
     client_cert: formData.client_cert || undefined,
     client_key: formData.client_key || undefined,
+    client_key_password: formData.client_key_password || undefined,
   };
 
   saving.value = true;

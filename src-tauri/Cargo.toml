@@ -34,3 +34,5 @@ parking_lot = "0.12"
 hex = "0.4"
 rustls-native-certs = "0.8"
 rustls-pemfile = "2"
+pkcs8 = { version = "0.10", features = ["encryption", "pem"] }
+pem = "3"
