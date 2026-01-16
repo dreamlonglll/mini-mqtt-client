@@ -383,7 +383,11 @@ function showDetail(message: MqttMessage) {
 
 function copyPayload() {
   if (selectedMessage.value) {
-    const payload = getPayloadString(selectedMessage.value.payload);
+    const format = detectPayloadFormat(selectedMessage.value.payload);
+    // 二进制数据复制为 HEX 格式
+    const payload = format === "binary" 
+      ? getPayloadHexString(selectedMessage.value.payload)
+      : getPayloadString(selectedMessage.value.payload);
     navigator.clipboard.writeText(payload);
     ElMessage.success("已复制到剪贴板");
   }
@@ -391,14 +395,18 @@ function copyPayload() {
 
 function copyToPublish() {
   if (selectedMessage.value) {
-    const payload = getPayloadString(selectedMessage.value.payload);
     const format = detectPayloadFormat(selectedMessage.value.payload);
+    // 二进制数据使用 HEX 格式复制到发布面板
+    const payload = format === "binary" 
+      ? getPayloadHexString(selectedMessage.value.payload)
+      : getPayloadString(selectedMessage.value.payload);
     appStore.setCopyToPublish({
       topic: selectedMessage.value.topic,
       payload: payload,
       qos: selectedMessage.value.qos,
       retain: selectedMessage.value.retain,
-      payloadType: format,
+      // 二进制数据设置为 hex 类型
+      payloadType: format === "binary" ? "hex" : format,
     });
     ElMessage.success("已复制到发布面板");
     showDetailDialog.value = false;
