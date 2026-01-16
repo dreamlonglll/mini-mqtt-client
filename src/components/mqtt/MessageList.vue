@@ -54,7 +54,13 @@
             <el-icon v-else><Bottom /></el-icon>
             {{ msg.direction === "publish" ? "PUB" : "RCV" }}
           </span>
-          <span class="msg-topic text-ellipsis">{{ msg.topic }}</span>
+          <span 
+            class="msg-topic text-ellipsis" 
+            :style="getTopicColor(msg) ? { color: getTopicColor(msg) } : {}"
+          >
+            <span v-if="getTopicColor(msg)" class="topic-color-dot" :style="{ backgroundColor: getTopicColor(msg) }" />
+            {{ msg.topic }}
+          </span>
           <div class="msg-meta">
             <el-tag
               v-if="msg.scriptError"
@@ -178,6 +184,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useServerStore } from "@/stores/server";
 import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
+import { useSubscriptionStore } from "@/stores/subscription";
 import MessagePayload from "./MessagePayload.vue";
 import type { MqttMessage } from "@/types/mqtt";
 
@@ -187,8 +194,21 @@ type DirectionFilter = "all" | "publish" | "receive";
 const serverStore = useServerStore();
 const mqttStore = useMqttStore();
 const appStore = useAppStore();
+const subscriptionStore = useSubscriptionStore();
 
 const messageContainer = ref<HTMLElement>();
+
+// 获取消息的 topic 颜色
+function getTopicColor(msg: MqttMessage): string | undefined {
+  const serverId = serverStore.activeServerId;
+  if (!serverId) return undefined;
+  
+  // 只有接收的消息才显示订阅颜色
+  if (msg.direction !== "receive") return undefined;
+  
+  const subscription = subscriptionStore.getSubscriptionByTopic(serverId, msg.topic);
+  return subscription?.color;
+}
 const searchKeyword = ref("");
 const directionFilter = ref<DirectionFilter>("all");
 const showDetailDialog = ref(false);
@@ -215,9 +235,12 @@ const filteredMessages = computed(() => {
     const keyword = searchKeyword.value.toLowerCase();
     result = result.filter((m) => {
       const payloadStr = getPayloadString(m.payload);
+      // 同时搜索 HEX 表示（支持二进制消息搜索）
+      const hexStr = getPayloadHexString(m.payload);
       return (
         m.topic.toLowerCase().includes(keyword) ||
-        payloadStr.toLowerCase().includes(keyword)
+        payloadStr.toLowerCase().includes(keyword) ||
+        hexStr.toLowerCase().includes(keyword)
       );
     });
   }
@@ -242,6 +265,15 @@ function getPayloadString(payload: string | Uint8Array | undefined): string {
     return new TextDecoder().decode(payload);
   }
   return String(payload);
+}
+
+// 获取 payload 的 HEX 字符串（用于二进制消息搜索）
+function getPayloadHexString(payload: string | Uint8Array | undefined): string {
+  if (!payload) return "";
+  const bytes = payload instanceof Uint8Array ? payload : new TextEncoder().encode(payload);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+    .join(" ");
 }
 
 // 检测 payload 格式
@@ -475,6 +507,16 @@ function copyToPublish() {
   font-family: "Fira Code", "Consolas", monospace;
   color: var(--app-text-color);
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topic-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .msg-meta {
