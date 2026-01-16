@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS, Transport};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -67,6 +67,16 @@ impl MqttManager {
             if !username.is_empty() {
                 options.set_credentials(username, password);
             }
+        }
+
+        // 配置 TLS
+        if server.use_tls {
+            let tls_config = Self::build_tls_config(
+                server.ca_cert.as_deref(),
+                server.client_cert.as_deref(),
+                server.client_key.as_deref(),
+            )?;
+            options.set_transport(Transport::tls_with_config(tls_config));
         }
 
         // 创建客户端
@@ -269,5 +279,66 @@ impl MqttManager {
     pub fn is_connected(&self, server_id: i64) -> bool {
         let clients = self.clients.read();
         clients.contains_key(&server_id)
+    }
+
+    /// 构建 TLS 配置
+    fn build_tls_config(
+        ca_cert: Option<&str>,
+        client_cert: Option<&str>,
+        client_key: Option<&str>,
+    ) -> Result<rumqttc::TlsConfiguration, String> {
+        use std::io::BufReader;
+
+        // 创建根证书存储
+        let mut root_cert_store = rumqttc::tokio_rustls::rustls::RootCertStore::empty();
+
+        // 添加系统默认根证书
+        let native_certs = rustls_native_certs::load_native_certs();
+        for cert in native_certs.certs {
+            let _ = root_cert_store.add(cert);
+        }
+
+        // 如果提供了自定义 CA 证书，添加到根存储
+        if let Some(ca_pem) = ca_cert {
+            if !ca_pem.trim().is_empty() {
+                let mut reader = BufReader::new(ca_pem.as_bytes());
+                for cert in rustls_pemfile::certs(&mut reader) {
+                    let cert = cert.map_err(|e| format!("Failed to parse CA certificate: {}", e))?;
+                    root_cert_store.add(cert).map_err(|e| format!("Failed to add CA certificate: {}", e))?;
+                }
+            }
+        }
+
+        // 构建客户端配置
+        let builder = rumqttc::tokio_rustls::rustls::ClientConfig::builder()
+            .with_root_certificates(root_cert_store);
+
+        let client_config = match (client_cert, client_key) {
+            (Some(cert_pem), Some(key_pem)) if !cert_pem.trim().is_empty() && !key_pem.trim().is_empty() => {
+                // 解析客户端证书
+                let mut cert_reader = BufReader::new(cert_pem.as_bytes());
+                let mut certs = Vec::new();
+                for cert in rustls_pemfile::certs(&mut cert_reader) {
+                    let cert = cert.map_err(|e| format!("Failed to parse client certificate: {}", e))?;
+                    certs.push(cert);
+                }
+
+                // 解析客户端私钥
+                let mut key_reader = BufReader::new(key_pem.as_bytes());
+                let key = rustls_pemfile::private_key(&mut key_reader)
+                    .map_err(|e| format!("Failed to read private key: {}", e))?
+                    .ok_or("No private key found in PEM")?;
+
+                builder
+                    .with_client_auth_cert(certs, key)
+                    .map_err(|e| format!("Failed to configure client auth: {}", e))?
+            }
+            _ => {
+                // 无客户端认证
+                builder.with_no_client_auth()
+            }
+        };
+
+        Ok(rumqttc::TlsConfiguration::Rustls(Arc::new(client_config)))
     }
 }
