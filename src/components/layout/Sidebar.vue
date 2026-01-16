@@ -96,7 +96,9 @@
                 class="sub-color-indicator" 
                 :style="{ backgroundColor: sub.color }"
               />
-              <span class="sub-topic text-ellipsis">{{ sub.topic }}</span>
+              <el-tooltip :content="sub.topic" placement="top" :show-after="500">
+                <span class="sub-topic text-ellipsis">{{ sub.topic }}</span>
+              </el-tooltip>
               <el-tag size="small" effect="plain" type="info">Q{{ sub.qos }}</el-tag>
             </div>
             <div class="sub-actions">
