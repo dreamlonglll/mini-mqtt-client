@@ -75,6 +75,39 @@
           </el-tooltip>
         </div>
       </div>
+
+      <!-- 检查更新 -->
+      <div class="setting-section">
+        <div class="setting-title">检查更新</div>
+        <div class="setting-desc">当前版本：v{{ currentVersion }}</div>
+        <div class="setting-row">
+          <el-button 
+            size="small" 
+            :icon="Refresh" 
+            :loading="checkingUpdate"
+            @click="handleCheckUpdate"
+          >
+            检查更新
+          </el-button>
+          <template v-if="updateInfo">
+            <el-tag v-if="updateInfo.hasUpdate" type="success" effect="plain">
+              发现新版本：{{ updateInfo.latestVersion }}
+            </el-tag>
+            <el-tag v-else type="info" effect="plain">
+              已是最新版本
+            </el-tag>
+            <el-button 
+              v-if="updateInfo.hasUpdate"
+              size="small" 
+              type="primary"
+              :icon="Download"
+              @click="handleOpenRelease"
+            >
+              前往下载
+            </el-button>
+          </template>
+        </div>
+      </div>
     </div>
 
     <template #footer>
@@ -93,11 +126,14 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Sunny, Moon, Platform, FolderOpened, CopyDocument, Delete } from '@element-plus/icons-vue'
+import { Sunny, Moon, Platform, FolderOpened, CopyDocument, Delete, Refresh, Download } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
+import { getVersion } from '@tauri-apps/api/app'
 import { useAppStore, type Theme } from '@/stores/app'
+
+const GITHUB_REPO = 'dreamlonglll/mini-mqtt-client'
 
 const props = defineProps<{
   visible: boolean
@@ -121,6 +157,9 @@ const originalTheme = ref<Theme>('light')
 const currentDataPath = ref('')
 const newDataPath = ref('')
 const logPath = ref('')
+const currentVersion = ref('')
+const checkingUpdate = ref(false)
+const updateInfo = ref<{ hasUpdate: boolean; latestVersion: string } | null>(null)
 
 // 是否有更改
 const hasChanges = computed(() => {
@@ -132,6 +171,13 @@ async function loadSettings() {
   currentTheme.value = appStore.theme
   originalTheme.value = appStore.theme
   newDataPath.value = ''
+  updateInfo.value = null
+  
+  try {
+    currentVersion.value = await getVersion()
+  } catch (e) {
+    currentVersion.value = '1.0.0'
+  }
   
   try {
     currentDataPath.value = await invoke<string>('get_data_path')
@@ -266,6 +312,56 @@ function handleClose() {
     appStore.setTheme(originalTheme.value)
   }
   dialogVisible.value = false
+}
+
+// 检查更新
+async function handleCheckUpdate() {
+  checkingUpdate.value = true
+  updateInfo.value = null
+  
+  try {
+    const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
+    if (!response.ok) {
+      throw new Error('获取版本信息失败')
+    }
+    
+    const data = await response.json()
+    const latestVersion = data.tag_name?.replace(/^v/, '') || ''
+    const hasUpdate = compareVersions(latestVersion, currentVersion.value) > 0
+    
+    updateInfo.value = { hasUpdate, latestVersion: `v${latestVersion}` }
+    
+    if (!hasUpdate) {
+      ElMessage.success('已是最新版本')
+    }
+  } catch (e) {
+    ElMessage.error(`检查更新失败: ${e}`)
+  } finally {
+    checkingUpdate.value = false
+  }
+}
+
+// 比较版本号
+function compareVersions(v1: string, v2: string): number {
+  const parts1 = v1.split('.').map(Number)
+  const parts2 = v2.split('.').map(Number)
+  
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const p1 = parts1[i] || 0
+    const p2 = parts2[i] || 0
+    if (p1 > p2) return 1
+    if (p1 < p2) return -1
+  }
+  return 0
+}
+
+// 打开 release 页面
+async function handleOpenRelease() {
+  try {
+    await openUrl(`https://github.com/${GITHUB_REPO}/releases/latest`)
+  } catch (e) {
+    ElMessage.error(`打开浏览器失败: ${e}`)
+  }
 }
 </script>
 
