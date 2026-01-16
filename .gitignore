@@ -29,7 +29,6 @@ __pycache__/
 
 # Lock files
 Cargo.lock
-package-lock.json
 
 # Auto-generated TypeScript declaration files
 src/auto-imports.d.ts
