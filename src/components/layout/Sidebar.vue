@@ -9,6 +9,7 @@
           </svg>
         </div>
         <span class="logo-text">MQTT Client</span>
+        <span class="version-tag">v{{ appVersion }}</span>
       </div>
     </div>
 
@@ -155,6 +156,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed, watch } from "vue";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   Plus,
   MoreFilled,
@@ -178,6 +180,7 @@ const appStore = useAppStore();
 const serverStore = useServerStore();
 const subscriptionStore = useSubscriptionStore();
 const mqttStore = useMqttStore();
+const appVersion = ref("");
 
 // 格式化服务器地址为 协议://host:port 格式
 const formatServerAddress = (server: MqttServer): string => {
@@ -211,9 +214,14 @@ const themeLabel = computed(() => {
   }
 });
 
-// 初始化加载 Server 列表
-onMounted(() => {
+// 初始化加载 Server 列表和版本号
+onMounted(async () => {
   serverStore.fetchServers();
+  try {
+    appVersion.value = await getVersion();
+  } catch {
+    appVersion.value = "1.0.0";
+  }
 });
 
 // 监听活动服务器变化，加载订阅列表
@@ -389,6 +397,13 @@ const handleConfirmSubscription = async () => {
   font-size: 16px;
   font-weight: 600;
   color: var(--app-text-color);
+}
+
+.version-tag {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--app-text-secondary);
+  margin-left: 4px;
 }
 
 .sidebar-content {
