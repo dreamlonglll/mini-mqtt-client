@@ -51,6 +51,8 @@ export interface MqttMessage {
   timestamp?: string;
   /** 脚本处理错误信息 */
   scriptError?: string;
+  /** 消息格式类型（发送时用户选择的格式） */
+  payload_type?: "json" | "hex" | "text";
 }
 
 /**

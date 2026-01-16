@@ -1,13 +1,18 @@
 <template>
   <div class="message-payload" :class="{ preview, expanded: !preview }">
     <!-- JSON 格式 - 保持原样展示，不格式化 -->
-    <div v-if="detectedFormat === 'json'" class="payload-content json-content">
+    <div v-if="effectiveFormat === 'json'" class="payload-content json-content">
       <pre>{{ preview ? displayPayload : displayPayloadWithLineBreaks }}</pre>
     </div>
 
-    <!-- 二进制/HEX 格式 - 始终显示完整内容 -->
-    <div v-else-if="detectedFormat === 'binary'" class="payload-content hex-content">
-      <div class="hex-display">
+    <!-- 二进制/HEX 格式 -->
+    <div v-else-if="effectiveFormat === 'binary'" class="payload-content hex-content">
+      <!-- 预览模式：只显示简单的 HEX 字符串 -->
+      <div v-if="preview" class="hex-preview-simple">
+        <span>{{ simpleHexPreview }}</span>
+      </div>
+      <!-- 详情模式：显示完整的 HEX + ASCII 展示 -->
+      <div v-else class="hex-display">
         <div class="hex-row" v-for="(row, index) in hexRows" :key="index">
           <span class="offset">{{ formatOffset(index * 16) }}</span>
           <span class="hex-bytes">
@@ -38,6 +43,7 @@ type PayloadFormat = "json" | "binary" | "text";
 const props = defineProps<{
   payload: string | Uint8Array | undefined;
   preview?: boolean;
+  payloadType?: "json" | "hex" | "text";
 }>();
 
 // 将 payload 转换为字符串
@@ -99,6 +105,25 @@ const detectedFormat = computed<PayloadFormat>(() => {
   return "text";
 });
 
+// 有效格式（优先使用指定的 payloadType，否则使用自动检测）
+const effectiveFormat = computed<PayloadFormat>(() => {
+  if (props.payloadType) {
+    // hex 类型映射为 binary 显示
+    if (props.payloadType === "hex") return "binary";
+    if (props.payloadType === "json") return "json";
+    return "text";
+  }
+  return detectedFormat.value;
+});
+
+// 简单的 HEX 预览（用于列表预览，不包含 offset 和 ASCII）
+const simpleHexPreview = computed(() => {
+  const bytes = payloadBytes.value;
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+    .join(" ");
+});
+
 // 显示的 payload（用于预览或文本显示）
 // 始终显示完整内容，不做截断
 const displayPayload = computed(() => {
@@ -146,6 +171,7 @@ function formatOffset(offset: number) {
 // 暴露格式类型供外部使用
 defineExpose({
   detectedFormat,
+  effectiveFormat,
 });
 </script>
 
@@ -194,6 +220,12 @@ defineExpose({
   .hex-preview {
     color: var(--app-text-secondary);
     font-size: 12px;
+  }
+  
+  .hex-preview-simple {
+    color: var(--msg-publish);
+    font-size: 12px;
+    word-break: break-all;
   }
 }
 

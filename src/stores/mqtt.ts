@@ -193,6 +193,16 @@ export const useMqttStore = defineStore("mqtt", () => {
     }
   };
 
+  // 将 HEX 字符串转换为字节数组
+  const hexToBytes = (hex: string): Uint8Array => {
+    const cleanHex = hex.replace(/\s/g, "");
+    const bytes = new Uint8Array(cleanHex.length / 2);
+    for (let i = 0; i < cleanHex.length; i += 2) {
+      bytes[i / 2] = parseInt(cleanHex.substring(i, i + 2), 16);
+    }
+    return bytes;
+  };
+
   // 添加发布消息到列表（用于UI显示）
   const addPublishMessage = (
     serverId: number,
@@ -202,17 +212,29 @@ export const useMqttStore = defineStore("mqtt", () => {
       qos: 0 | 1 | 2;
       retain: boolean;
       scriptError?: string;
+      payload_type?: "json" | "hex" | "text";
     }
   ) => {
+    // 根据 payload_type 决定如何编码 payload
+    let payloadBytes: Uint8Array;
+    if (msg.payload_type === "hex") {
+      // HEX 格式：将 HEX 字符串转换为实际字节
+      payloadBytes = hexToBytes(msg.payload);
+    } else {
+      // 其他格式：直接用 TextEncoder 编码
+      payloadBytes = new TextEncoder().encode(msg.payload);
+    }
+    
     messages.value.unshift({
       server_id: serverId,
       direction: "publish",
       topic: msg.topic,
-      payload: new TextEncoder().encode(msg.payload),
+      payload: payloadBytes,
       qos: msg.qos,
       retain: msg.retain,
       timestamp: new Date().toISOString(),
       scriptError: msg.scriptError,
+      payload_type: msg.payload_type,
     });
 
     // 限制消息数量

@@ -74,10 +74,10 @@
             <el-tag
               size="small"
               effect="plain"
-              :type="getFormatTagType(detectPayloadFormat(msg.payload))"
+              :type="getFormatTagType(getMessageFormat(msg))"
               class="format-tag"
             >
-              {{ getFormatLabel(detectPayloadFormat(msg.payload)) }}
+              {{ getFormatLabel(getMessageFormat(msg), msg) }}
             </el-tag>
             <el-tag size="small" effect="plain">Q{{ msg.qos }}</el-tag>
             <el-tag v-if="msg.retain" size="small" type="warning" effect="plain">
@@ -91,7 +91,7 @@
           <span>{{ msg.scriptError }}</span>
         </div>
         <div class="message-body">
-          <MessagePayload :payload="msg.payload" :preview="true" />
+          <MessagePayload :payload="msg.payload" :preview="true" :payload-type="msg.payload_type" />
         </div>
       </div>
 
@@ -124,9 +124,9 @@
           <el-descriptions-item :label="$t('publish.payloadType')">
             <el-tag
               size="small"
-              :type="getFormatTagType(detectPayloadFormat(selectedMessage.payload))"
+              :type="getFormatTagType(getMessageFormat(selectedMessage))"
             >
-              {{ getFormatLabel(detectPayloadFormat(selectedMessage.payload)) }}
+              {{ getFormatLabel(getMessageFormat(selectedMessage), selectedMessage) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="Time" :span="2">
@@ -154,7 +154,7 @@
               </el-button>
             </div>
           </div>
-          <MessagePayload :payload="selectedMessage.payload" :preview="false" />
+          <MessagePayload :payload="selectedMessage.payload" :preview="false" :payload-type="selectedMessage.payload_type" />
         </div>
       </div>
     </el-dialog>
@@ -277,7 +277,7 @@ function getPayloadHexString(payload: string | Uint8Array | undefined): string {
     .join(" ");
 }
 
-// 检测 payload 格式
+// 检测 payload 格式（自动检测，用于接收的消息）
 function detectPayloadFormat(payload: string | Uint8Array | undefined): PayloadFormat {
   if (!payload) return "text";
 
@@ -317,6 +317,19 @@ function detectPayloadFormat(payload: string | Uint8Array | undefined): PayloadF
   return "text";
 }
 
+// 获取消息的显示格式（优先使用保存的类型，否则自动检测）
+function getMessageFormat(msg: MqttMessage): PayloadFormat {
+  // 如果消息有保存的 payload_type，使用它
+  if (msg.payload_type) {
+    // hex 类型映射为 binary 显示
+    if (msg.payload_type === "hex") return "binary";
+    if (msg.payload_type === "json") return "json";
+    return "text";
+  }
+  // 否则自动检测
+  return detectPayloadFormat(msg.payload);
+}
+
 // 获取格式标签类型
 function getFormatTagType(
   format: PayloadFormat
@@ -330,10 +343,11 @@ function getFormatTagType(
 }
 
 // 获取格式标签文本
-function getFormatLabel(format: PayloadFormat): string {
+function getFormatLabel(format: PayloadFormat, _msg?: MqttMessage): string {
+  // binary 格式统一显示为 HEX
   const labels: Record<PayloadFormat, string> = {
     json: "JSON",
-    binary: "BIN",
+    binary: "HEX",
     text: "TEXT",
   };
   return labels[format];
@@ -388,7 +402,7 @@ function showDetail(message: MqttMessage) {
 
 function copyPayload() {
   if (selectedMessage.value) {
-    const format = detectPayloadFormat(selectedMessage.value.payload);
+    const format = getMessageFormat(selectedMessage.value);
     // 二进制数据复制为 HEX 格式
     const payload = format === "binary" 
       ? getPayloadHexString(selectedMessage.value.payload)
@@ -400,7 +414,7 @@ function copyPayload() {
 
 function copyToPublish() {
   if (selectedMessage.value) {
-    const format = detectPayloadFormat(selectedMessage.value.payload);
+    const format = getMessageFormat(selectedMessage.value);
     // 二进制数据使用 HEX 格式复制到发布面板
     const payload = format === "binary" 
       ? getPayloadHexString(selectedMessage.value.payload)

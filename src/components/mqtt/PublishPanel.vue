@@ -259,6 +259,7 @@ const handlePublish = async () => {
         qos: publishData.qos as 0 | 1 | 2,
         retain: publishData.retain,
         scriptError: scriptError,
+        payload_type: payloadFormat.value,
       });
       
       ElMessage.error(`${t('script.testError')}: ${scriptError}`);
@@ -280,6 +281,7 @@ const handlePublish = async () => {
       payload: processedPayload,
       qos: publishData.qos as 0 | 1 | 2,
       retain: publishData.retain,
+      payload_type: payloadFormat.value,
     });
 
     ElMessage.success(t('success.published'));
