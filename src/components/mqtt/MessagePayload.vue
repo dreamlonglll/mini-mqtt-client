@@ -2,7 +2,7 @@
   <div class="message-payload" :class="{ preview, expanded: !preview }">
     <!-- JSON 格式 - 保持原样展示，不格式化 -->
     <div v-if="detectedFormat === 'json'" class="payload-content json-content">
-      <pre>{{ displayPayload }}</pre>
+      <pre>{{ preview ? displayPayload : displayPayloadWithLineBreaks }}</pre>
     </div>
 
     <!-- 二进制/HEX 格式 -->
@@ -30,7 +30,7 @@
 
     <!-- 纯文本格式 -->
     <div v-else class="payload-content text-content">
-      <pre>{{ displayPayload }}</pre>
+      <pre>{{ preview ? displayPayload : displayPayloadWithLineBreaks }}</pre>
     </div>
   </div>
 </template>
@@ -111,6 +111,13 @@ const displayPayload = computed(() => {
     return str.substring(0, 200) + "...";
   }
   return str;
+});
+
+// 带换行符标记的 payload（用于详情展示）
+const displayPayloadWithLineBreaks = computed(() => {
+  const str = payloadString.value;
+  // 在换行符前添加 ↵ 符号标记原始换行位置
+  return str.replace(/\r?\n/g, '↵$&');
 });
 
 // HEX 预览（简化显示）
