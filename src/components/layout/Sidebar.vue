@@ -181,7 +181,7 @@
       <template #footer>
         <el-button @click="showSubDialog = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="subLoading" @click="handleConfirmSubscription">
-          {{ isEditingSubscription ? $t('common.save') : $t('success.subscribed') }}
+          {{ isEditingSubscription ? $t('common.save') : $t('sidebar.subscribe') }}
         </el-button>
       </template>
     </el-dialog>

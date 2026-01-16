@@ -31,6 +31,7 @@ sidebar:
   addServer: 添加 Server
   noServer: 暂无 Server
   subscription: 订阅
+  subscribe: 订阅
   addSubscription: 添加订阅
   editSubscription: 编辑订阅
   addSubscriptionHint: 点击 + 添加订阅
