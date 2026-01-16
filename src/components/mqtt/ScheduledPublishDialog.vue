@@ -76,7 +76,7 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="Round Interval">
+              <el-form-item :label="$t('scheduled.roundInterval')">
                 <el-input-number
                   v-model="config.roundInterval"
                   :min="0"
@@ -88,16 +88,16 @@
               </el-form-item>
             </el-col>
           </el-row>
-          <el-form-item label="Order">
+          <el-form-item :label="$t('scheduled.order')">
             <el-radio-group v-model="config.order">
-              <el-radio value="selection">Selection Order</el-radio>
-              <el-radio value="name">Name Order</el-radio>
+              <el-radio value="selection">{{ $t('scheduled.selectionOrder') }}</el-radio>
+              <el-radio value="name">{{ $t('scheduled.nameOrder') }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="Loop Mode">
+          <el-form-item :label="$t('scheduled.loopMode')">
             <el-radio-group v-model="config.loopMode">
-              <el-radio value="infinite">Infinite</el-radio>
-              <el-radio value="count">Count</el-radio>
+              <el-radio value="infinite">{{ $t('scheduled.infinite') }}</el-radio>
+              <el-radio value="count">{{ $t('scheduled.count') }}</el-radio>
             </el-radio-group>
             <el-input-number
               v-if="config.loopMode === 'count'"
@@ -126,19 +126,19 @@
           </div>
           <div class="status-info">
             <div class="info-row">
-              <span class="label">Topic:</span>
+              <span class="label">{{ $t('scheduled.topic') }}:</span>
               <code class="value">{{ currentCommand?.topic || '-' }}</code>
             </div>
             <div class="info-row">
-              <span class="label">Round:</span>
+              <span class="label">{{ $t('scheduled.round') }}:</span>
               <span class="value">{{ currentRound }}</span>
             </div>
             <div class="info-row">
-              <span class="label">Sent:</span>
+              <span class="label">{{ $t('scheduled.sent') }}:</span>
               <span class="value">{{ sentCount }}</span>
             </div>
             <div class="info-row">
-              <span class="label">Success/Fail:</span>
+              <span class="label">{{ $t('scheduled.successFail') }}:</span>
               <span class="value success">{{ successCount }}</span>
               <span> / </span>
               <span class="value error">{{ failCount }}</span>
@@ -155,7 +155,7 @@
       <!-- 发送日志 -->
       <div class="section">
         <div class="section-header">
-          <span class="section-title">Logs</span>
+          <span class="section-title">{{ $t('scheduled.logs') }}</span>
           <el-button text size="small" @click="logs = []">{{ $t('messages.clear') }}</el-button>
         </div>
         <div class="log-list" ref="logListRef">
@@ -195,14 +195,14 @@
       </template>
       <!-- 运行中按钮 -->
       <template v-else-if="isRunning">
-        <el-button @click="handleMinimize">Minimize</el-button>
+        <el-button @click="handleMinimize">{{ $t('scheduled.minimize') }}</el-button>
         <el-button type="danger" @click="handleStop">
           {{ $t('scheduled.stop') }}
         </el-button>
       </template>
       <!-- 完成后按钮 -->
       <template v-else>
-        <el-button @click="handleBackToConfig">Back</el-button>
+        <el-button @click="handleBackToConfig">{{ $t('scheduled.back') }}</el-button>
         <el-button type="primary" @click="handleClose">{{ $t('common.close') }}</el-button>
       </template>
     </template>
@@ -532,7 +532,7 @@ function handleMinimize() {
   emit('running-change', true)
 }
 
-// 对话框关闭事件（由 el-dialog 的 @close 触发）
+// 对话框关闭事件（由 el-dialog 的 @close 触发或取消按钮调用）
 function handleClose() {
   // 如果是最小化操作，不停止发布
   if (isMinimized.value) {
@@ -543,6 +543,7 @@ function handleClose() {
   if (isRunning.value) {
     stopPublishing()
   }
+  dialogVisible.value = false
   emit('running-change', false)
 }
 </script>

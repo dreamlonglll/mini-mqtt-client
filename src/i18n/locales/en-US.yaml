@@ -179,6 +179,7 @@ scheduled:
   interval: Interval
   cron: Cron Expression
   intervalSeconds: Interval (seconds)
+  roundInterval: Round Interval
   cronExpression: Cron Expression
   cronHelp: "Example: */5 * * * * (every 5 minutes)"
   executeTime: Execute Time
@@ -191,6 +192,19 @@ scheduled:
   selectedTemplates: "{count} templates selected"
   status: Publish Status
   completed: Completed
+  order: Order
+  selectionOrder: Selection Order
+  nameOrder: Name Order
+  loopMode: Loop Mode
+  infinite: Infinite
+  count: Count
+  logs: Logs
+  minimize: Minimize
+  back: Back
+  topic: Topic
+  round: Round
+  sent: Sent
+  successFail: Success/Fail
 
 server:
   addTitle: Add Server

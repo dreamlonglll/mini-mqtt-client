@@ -179,6 +179,7 @@ scheduled:
   interval: 间隔
   cron: Cron表达式
   intervalSeconds: 间隔（秒）
+  roundInterval: 轮次间隔
   cronExpression: Cron 表达式
   cronHelp: 例如：*/5 * * * * (每5分钟)
   executeTime: 执行时间
@@ -191,6 +192,19 @@ scheduled:
   selectedTemplates: 已选择 {count} 个模板
   status: 发送状态
   completed: 已完成
+  order: 排序
+  selectionOrder: 选择顺序
+  nameOrder: 名称顺序
+  loopMode: 循环模式
+  infinite: 无限循环
+  count: 次数
+  logs: 日志
+  minimize: 最小化
+  back: 返回
+  topic: Topic
+  round: 轮次
+  sent: 已发送
+  successFail: 成功/失败
 
 server:
   addTitle: 添加服务器
