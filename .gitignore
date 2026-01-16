@@ -26,5 +26,15 @@ dist-ssr
 # Python cache
 __pycache__/
 *.py[cod]
+
+# Lock files
 Cargo.lock
 package-lock.json
+
+# Auto-generated TypeScript declaration files
+src/auto-imports.d.ts
+src/components.d.ts
+
+# Mobile icons (not used for Windows desktop app)
+src-tauri/icons/android/
+src-tauri/icons/ios/
