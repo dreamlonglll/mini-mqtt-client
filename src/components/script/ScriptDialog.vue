@@ -73,22 +73,13 @@
             </el-form-item>
             <el-form-item label="脚本代码" required>
               <div class="code-editor-wrapper">
-                <div class="code-header">
-                  <div class="code-hint">
-                    <code v-if="formData.script_type === 'before_publish'">
-                      定义 process(payload) 函数，返回处理后的 payload
-                    </code>
-                    <code v-else>
-                      定义 process(payload, topic) 函数，返回处理后的 payload
-                    </code>
-                  </div>
-                  <el-button 
-                    size="small" 
-                    :icon="FolderOpened"
-                    @click="handleImportFile"
-                  >
-                    导入文件
-                  </el-button>
+                <div class="code-hint">
+                  <code v-if="formData.script_type === 'before_publish'">
+                    定义 process(payload) 函数，返回处理后的 payload
+                  </code>
+                  <code v-else>
+                    定义 process(payload, topic) 函数，返回处理后的 payload
+                  </code>
                 </div>
                 <el-input
                   v-model="formData.code"
@@ -101,7 +92,10 @@
             </el-form-item>
           </el-form>
           <div class="form-actions">
-            <el-button :icon="Document" @click="showFunctionList = true">查看可用函数</el-button>
+            <div class="left-actions">
+              <el-button :icon="FolderOpened" @click="handleImportFile">导入js脚本</el-button>
+              <el-button :icon="Document" @click="showFunctionList = true">查看可用函数</el-button>
+            </div>
             <el-button type="primary" :loading="saving" @click="handleSave">
               保存
             </el-button>
@@ -514,19 +508,11 @@ async function handleImportFile() {
   width: 100%;
 }
 
-.code-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
 .code-hint {
+  margin-bottom: 8px;
   padding: 8px 12px;
   background-color: var(--sidebar-hover);
   border-radius: 4px;
-  flex: 1;
-  margin-right: 8px;
   
   code {
     font-family: 'Fira Code', 'Consolas', monospace;
@@ -545,10 +531,15 @@ async function handleImportFile() {
 
 .form-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
   padding: 12px 16px;
   border-top: 1px solid var(--app-border-color);
+}
+
+.left-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .empty-editor {
