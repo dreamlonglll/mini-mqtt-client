@@ -79,23 +79,24 @@
       <!-- 订阅列表区域 -->
       <div v-if="serverStore.activeServer" class="section">
         <div class="section-header">
-          <span class="section-title">{{ $t('sidebar.subscription') }}</span>
+          <div class="section-title-wrapper" @click="isSubscriptionListCollapsed = !isSubscriptionListCollapsed">
+            <el-icon class="collapse-icon" :class="{ collapsed: isSubscriptionListCollapsed }">
+              <CaretBottom />
+            </el-icon>
+            <span class="section-title">{{ $t('sidebar.subscription') }}</span>
+          </div>
           <el-button type="primary" size="small" :icon="Plus" circle @click="handleAddSubscription" />
         </div>
 
-        <div class="subscription-list">
+        <div class="subscription-list" v-show="!isSubscriptionListCollapsed">
           <div
             v-for="sub in currentSubscriptions"
             :key="sub.id"
             class="subscription-item"
             :class="{ inactive: !sub.is_active }"
           >
-            <div class="sub-main">
-              <el-switch
-                :model-value="sub.is_active"
-                size="small"
-                @change="(val: string | number | boolean) => handleToggleSubscription(sub, Boolean(val))"
-              />
+            <!-- 第一行：颜色 + Topic + 开关 -->
+            <div class="sub-row-1">
               <span 
                 v-if="sub.color" 
                 class="sub-color-indicator" 
@@ -104,11 +105,19 @@
               <el-tooltip :content="sub.topic" placement="top" :show-after="500">
                 <span class="sub-topic text-ellipsis">{{ sub.topic }}</span>
               </el-tooltip>
-              <el-tag size="small" effect="plain" type="info">Q{{ sub.qos }}</el-tag>
+              <el-switch
+                :model-value="sub.is_active"
+                size="small"
+                @change="(val: string | number | boolean) => handleToggleSubscription(sub, Boolean(val))"
+              />
             </div>
-            <div class="sub-actions">
-              <el-button text size="small" :icon="Edit" @click="handleEditSubscription(sub)" />
-              <el-button text size="small" type="danger" :icon="Close" @click="handleDeleteSubscription(sub)" />
+            <!-- 第二行：QoS + 操作按钮 -->
+            <div class="sub-row-2">
+              <el-tag size="small" effect="plain" type="info">Q{{ sub.qos }}</el-tag>
+              <div class="sub-actions">
+                <el-button text size="small" :icon="Edit" @click="handleEditSubscription(sub)" />
+                <el-button text size="small" type="danger" :icon="Close" @click="handleDeleteSubscription(sub)" />
+              </div>
             </div>
           </div>
 
@@ -227,6 +236,7 @@ const subscriptionStore = useSubscriptionStore();
 const mqttStore = useMqttStore();
 const appVersion = ref("");
 const isServerListCollapsed = ref(false);
+const isSubscriptionListCollapsed = ref(false);
 
 // 格式化服务器地址为 协议://host:port 格式
 const formatServerAddress = (server: MqttServer): string => {
@@ -606,14 +616,16 @@ const handleConfirmSubscription = async () => {
 
 .subscription-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 10px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
   border-radius: 6px;
-  transition: background-color 0.2s ease;
+  border: 1px solid var(--app-border-color);
+  transition: all 0.2s ease;
 
   &:hover {
     background-color: var(--sidebar-hover);
+    border-color: var(--el-color-primary-light-5);
 
     .sub-actions {
       opacity: 1;
@@ -625,12 +637,29 @@ const handleConfirmSubscription = async () => {
   }
 }
 
-.sub-main {
+.sub-row-1 {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  flex: 1;
+  
+  .el-switch {
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+}
+
+.sub-row-2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sub-row-2-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .sub-color-indicator {
@@ -644,13 +673,19 @@ const handleConfirmSubscription = async () => {
   font-size: 12px;
   font-family: "Fira Code", "Consolas", monospace;
   color: var(--app-text-color);
+  flex: 1;
+  min-width: 0;
 }
 
 .sub-actions {
   display: flex;
-  gap: 2px;
+  gap: 0;
   opacity: 0;
   transition: opacity 0.2s ease;
+  
+  .el-button {
+    padding: 4px;
+  }
 }
 
 .empty-state {
