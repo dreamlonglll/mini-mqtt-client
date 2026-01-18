@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, shallowRef } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ElMessage } from "element-plus";
@@ -24,17 +24,103 @@ interface ReceivedMessage {
   timestamp: string;
 }
 
+// 脚本缓存接口
+interface ScriptCache {
+  scripts: Script[];
+  timestamp: number;
+}
+
+// 脚本缓存有效期（毫秒）
+const SCRIPT_CACHE_TTL = 5000;
+
 export const useMqttStore = defineStore("mqtt", () => {
   // 连接状态
   const connectionStates = ref<
     Map<number, { status: ConnectionStatus; error?: string }>
   >(new Map());
 
-  // 接收到的消息
-  const messages = ref<MqttMessage[]>([]);
+  // 按 serverId 分组存储消息（使用 shallowRef 减少深度响应式开销）
+  const messagesByServer = shallowRef<Map<number, MqttMessage[]>>(new Map());
 
   // 订阅列表（按 server_id 分组）
   const subscriptions = ref<Map<number, Set<string>>>(new Map());
+
+  // 脚本缓存（避免高频调用 invoke）
+  const scriptCache = new Map<string, ScriptCache>();
+
+  // 消息批处理队列
+  const messageQueue: MqttMessage[] = [];
+  let batchTimeout: ReturnType<typeof setTimeout> | null = null;
+  const BATCH_INTERVAL = 50; // 批处理间隔（毫秒）
+
+  // 获取缓存的脚本
+  async function getCachedScripts(serverId: number, scriptType: string): Promise<Script[]> {
+    const cacheKey = `${serverId}-${scriptType}`;
+    const cached = scriptCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && now - cached.timestamp < SCRIPT_CACHE_TTL) {
+      return cached.scripts;
+    }
+
+    try {
+      const scripts = await invoke<Script[]>("get_enabled_scripts", {
+        serverId,
+        scriptType,
+      });
+      scriptCache.set(cacheKey, { scripts, timestamp: now });
+      return scripts;
+    } catch {
+      return [];
+    }
+  }
+
+  // 清除脚本缓存（当脚本更新时调用）
+  function clearScriptCache(serverId?: number) {
+    if (serverId) {
+      scriptCache.delete(`${serverId}-before_send`);
+      scriptCache.delete(`${serverId}-after_receive`);
+    } else {
+      scriptCache.clear();
+    }
+  }
+
+  // 批量处理消息队列
+  function flushMessageQueue() {
+    if (messageQueue.length === 0) return;
+
+    const newMap = new Map(messagesByServer.value);
+    
+    // 按 serverId 分组处理
+    const messagesByServerId = new Map<number, MqttMessage[]>();
+    for (const msg of messageQueue) {
+      if (!messagesByServerId.has(msg.server_id)) {
+        messagesByServerId.set(msg.server_id, []);
+      }
+      messagesByServerId.get(msg.server_id)!.push(msg);
+    }
+
+    // 合并到现有消息
+    for (const [serverId, newMessages] of messagesByServerId) {
+      const existing = newMap.get(serverId) || [];
+      const merged = [...newMessages, ...existing];
+      // 限制每个 server 的消息数量
+      newMap.set(serverId, merged.length > 1000 ? merged.slice(0, 1000) : merged);
+    }
+
+    messagesByServer.value = newMap;
+    messageQueue.length = 0;
+    batchTimeout = null;
+  }
+
+  // 添加消息到队列
+  function queueMessage(msg: MqttMessage) {
+    messageQueue.push(msg);
+    
+    if (!batchTimeout) {
+      batchTimeout = setTimeout(flushMessageQueue, BATCH_INTERVAL);
+    }
+  }
 
   // 初始化事件监听
   const initListeners = async () => {
@@ -61,12 +147,9 @@ export const useMqttStore = defineStore("mqtt", () => {
       let payloadBytes = new Uint8Array(msg.payload);
       let scriptError: string | undefined = undefined;
       
-      // 尝试应用接收后处理脚本
+      // 尝试应用接收后处理脚本（使用缓存）
       try {
-        const scripts = await invoke<Script[]>("get_enabled_scripts", {
-          serverId: msg.server_id,
-          scriptType: "after_receive",
-        });
+        const scripts = await getCachedScripts(msg.server_id, "after_receive");
         
         if (scripts.length > 0) {
           const originalPayload = new TextDecoder().decode(payloadBytes);
@@ -83,7 +166,8 @@ export const useMqttStore = defineStore("mqtt", () => {
         handleScriptError(error, true); // 静默处理，不显示通知（会写入日志）
       }
       
-      messages.value.unshift({
+      // 使用批处理队列
+      queueMessage({
         server_id: msg.server_id,
         direction: "receive",
         topic: msg.topic,
@@ -93,11 +177,6 @@ export const useMqttStore = defineStore("mqtt", () => {
         timestamp: msg.timestamp,
         scriptError: scriptError,
       });
-
-      // 限制消息数量
-      if (messages.value.length > 1000) {
-        messages.value = messages.value.slice(0, 1000);
-      }
     });
   };
 
@@ -136,8 +215,8 @@ export const useMqttStore = defineStore("mqtt", () => {
       retain,
     });
 
-    // 添加到消息列表
-    messages.value.unshift({
+    // 添加到消息列表（使用批处理）
+    queueMessage({
       server_id: serverId,
       direction: "publish",
       topic,
@@ -179,18 +258,20 @@ export const useMqttStore = defineStore("mqtt", () => {
     return connectionStates.value.get(serverId)?.error;
   };
 
-  // 获取某个 server 的消息
-  const getServerMessages = (serverId: number) => {
-    return messages.value.filter((m) => m.server_id === serverId);
+  // 获取某个 server 的消息（直接返回，无需过滤）
+  const getServerMessages = (serverId: number): MqttMessage[] => {
+    return messagesByServer.value.get(serverId) || [];
   };
 
   // 清空消息
   const clearMessages = (serverId?: number) => {
+    const newMap = new Map(messagesByServer.value);
     if (serverId) {
-      messages.value = messages.value.filter((m) => m.server_id !== serverId);
+      newMap.delete(serverId);
     } else {
-      messages.value = [];
+      newMap.clear();
     }
+    messagesByServer.value = newMap;
   };
 
   // 将 HEX 字符串转换为字节数组
@@ -225,7 +306,8 @@ export const useMqttStore = defineStore("mqtt", () => {
       payloadBytes = new TextEncoder().encode(msg.payload);
     }
     
-    messages.value.unshift({
+    // 使用批处理队列
+    queueMessage({
       server_id: serverId,
       direction: "publish",
       topic: msg.topic,
@@ -236,16 +318,11 @@ export const useMqttStore = defineStore("mqtt", () => {
       scriptError: msg.scriptError,
       payload_type: msg.payload_type,
     });
-
-    // 限制消息数量
-    if (messages.value.length > 1000) {
-      messages.value = messages.value.slice(0, 1000);
-    }
   };
 
   return {
     connectionStates,
-    messages,
+    messagesByServer,
     subscriptions,
     initListeners,
     connect,
@@ -258,5 +335,6 @@ export const useMqttStore = defineStore("mqtt", () => {
     getServerMessages,
     clearMessages,
     addPublishMessage,
+    clearScriptCache,
   };
 });
