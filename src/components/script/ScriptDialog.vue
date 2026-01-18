@@ -159,6 +159,14 @@
           <el-table-column prop="desc" :label="$t('script.functionColumns.description')" />
         </el-table>
       </div>
+      
+      <div class="function-category">
+        <h4>{{ $t('script.functionCategories.env') }}</h4>
+        <el-table :data="envFunctions" size="small">
+          <el-table-column prop="name" :label="$t('script.functionColumns.function')" width="200" />
+          <el-table-column prop="desc" :label="$t('script.functionColumns.description')" />
+        </el-table>
+      </div>
     </div>
 
     <template #footer>
@@ -245,6 +253,13 @@ const otherFunctions = [
   { name: 'crypto.xor(data, key)', desc: 'XOR encrypt/decrypt' },
   { name: 'crypto.crc32(data)', desc: 'CRC32 checksum' },
 ]
+
+const envFunctions = computed(() => [
+  { name: 'env.VAR_NAME', desc: t('script.envFunctions.getVar') },
+  { name: 'env.get("VAR_NAME")', desc: t('script.envFunctions.getVarAlt') },
+  { name: 'env.replace(text)', desc: t('script.envFunctions.replace') },
+  { name: 'env.all()', desc: t('script.envFunctions.getAll') },
+])
 
 const formData = ref({
   name: '',

@@ -181,6 +181,9 @@ export const useTemplateStore = defineStore('template', () => {
         templates.value[index].use_count++
         templates.value[index].last_used_at = new Date().toISOString()
       }
+      
+      // 返回原始模板（保留 {{变量名}} 占位符）
+      // 变量替换在实际发送消息时进行
       return template
     } catch (error) {
       console.error('使用模板失败:', error)

@@ -1,6 +1,6 @@
 pub mod models;
 
-use models::{CommandTemplate, CreateTemplateRequest, CreateScriptRequest, MessageHistory, MqttServer, Script, Subscription, UpdateSubscriptionRequest, UpdateTemplateRequest, UpdateScriptRequest};
+use models::{CommandTemplate, CreateTemplateRequest, CreateScriptRequest, MessageHistory, MqttServer, Script, Subscription, UpdateSubscriptionRequest, UpdateTemplateRequest, UpdateScriptRequest, EnvVariable, CreateEnvVariableRequest, UpdateEnvVariableRequest};
 use parking_lot::RwLock;
 use std::fs;
 use std::path::PathBuf;
@@ -17,6 +17,8 @@ pub struct AppData {
     #[serde(default)]
     pub scripts: Vec<Script>,
     #[serde(default)]
+    pub env_variables: Vec<EnvVariable>,
+    #[serde(default)]
     next_server_id: i64,
     #[serde(default)]
     next_subscription_id: i64,
@@ -26,6 +28,8 @@ pub struct AppData {
     next_template_id: i64,
     #[serde(default)]
     next_script_id: i64,
+    #[serde(default)]
+    next_env_variable_id: i64,
 }
 
 /// 应用配置（用于存储自定义数据路径等）
@@ -134,9 +138,12 @@ impl Storage {
     pub fn delete_server(&self, id: i64) -> Result<(), String> {
         let mut data = self.data.write();
         data.servers.retain(|s| s.id != Some(id));
-        // 同时删除相关订阅和消息
+        // 同时删除相关订阅、消息、模板、脚本和环境变量
         data.subscriptions.retain(|s| s.server_id != id);
         data.messages.retain(|m| m.server_id != id);
+        data.templates.retain(|t| t.server_id != id);
+        data.scripts.retain(|s| s.server_id != id);
+        data.env_variables.retain(|e| e.server_id != id);
         drop(data);
         self.save()
     }
@@ -440,6 +447,91 @@ impl Storage {
             script.enabled = enabled;
             script.updated_at = Some(chrono::Utc::now().to_rfc3339());
         }
+        drop(data);
+        self.save()
+    }
+
+    // ===== 环境变量操作 =====
+    pub fn get_env_variables(&self, server_id: i64) -> Vec<EnvVariable> {
+        let data = self.data.read();
+        data.env_variables
+            .iter()
+            .filter(|e| e.server_id == server_id)
+            .cloned()
+            .collect()
+    }
+
+    pub fn get_env_variable(&self, id: i64) -> Option<EnvVariable> {
+        let data = self.data.read();
+        data.env_variables.iter().find(|e| e.id == Some(id)).cloned()
+    }
+
+    pub fn create_env_variable(&self, req: CreateEnvVariableRequest) -> Result<i64, String> {
+        let mut data = self.data.write();
+        
+        // 检查变量名是否重复
+        let exists = data.env_variables.iter().any(|e| {
+            e.server_id == req.server_id && e.name == req.name
+        });
+        if exists {
+            return Err("Variable name already exists".to_string());
+        }
+
+        data.next_env_variable_id += 1;
+        let id = data.next_env_variable_id;
+        let now = chrono::Utc::now().to_rfc3339();
+        
+        let env_var = EnvVariable {
+            id: Some(id),
+            server_id: req.server_id,
+            name: req.name,
+            value: req.value,
+            description: req.description,
+            created_at: Some(now.clone()),
+            updated_at: Some(now),
+        };
+        
+        data.env_variables.push(env_var);
+        drop(data);
+        self.save()?;
+        Ok(id)
+    }
+
+    pub fn update_env_variable(&self, req: UpdateEnvVariableRequest) -> Result<(), String> {
+        let mut data = self.data.write();
+        
+        // 如果要更新名称，检查是否与其他变量重复
+        if let Some(new_name) = &req.name {
+            let current = data.env_variables.iter().find(|e| e.id == Some(req.id));
+            if let Some(current) = current {
+                let exists = data.env_variables.iter().any(|e| {
+                    e.server_id == current.server_id && e.name == *new_name && e.id != Some(req.id)
+                });
+                if exists {
+                    return Err("Variable name already exists".to_string());
+                }
+            }
+        }
+
+        if let Some(env_var) = data.env_variables.iter_mut().find(|e| e.id == Some(req.id)) {
+            if let Some(name) = req.name {
+                env_var.name = name;
+            }
+            if let Some(value) = req.value {
+                env_var.value = value;
+            }
+            if let Some(description) = req.description {
+                env_var.description = Some(description);
+            }
+            env_var.updated_at = Some(chrono::Utc::now().to_rfc3339());
+        }
+        drop(data);
+        self.save()
+    }
+
+    pub fn delete_env_variable(&self, id: i64) -> Result<(), String> {
+        let mut data = self.data.write();
+        data.env_variables.retain(|e| e.id != Some(id));
         drop(data);
         self.save()
     }

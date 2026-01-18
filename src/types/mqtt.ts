@@ -115,6 +115,39 @@ export type ConnectionStatus =
   | "error";
 
 /**
+ * 环境变量
+ */
+export interface EnvVariable {
+  id?: number;
+  server_id: number;
+  name: string;
+  value: string;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * 创建环境变量请求
+ */
+export interface CreateEnvVariableRequest {
+  server_id: number;
+  name: string;
+  value: string;
+  description?: string;
+}
+
+/**
+ * 更新环境变量请求
+ */
+export interface UpdateEnvVariableRequest {
+  id: number;
+  name?: string;
+  value?: string;
+  description?: string;
+}
+
+/**
  * 创建默认 Server 配置
  */
 export function createDefaultServer(): MqttServer {

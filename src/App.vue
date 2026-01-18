@@ -1,5 +1,5 @@
 <template>
-  <AppLayout @open-templates="handleOpenTemplates" @open-scripts="handleOpenScripts" @settings="handleOpenSettings">
+  <AppLayout @open-templates="handleOpenTemplates" @open-scripts="handleOpenScripts" @open-env="handleOpenEnv" @settings="handleOpenSettings">
     <!-- 消息调试视图 -->
     <MainContent 
       :scheduled-publish-running="isScheduledPublishRunning"
@@ -48,6 +48,20 @@
     v-model:visible="showScriptDialog"
     :server-id="activeServerId ?? 0"
   />
+
+  <!-- 环境变量抽屉 -->
+  <el-drawer
+    v-model="showEnvDrawer"
+    :title="$t('env.drawerTitle')"
+    direction="rtl"
+    size="480px"
+    :close-on-click-modal="true"
+  >
+    <EnvDrawer 
+      v-if="activeServerId"
+      :server-id="activeServerId"
+    />
+  </el-drawer>
 </template>
 
 <script setup lang="ts">
@@ -60,6 +74,7 @@ import TemplateDialog from "@/components/template/TemplateDialog.vue";
 import ScheduledPublishDialog from "@/components/mqtt/ScheduledPublishDialog.vue";
 import SettingsDialog from "@/components/settings/SettingsDialog.vue";
 import ScriptDialog from "@/components/script/ScriptDialog.vue";
+import EnvDrawer from "@/components/env/EnvDrawer.vue";
 import { useAppStore } from "@/stores/app";
 import { useMqttStore } from "@/stores/mqtt";
 import { useServerStore } from "@/stores/server";
@@ -92,6 +107,9 @@ const showSettingsDialog = ref(false);
 
 // 脚本管理对话框
 const showScriptDialog = ref(false);
+
+// 环境变量抽屉
+const showEnvDrawer = ref(false);
 
 onMounted(() => {
   // 初始化主题
@@ -183,6 +201,15 @@ function handleOpenScripts() {
     return;
   }
   showScriptDialog.value = true;
+}
+
+// 打开环境变量管理
+function handleOpenEnv() {
+  if (!activeServerId.value) {
+    ElMessage.warning(t('errors.selectServer'));
+    return;
+  }
+  showEnvDrawer.value = true;
 }
 </script>
 

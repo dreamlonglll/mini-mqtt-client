@@ -517,14 +517,19 @@ export class ScriptEngine {
    * 执行发送前处理脚本
    * @param scripts 要执行的脚本列表
    * @param payload 原始 payload
+   * @param envVariables 环境变量映射（可选）
    * @returns 处理后的 payload
    */
-  static async executeBeforePublish(scripts: Script[], payload: string): Promise<string> {
+  static async executeBeforePublish(
+    scripts: Script[], 
+    payload: string, 
+    envVariables?: Record<string, string>
+  ): Promise<string> {
     let result = payload;
     
     for (const script of scripts) {
       try {
-        result = await this.executeScript(script.code, { payload: result });
+        result = await this.executeScript(script.code, { payload: result, env: envVariables });
       } catch (error: any) {
         const errorMessage = `脚本执行失败 [${script.name}]: ${error?.message || error}`;
         console.error(errorMessage, error);
@@ -543,14 +548,20 @@ export class ScriptEngine {
    * @param scripts 要执行的脚本列表
    * @param payload 原始 payload
    * @param topic 消息主题
+   * @param envVariables 环境变量映射（可选）
    * @returns 处理后的 payload
    */
-  static async executeAfterReceive(scripts: Script[], payload: string, topic: string): Promise<string> {
+  static async executeAfterReceive(
+    scripts: Script[], 
+    payload: string, 
+    topic: string,
+    envVariables?: Record<string, string>
+  ): Promise<string> {
     let result = payload;
     
     for (const script of scripts) {
       try {
-        result = await this.executeScript(script.code, { payload: result, topic });
+        result = await this.executeScript(script.code, { payload: result, topic, env: envVariables });
       } catch (error: any) {
         const errorMessage = `脚本执行失败 [${script.name}]: ${error?.message || error}`;
         console.error(errorMessage, error);
@@ -572,12 +583,36 @@ export class ScriptEngine {
    */
   private static async executeScript(
     code: string,
-    context: { payload: string; topic?: string }
+    context: { payload: string; topic?: string; env?: Record<string, string> }
   ): Promise<string> {
+    // 创建环境变量对象，支持直接属性访问和方法调用
+    const envData = context.env || {};
+    const envObject = {
+      // 直接访问变量值：env.VAR_NAME
+      ...envData,
+      // 方法：env.get("VAR_NAME")
+      get: (name: string): string | undefined => envData[name],
+      // 方法：env.replace(text) - 替换 {{var}} 占位符
+      replace: (text: string): string => {
+        if (!text) return text;
+        let result = text;
+        for (const [name, value] of Object.entries(envData)) {
+          const regex = new RegExp(`\\{\\{${name}\\}\\}`, 'g');
+          result = result.replace(regex, value);
+        }
+        return result;
+      },
+      // 方法：env.all() - 获取所有环境变量
+      all: (): Array<{ name: string; value: string }> => {
+        return Object.entries(envData).map(([name, value]) => ({ name, value }));
+      },
+    };
+    
     // 创建沙箱环境
     const sandbox = {
       payload: context.payload,
       topic: context.topic || "",
+      env: envObject,
       console: {
         log: (...args: any[]) => console.log("[Script]", ...args),
         error: (...args: any[]) => console.error("[Script]", ...args),

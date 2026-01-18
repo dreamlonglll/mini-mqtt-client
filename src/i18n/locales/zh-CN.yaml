@@ -189,9 +189,15 @@ script:
     hash: 哈希函数
     aes: AES 加解密
     other: 其他工具
+    env: 环境变量
   functionColumns:
     function: 函数
     description: 描述
+  envFunctions:
+    getVar: 获取环境变量值
+    getVarAlt: 获取环境变量值（另一种写法）
+    replace: 替换文本中的 {{变量名}} 占位符
+    getAll: 获取所有环境变量数组
 
 scheduled:
   title: 定时发布
@@ -276,6 +282,7 @@ errors:
   inputTopic: 请输入 Topic
   inputPayload: 请输入 Payload
   inputName: 请输入名称
+  inputValue: 请输入值
   hexInvalid: HEX 格式无效
   jsonInvalid: JSON 格式无效
   openFolderFailed: 打开文件夹失败
@@ -284,6 +291,28 @@ errors:
   checkUpdateFailed: 检查更新失败
   openBrowserFailed: 打开浏览器失败
   selectFile: 请先选择文件
+
+env:
+  title: 环境变量
+  drawerTitle: 环境变量管理
+  addVariable: 新增变量
+  editVariable: 编辑变量
+  name: 变量名
+  namePlaceholder: 请输入变量名
+  nameHint: 以字母开头，只能包含字母、数字、下划线
+  value: 变量值
+  valuePlaceholder: 请输入变量值
+  description: 描述
+  descriptionPlaceholder: 请输入变量描述（可选）
+  noVariables: 暂无环境变量
+  deleteConfirm: 确定要删除变量 "{name}" 吗？
+  deleteTitle: 删除变量
+  deleteSuccess: 变量已删除
+  saveSuccess: 变量已保存
+  duplicateName: 变量名已存在
+  invalidName: 变量名格式不正确
+  searchPlaceholder: 搜索变量名或描述
+  copyValue: 复制值
 
 success:
   connected: 连接成功

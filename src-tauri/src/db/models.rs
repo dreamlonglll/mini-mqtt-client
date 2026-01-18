@@ -148,3 +148,31 @@ pub struct UpdateScriptRequest {
     pub enabled: Option<bool>,
     pub description: Option<String>,
 }
+
+/// 环境变量
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvVariable {
+    pub id: Option<i64>,
+    pub server_id: i64,
+    pub name: String,
+    pub value: String,
+    pub description: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateEnvVariableRequest {
+    pub server_id: i64,
+    pub name: String,
+    pub value: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateEnvVariableRequest {
+    pub id: i64,
+    pub name: Option<String>,
+    pub value: Option<String>,
+    pub description: Option<String>,
+}

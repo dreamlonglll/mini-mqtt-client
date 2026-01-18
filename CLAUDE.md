@@ -81,11 +81,35 @@ npm run tauri build
 5. **命令模板** - 保存和快速发送常用命令
 6. **定时发布** - 定时/周期发送消息
 7. **预处理脚本** - JavaScript 脚本处理消息 (发送前/接收后)
-8. **系统设置** - 主题切换、界面配置
+8. **环境变量** - 按服务器管理环境变量，支持 `{{变量名}}` 格式替换
+9. **系统设置** - 主题切换、界面配置
+
+## 环境变量
+
+每个 Server 可以配置独立的环境变量，使用 `{{变量名}}` 格式在以下位置进行变量替换：
+
+- 订阅的 Topic
+- 发布消息的 Topic 和 Payload
+- 命令模板中的 Topic 和 Payload
+- 脚本中可通过 `env.变量名` 访问
+
+### 脚本中使用示例
+
+```javascript
+function process(payload, topic) {
+  const deviceId = env.DEVICE_ID;  // 访问环境变量
+  const apiKey = env.API_KEY;
+  
+  const data = JSON.parse(payload);
+  data.deviceId = deviceId;
+  
+  return JSON.stringify(data);
+}
+```
 
 ## 脚本引擎 API
 
-脚本中可通过 `crypto` 对象访问加密工具：
+脚本中可通过 `env` 对象访问当前服务器的环境变量，通过 `crypto` 对象访问加密工具：
 
 ### 编码转换
 - `crypto.stringToBytes(str)` / `crypto.bytesToString(bytes)`

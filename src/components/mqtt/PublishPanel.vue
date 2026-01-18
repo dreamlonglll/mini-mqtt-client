@@ -94,6 +94,7 @@ import { useServerStore } from "@/stores/server";
 import { useMessageStore } from "@/stores/message";
 import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
+import { useEnvStore } from "@/stores/env";
 import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
 import { validatePublishTopic, handleMqttError } from "@/utils/mqttErrorHandler";
@@ -117,6 +118,7 @@ const serverStore = useServerStore();
 const messageStore = useMessageStore();
 const mqttStore = useMqttStore();
 const appStore = useAppStore();
+const envStore = useEnvStore();
 
 const publishing = ref(false);
 
@@ -232,17 +234,28 @@ const handlePublish = async () => {
 
   publishing.value = true;
   try {
-    // 应用发送前处理脚本
-    let processedPayload = publishData.payload;
+    // 确保加载环境变量
+    if (envStore.variables.length === 0) {
+      await envStore.loadVariables(serverId);
+    }
+    
+    // 替换环境变量
+    const processedTopic = envStore.replaceVariables(publishData.topic);
+    let processedPayload = envStore.replaceVariables(publishData.payload);
     let scriptError: string | undefined = undefined;
     
+    // 应用发送前处理脚本
     try {
       const scripts = await invoke<Script[]>("get_enabled_scripts", {
         serverId,
         scriptType: "before_publish",
       });
       if (scripts.length > 0) {
-        processedPayload = await ScriptEngine.executeBeforePublish(scripts, publishData.payload);
+        processedPayload = await ScriptEngine.executeBeforePublish(
+          scripts, 
+          processedPayload, 
+          envStore.variablesMap
+        );
       }
     } catch (error: any) {
       // 记录脚本错误
@@ -252,7 +265,7 @@ const handlePublish = async () => {
       
       // 将原始消息添加到列表中（带错误标记，不实际发布）
       mqttStore.addPublishMessage(serverId, {
-        topic: publishData.topic,
+        topic: processedTopic,
         payload: publishData.payload,
         qos: publishData.qos as 0 | 1 | 2,
         retain: publishData.retain,
@@ -266,7 +279,7 @@ const handlePublish = async () => {
 
     // 调用 messageStore 发布消息（保存到数据库）
     await messageStore.publishMessage(serverId, {
-      topic: publishData.topic,
+      topic: processedTopic,
       payload: processedPayload,
       qos: publishData.qos,
       retain: publishData.retain,
@@ -275,7 +288,7 @@ const handlePublish = async () => {
 
     // 同时添加到 mqttStore 的消息列表（用于实时显示）
     mqttStore.addPublishMessage(serverId, {
-      topic: publishData.topic,
+      topic: processedTopic,
       payload: processedPayload,
       qos: publishData.qos as 0 | 1 | 2,
       retain: publishData.retain,

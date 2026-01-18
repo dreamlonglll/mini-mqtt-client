@@ -189,9 +189,15 @@ script:
     hash: Hash Functions
     aes: AES Encryption
     other: Other Tools
+    env: Environment Variables
   functionColumns:
     function: Function
     description: Description
+  envFunctions:
+    getVar: Get environment variable value
+    getVarAlt: Get environment variable value (alternative)
+    replace: Replace {{var}} placeholders in text
+    getAll: Get all environment variables as array
 
 scheduled:
   title: Scheduled Publish
@@ -276,6 +282,7 @@ errors:
   inputTopic: Please enter topic
   inputPayload: Please enter payload
   inputName: Please enter name
+  inputValue: Please enter value
   hexInvalid: Invalid HEX format
   jsonInvalid: Invalid JSON format
   openFolderFailed: Failed to open folder
@@ -284,6 +291,28 @@ errors:
   checkUpdateFailed: Failed to check for updates
   openBrowserFailed: Failed to open browser
   selectFile: Please select a file first
+
+env:
+  title: Environment
+  drawerTitle: Environment Variables
+  addVariable: Add Variable
+  editVariable: Edit Variable
+  name: Name
+  namePlaceholder: Enter variable name
+  nameHint: Start with letter, only letters, numbers, underscores allowed
+  value: Value
+  valuePlaceholder: Enter variable value
+  description: Description
+  descriptionPlaceholder: Enter description (optional)
+  noVariables: No environment variables
+  deleteConfirm: Are you sure to delete variable "{name}"?
+  deleteTitle: Delete Variable
+  deleteSuccess: Variable deleted
+  saveSuccess: Variable saved
+  duplicateName: Variable name already exists
+  invalidName: Invalid variable name format
+  searchPlaceholder: Search by name or description
+  copyValue: Copy Value
 
 success:
   connected: Connected successfully

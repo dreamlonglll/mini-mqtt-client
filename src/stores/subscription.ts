@@ -3,6 +3,7 @@ import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { Subscription, UpdateSubscriptionRequest } from "@/types/mqtt";
 import { validateSubscribeTopic } from "@/utils/mqttErrorHandler";
+import { useEnvStore } from "@/stores/env";
 
 export const useSubscriptionStore = defineStore("subscription", () => {
   const subscriptions = ref<Map<number, Subscription[]>>(new Map());
@@ -25,15 +26,22 @@ export const useSubscriptionStore = defineStore("subscription", () => {
   }
 
   async function addSubscription(serverId: number, topic: string, qos: number) {
-    // 验证订阅 Topic
-    const validation = validateSubscribeTopic(topic);
+    // 获取环境变量并替换 topic 中的变量
+    const envStore = useEnvStore();
+    if (envStore.variables.length === 0) {
+      await envStore.loadVariables(serverId);
+    }
+    const processedTopic = envStore.replaceVariables(topic);
+    
+    // 验证订阅 Topic（使用替换后的 topic）
+    const validation = validateSubscribeTopic(processedTopic);
     if (!validation.valid) {
       throw new Error(validation.error || "Topic 格式无效");
     }
 
     const result = await invoke<Subscription>("add_subscription", {
       serverId,
-      topic,
+      topic: processedTopic,
       qos,
     });
 

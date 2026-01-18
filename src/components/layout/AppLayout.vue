@@ -6,7 +6,7 @@
       <div class="app-content">
         <slot />
       </div>
-      <CommandBar class="app-command-bar" @open-templates="handleOpenTemplates" @open-scripts="handleOpenScripts" />
+      <CommandBar class="app-command-bar" @open-templates="handleOpenTemplates" @open-scripts="handleOpenScripts" @open-env="handleOpenEnv" />
     </div>
   </div>
 </template>
@@ -19,6 +19,7 @@ import CommandBar from "./CommandBar.vue";
 const emit = defineEmits<{
   openTemplates: []
   openScripts: []
+  openEnv: []
   settings: []
 }>();
 
@@ -28,6 +29,10 @@ function handleOpenTemplates() {
 
 function handleOpenScripts() {
   emit("openScripts");
+}
+
+function handleOpenEnv() {
+  emit("openEnv");
 }
 
 function handleSettings() {

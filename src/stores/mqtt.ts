@@ -3,7 +3,7 @@ import { ref, shallowRef } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ElMessage } from "element-plus";
-import type { ConnectionStatus, MqttMessage } from "@/types/mqtt";
+import type { ConnectionStatus, MqttMessage, EnvVariable } from "@/types/mqtt";
 import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
 import { handleScriptError } from "@/utils/errorHandler";
@@ -24,9 +24,15 @@ interface ReceivedMessage {
   timestamp: string;
 }
 
-// 脚本缓存接口
+  // 脚本缓存接口
 interface ScriptCache {
   scripts: Script[];
+  timestamp: number;
+}
+
+// 环境变量缓存接口
+interface EnvCache {
+  variables: Record<string, string>;
   timestamp: number;
 }
 
@@ -47,6 +53,9 @@ export const useMqttStore = defineStore("mqtt", () => {
 
   // 脚本缓存（避免高频调用 invoke）
   const scriptCache = new Map<string, ScriptCache>();
+
+  // 环境变量缓存
+  const envCache = new Map<number, EnvCache>();
 
   // 消息批处理队列
   const messageQueue: MqttMessage[] = [];
@@ -82,6 +91,37 @@ export const useMqttStore = defineStore("mqtt", () => {
       scriptCache.delete(`${serverId}-after_receive`);
     } else {
       scriptCache.clear();
+    }
+  }
+
+  // 获取缓存的环境变量
+  async function getCachedEnvVariables(serverId: number): Promise<Record<string, string>> {
+    const cached = envCache.get(serverId);
+    const now = Date.now();
+
+    if (cached && now - cached.timestamp < SCRIPT_CACHE_TTL) {
+      return cached.variables;
+    }
+
+    try {
+      const envList = await invoke<EnvVariable[]>("list_env_variables", { serverId });
+      const variables: Record<string, string> = {};
+      for (const env of envList) {
+        variables[env.name] = env.value;
+      }
+      envCache.set(serverId, { variables, timestamp: now });
+      return variables;
+    } catch {
+      return {};
+    }
+  }
+
+  // 清除环境变量缓存
+  function clearEnvCache(serverId?: number) {
+    if (serverId) {
+      envCache.delete(serverId);
+    } else {
+      envCache.clear();
     }
   }
 
@@ -153,10 +193,12 @@ export const useMqttStore = defineStore("mqtt", () => {
         
         if (scripts.length > 0) {
           const originalPayload = new TextDecoder().decode(payloadBytes);
+          const envVariables = await getCachedEnvVariables(msg.server_id);
           const processedPayload = await ScriptEngine.executeAfterReceive(
             scripts,
             originalPayload,
-            msg.topic
+            msg.topic,
+            envVariables
           );
           payloadBytes = new TextEncoder().encode(processedPayload);
         }
@@ -336,5 +378,6 @@ export const useMqttStore = defineStore("mqtt", () => {
     clearMessages,
     addPublishMessage,
     clearScriptCache,
+    clearEnvCache,
   };
 });

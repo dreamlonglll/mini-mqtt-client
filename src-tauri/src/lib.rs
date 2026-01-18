@@ -3,6 +3,7 @@ mod db;
 mod log;
 mod mqtt;
 
+use commands::env::*;
 use commands::log::*;
 use commands::mqtt::*;
 use commands::publish::*;
@@ -91,6 +92,12 @@ pub fn run() {
             get_recent_logs,
             get_log_dir,
             clear_logs,
+            // 环境变量命令
+            list_env_variables,
+            get_env_variable,
+            create_env_variable,
+            update_env_variable,
+            delete_env_variable,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -31,6 +31,9 @@
     </div>
     
     <div class="command-bar-actions">
+      <el-button size="small" :icon="Key" text @click="handleOpenEnv">
+        {{ $t('env.title') }}
+      </el-button>
       <el-button size="small" :icon="FolderOpened" text @click="handleOpenTemplates">
         {{ $t('publish.openTemplates') }}
       </el-button>
@@ -44,7 +47,7 @@
 <script setup lang="ts">
 import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Histogram, Plus, FolderOpened, Document } from "@element-plus/icons-vue";
+import { Histogram, Plus, FolderOpened, Document, Key } from "@element-plus/icons-vue";
 import { useTemplateStore, type CommandTemplate } from "@/stores/template";
 import { useServerStore } from "@/stores/server";
 import { useAppStore } from "@/stores/app";
@@ -91,7 +94,13 @@ async function handleQuickSend(template: CommandTemplate) {
 const emit = defineEmits<{
   openTemplates: []
   openScripts: []
+  openEnv: []
 }>();
+
+// 打开环境变量管理
+function handleOpenEnv() {
+  emit("openEnv");
+}
 
 // 打开模板管理
 function handleOpenTemplates() {
