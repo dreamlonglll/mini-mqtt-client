@@ -38,7 +38,10 @@ sidebar:
   colorMark: Mark
   noColor: No Color
   topic: Topic
-  actions: Actions
+  actions:
+    edit: Edit
+    duplicate: Duplicate
+    delete: Delete
   deleteServerConfirm: Are you sure to delete "{name}"?
   deleteSubscriptionConfirm: Are you sure to unsubscribe "{topic}"?
   theme:
@@ -122,6 +125,8 @@ template:
   title: Command Templates
   drawerTitle: Command Templates
   save: Save Template
+  format: Format
+  minify: Minify
   name: Template Name
   namePlaceholder: Enter template name
   category: Category
@@ -170,6 +175,19 @@ script:
   testSuccess: Test passed
   testError: Test failed
   functions: Available Functions
+  importJs: Import JS
+  codeHint:
+    beforePublish: Define process(payload) function, return processed payload
+    afterReceive: Define process(payload, topic) function, return processed payload
+  functionCategories:
+    basic: Basic Functions
+    encoding: Encoding
+    hash: Hash Functions
+    aes: AES Encryption
+    other: Other Tools
+  functionColumns:
+    function: Function
+    description: Description
 
 scheduled:
   title: Scheduled Publish

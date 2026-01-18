@@ -73,14 +73,14 @@
             </el-form-item>
             <el-form-item :label="$t('script.code')" required>
               <div class="code-editor-wrapper">
-                <div class="code-hint">
-                  <code v-if="formData.script_type === 'before_publish'">
-                    Define process(payload) function, return processed payload
-                  </code>
-                  <code v-else>
-                    Define process(payload, topic) function, return processed payload
-                  </code>
-                </div>
+              <div class="code-hint">
+                <code v-if="formData.script_type === 'before_publish'">
+                  {{ $t('script.codeHint.beforePublish') }}
+                </code>
+                <code v-else>
+                  {{ $t('script.codeHint.afterReceive') }}
+                </code>
+              </div>
                 <el-input
                   v-model="formData.code"
                   type="textarea"
@@ -93,8 +93,8 @@
           </el-form>
           <div class="form-actions">
             <div class="left-actions">
-              <el-button :icon="FolderOpened" @click="handleImportFile">Import JS</el-button>
-              <el-button :icon="Document" @click="showFunctionList = true">Functions</el-button>
+              <el-button :icon="FolderOpened" @click="handleImportFile">{{ $t('script.importJs') }}</el-button>
+              <el-button :icon="Document" @click="showFunctionList = true">{{ $t('script.functions') }}</el-button>
             </div>
             <el-button type="primary" :loading="saving" @click="handleSave">
               {{ $t('common.save') }}
@@ -121,42 +121,42 @@
   >
     <div class="function-list">
       <div class="function-category">
-        <h4>Basic Functions</h4>
+        <h4>{{ $t('script.functionCategories.basic') }}</h4>
         <el-table :data="basicFunctions" size="small">
-          <el-table-column prop="name" label="Function" width="200" />
-          <el-table-column prop="desc" label="Description" />
+          <el-table-column prop="name" :label="$t('script.functionColumns.function')" width="200" />
+          <el-table-column prop="desc" :label="$t('script.functionColumns.description')" />
         </el-table>
       </div>
       
       <div class="function-category">
-        <h4>Encoding</h4>
+        <h4>{{ $t('script.functionCategories.encoding') }}</h4>
         <el-table :data="encodingFunctions" size="small">
-          <el-table-column prop="name" label="Function" width="250" />
-          <el-table-column prop="desc" label="Description" />
+          <el-table-column prop="name" :label="$t('script.functionColumns.function')" width="250" />
+          <el-table-column prop="desc" :label="$t('script.functionColumns.description')" />
         </el-table>
       </div>
       
       <div class="function-category">
-        <h4>Hash Functions</h4>
+        <h4>{{ $t('script.functionCategories.hash') }}</h4>
         <el-table :data="hashFunctions" size="small">
-          <el-table-column prop="name" label="Function" width="250" />
-          <el-table-column prop="desc" label="Description" />
+          <el-table-column prop="name" :label="$t('script.functionColumns.function')" width="250" />
+          <el-table-column prop="desc" :label="$t('script.functionColumns.description')" />
         </el-table>
       </div>
       
       <div class="function-category">
-        <h4>AES Encryption</h4>
+        <h4>{{ $t('script.functionCategories.aes') }}</h4>
         <el-table :data="aesFunctions" size="small">
-          <el-table-column prop="name" label="Function" width="320" />
-          <el-table-column prop="desc" label="Description" />
+          <el-table-column prop="name" :label="$t('script.functionColumns.function')" width="320" />
+          <el-table-column prop="desc" :label="$t('script.functionColumns.description')" />
         </el-table>
       </div>
       
       <div class="function-category">
-        <h4>Other Tools</h4>
+        <h4>{{ $t('script.functionCategories.other') }}</h4>
         <el-table :data="otherFunctions" size="small">
-          <el-table-column prop="name" label="Function" width="200" />
-          <el-table-column prop="desc" label="Description" />
+          <el-table-column prop="name" :label="$t('script.functionColumns.function')" width="200" />
+          <el-table-column prop="desc" :label="$t('script.functionColumns.description')" />
         </el-table>
       </div>
     </div>

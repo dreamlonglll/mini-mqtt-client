@@ -38,7 +38,10 @@ sidebar:
   colorMark: 颜色标记
   noColor: 无颜色
   topic: Topic
-  actions: 操作
+  actions:
+    edit: 编辑
+    duplicate: 复制
+    delete: 删除
   deleteServerConfirm: 确定要删除 "{name}" 吗？
   deleteSubscriptionConfirm: 确定要取消订阅 "{topic}" 吗？
   theme:
@@ -122,6 +125,8 @@ template:
   title: 命令模板
   drawerTitle: 命令模板
   save: 保存模板
+  format: 格式化
+  minify: 压缩
   name: 模板名称
   namePlaceholder: 请输入模板名称
   category: 分类
@@ -170,6 +175,19 @@ script:
   testSuccess: 测试通过
   testError: 测试失败
   functions: 可用函数
+  importJs: 导入 JS
+  codeHint:
+    beforePublish: 定义 process(payload) 函数，返回处理后的 payload
+    afterReceive: 定义 process(payload, topic) 函数，返回处理后的 payload
+  functionCategories:
+    basic: 基础函数
+    encoding: 编码转换
+    hash: 哈希函数
+    aes: AES 加解密
+    other: 其他工具
+  functionColumns:
+    function: 函数
+    description: 描述
 
 scheduled:
   title: 定时发布

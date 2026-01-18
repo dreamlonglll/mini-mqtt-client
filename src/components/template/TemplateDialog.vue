@@ -120,7 +120,7 @@
                 @click="formatJson"
               >
                 <el-icon><MagicStick /></el-icon>
-                Format
+                {{ $t('template.format') }}
               </el-button>
               <el-button
                 v-if="form.payload_type === 'json'"
@@ -129,7 +129,7 @@
                 @click="compressJson"
               >
                 <el-icon><Minus /></el-icon>
-                Minify
+                {{ $t('template.minify') }}
               </el-button>
               <span v-if="payloadError" class="error-text">
                 <el-icon><WarningFilled /></el-icon>
