@@ -147,9 +147,27 @@ export const useTemplateStore = defineStore('template', () => {
     try {
       await invoke('delete_template', { id })
       templates.value = templates.value.filter(t => t.id !== id)
+      // 重新计算分类列表（只保留仍有模板的分类）
+      updateCategories()
     } catch (error) {
       console.error('删除模板失败:', error)
       throw error
+    }
+  }
+
+  // 更新分类列表（基于当前模板计算）
+  function updateCategories() {
+    const usedCategories = new Set<string>()
+    for (const template of templates.value) {
+      if (template.category) {
+        usedCategories.add(template.category)
+      }
+    }
+    categories.value = Array.from(usedCategories).sort()
+    
+    // 如果当前选中的分类已不存在，清除选择
+    if (selectedCategory.value && !usedCategories.has(selectedCategory.value)) {
+      selectedCategory.value = null
     }
   }
 
