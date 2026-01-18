@@ -6,7 +6,7 @@
         {{ $t('publish.send') }}
       </span>
       <div class="header-actions">
-        <el-select v-model="payloadFormat" size="small" style="width: 90px" :disabled="props.scheduledPublishRunning">
+        <el-select v-model="payloadFormat" size="small" style="width: 90px">
           <el-option
             v-for="opt in formatOptions"
             :key="opt.value"
@@ -26,7 +26,7 @@
       </div>
     </div>
 
-    <div class="publish-form" :class="{ disabled: props.scheduledPublishRunning }">
+    <div class="publish-form">
       <!-- 第一行：Topic、QoS、Retain -->
       <div class="form-row">
         <div class="form-item topic-input">
@@ -34,7 +34,6 @@
             v-model="publishData.topic"
             :placeholder="$t('publish.topicPlaceholder')"
             size="default"
-            :disabled="props.scheduledPublishRunning"
           >
             <template #prefix>
               <el-icon><Position /></el-icon>
@@ -42,13 +41,13 @@
           </el-input>
         </div>
 
-        <el-select v-model="publishData.qos" style="width: 100px" size="default" :disabled="props.scheduledPublishRunning">
+        <el-select v-model="publishData.qos" style="width: 100px" size="default">
           <el-option :value="0" label="QoS 0" />
           <el-option :value="1" label="QoS 1" />
           <el-option :value="2" label="QoS 2" />
         </el-select>
 
-        <el-checkbox v-model="publishData.retain" :disabled="props.scheduledPublishRunning">Retain</el-checkbox>
+        <el-checkbox v-model="publishData.retain">Retain</el-checkbox>
       </div>
 
       <!-- 第二行：Payload 输入 -->
@@ -61,21 +60,20 @@
             :placeholder="payloadPlaceholder"
             resize="none"
             class="payload-input"
-            :disabled="props.scheduledPublishRunning"
           />
         </div>
         <div class="form-actions">
           <el-tooltip :content="$t('publish.openTemplates')" placement="top">
-            <el-button :icon="FolderOpened" :disabled="props.scheduledPublishRunning" @click="handleOpenTemplates" />
+            <el-button :icon="FolderOpened" @click="handleOpenTemplates" />
           </el-tooltip>
           <el-tooltip :content="$t('publish.saveTemplate')" placement="top">
-            <el-button :icon="Star" :disabled="props.scheduledPublishRunning" @click="handleSaveTemplate" />
+            <el-button :icon="Star" @click="handleSaveTemplate" />
           </el-tooltip>
           <el-button
             type="primary"
             :icon="Promotion"
             :loading="publishing"
-            :disabled="!isConnected || props.scheduledPublishRunning"
+            :disabled="!isConnected"
             @click="handlePublish"
           >
             {{ $t('publish.send') }}
@@ -354,10 +352,6 @@ const handlePublish = async () => {
   }
 }
 
-.publish-form.disabled {
-  opacity: 0.6;
-  pointer-events: none;
-}
 
 .is-running {
   :deep(.el-icon) {
