@@ -1,11 +1,21 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { getCurrentWindow, type Theme as TauriTheme } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import i18n, { getActualLocale, type Locale, type ActualLocale } from "@/i18n";
 
 export type Theme = "light" | "dark" | "auto";
 export type ViewType = "messages" | "templates";
 export type { Locale, ActualLocale };
+
+export const GITHUB_REPO = 'dreamlonglll/mini-mqtt-client';
+
+// 版本更新信息
+export interface UpdateInfo {
+  hasUpdate: boolean;
+  latestVersion: string;
+  currentVersion: string;
+}
 
 // 复制到发布面板的消息数据
 export interface CopyToPublishData {
@@ -35,6 +45,10 @@ export const useAppStore = defineStore("app", () => {
 
   // 复制到发布面板的消息
   const copyToPublishData = ref<CopyToPublishData | null>(null);
+
+  // 版本更新信息
+  const updateInfo = ref<UpdateInfo | null>(null);
+  const checkingUpdate = ref(false);
 
   // 获取系统主题（使用 Tauri API）
   const getSystemTheme = async (): Promise<"light" | "dark"> => {
@@ -191,6 +205,57 @@ export const useAppStore = defineStore("app", () => {
     copyToPublishData.value = null;
   };
 
+  // 比较版本号
+  const compareVersions = (v1: string, v2: string): number => {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+    
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const p1 = parts1[i] || 0;
+      const p2 = parts2[i] || 0;
+      if (p1 > p2) return 1;
+      if (p1 < p2) return -1;
+    }
+    return 0;
+  };
+
+  // 检查更新
+  const checkUpdate = async (): Promise<UpdateInfo | null> => {
+    if (checkingUpdate.value) return null;
+    
+    checkingUpdate.value = true;
+    try {
+      const currentVersion = await getVersion();
+      const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
+      
+      if (!response.ok) {
+        throw new Error('获取版本信息失败');
+      }
+      
+      const data = await response.json();
+      const latestVersion = data.tag_name?.replace(/^v/, '') || '';
+      const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
+      
+      updateInfo.value = { 
+        hasUpdate, 
+        latestVersion: `v${latestVersion}`,
+        currentVersion 
+      };
+      
+      return updateInfo.value;
+    } catch (e) {
+      console.error('检查更新失败:', e);
+      return null;
+    } finally {
+      checkingUpdate.value = false;
+    }
+  };
+
+  // 清除更新信息
+  const clearUpdateInfo = () => {
+    updateInfo.value = null;
+  };
+
   return {
     theme,
     locale,
@@ -198,6 +263,8 @@ export const useAppStore = defineStore("app", () => {
     sidebarCollapsed,
     currentView,
     copyToPublishData,
+    updateInfo,
+    checkingUpdate,
     toggleTheme,
     setTheme,
     initTheme,
@@ -208,6 +275,8 @@ export const useAppStore = defineStore("app", () => {
     setCurrentView,
     setCopyToPublish,
     clearCopyToPublish,
+    checkUpdate,
+    clearUpdateInfo,
     cleanup,
   };
 });

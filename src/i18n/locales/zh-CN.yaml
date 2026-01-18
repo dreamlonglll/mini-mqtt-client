@@ -48,6 +48,10 @@ sidebar:
     light: 浅色模式
     dark: 深色模式
     auto: 跟随系统
+  update:
+    newVersionFound: 发现新版本
+    confirmDownload: 发现新版本 {version}，是否前往下载？
+    goDownload: 前往下载
 
 settings:
   title: 系统设置

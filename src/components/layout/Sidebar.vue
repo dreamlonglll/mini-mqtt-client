@@ -9,7 +9,14 @@
           </svg>
         </div>
         <span class="logo-text">MQTT Client</span>
-        <span class="version-tag">v{{ appVersion }}</span>
+        <span 
+          class="version-tag" 
+          :class="{ 'has-update': appStore.updateInfo?.hasUpdate }"
+          @click="handleVersionClick"
+        >
+          v{{ appVersion }}
+          <span v-if="appStore.updateInfo?.hasUpdate" class="update-dot" />
+        </span>
       </div>
     </div>
 
@@ -208,6 +215,7 @@
 import { ref, reactive, onMounted, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Plus,
   MoreFilled,
@@ -220,7 +228,7 @@ import {
   Platform,
   CaretBottom,
 } from "@element-plus/icons-vue";
-import { useAppStore } from "@/stores/app";
+import { useAppStore, GITHUB_REPO } from "@/stores/app";
 import { useServerStore } from "@/stores/server";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { useMqttStore } from "@/stores/mqtt";
@@ -278,6 +286,9 @@ onMounted(async () => {
   } catch {
     appVersion.value = "1.0.0";
   }
+  
+  // 启动时检查更新
+  appStore.checkUpdate();
 });
 
 // 监听活动服务器变化，加载订阅列表
@@ -336,6 +347,26 @@ const handleServerAction = async (command: string, server: MqttServer) => {
 
 const handleServerSaved = () => {
   // 对话框会自动关闭
+};
+
+// 版本号点击处理
+const handleVersionClick = async () => {
+  if (appStore.updateInfo?.hasUpdate) {
+    try {
+      await ElMessageBox.confirm(
+        t('sidebar.update.confirmDownload', { version: appStore.updateInfo.latestVersion }),
+        t('sidebar.update.newVersionFound'),
+        {
+          confirmButtonText: t('sidebar.update.goDownload'),
+          cancelButtonText: t('common.cancel'),
+          type: 'info',
+        }
+      );
+      await openUrl(`https://github.com/${GITHUB_REPO}/releases/latest`);
+    } catch {
+      // 用户取消
+    }
+  }
 };
 
 // ===== 订阅相关 =====
@@ -509,6 +540,42 @@ const handleConfirmSubscription = async () => {
   font-weight: 400;
   color: var(--app-text-secondary);
   margin-left: 4px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  
+  &.has-update {
+    color: var(--el-color-primary);
+    cursor: pointer;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+.update-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--el-color-danger);
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .sidebar-content {

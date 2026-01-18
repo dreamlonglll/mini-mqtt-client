@@ -48,6 +48,10 @@ sidebar:
     light: Light Mode
     dark: Dark Mode
     auto: Follow System
+  update:
+    newVersionFound: New Version Found
+    confirmDownload: "New version {version} is available. Would you like to download it?"
+    goDownload: Go to Download
 
 settings:
   title: Settings
