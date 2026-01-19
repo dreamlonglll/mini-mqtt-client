@@ -73,14 +73,6 @@
             </el-form-item>
             <el-form-item :label="$t('script.code')" required>
               <div class="code-editor-wrapper">
-              <div class="code-hint">
-                <code v-if="formData.script_type === 'before_publish'">
-                  {{ $t('script.codeHint.beforePublish') }}
-                </code>
-                <code v-else>
-                  {{ $t('script.codeHint.afterReceive') }}
-                </code>
-              </div>
                 <el-input
                   v-model="formData.code"
                   type="textarea"
@@ -524,19 +516,6 @@ async function handleImportFile() {
 
 .code-editor-wrapper {
   width: 100%;
-}
-
-.code-hint {
-  margin-bottom: 8px;
-  padding: 8px 12px;
-  background-color: var(--sidebar-hover);
-  border-radius: 4px;
-  
-  code {
-    font-family: 'Fira Code', 'Consolas', monospace;
-    font-size: 12px;
-    color: var(--app-text-secondary);
-  }
 }
 
 .code-textarea {
