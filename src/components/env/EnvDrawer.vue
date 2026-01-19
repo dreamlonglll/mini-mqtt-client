@@ -40,15 +40,15 @@
 
         <div class="card-value">
           <div class="value-content" :class="{ masked: !showValues[variable.id!] }">
-            {{ showValues[variable.id!] ? variable.value : maskValue(variable.value) }}
+            {{ variable.value }}
           </div>
-          <el-button
+          <!-- <el-button
             :icon="showValues[variable.id!] ? Hide : View"
             text
             size="small"
             class="toggle-btn"
             @click="toggleShowValue(variable.id!)"
-          />
+          /> -->
         </div>
 
         <div v-if="variable.description" class="card-desc">

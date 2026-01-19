@@ -217,6 +217,7 @@ import { Position, Loading, SuccessFilled } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
 import { useMqttStore } from '@/stores/mqtt'
+import { useEnvStore } from '@/stores/env'
 import { ScriptEngine } from '@/utils/scriptEngine'
 import type { Script } from '@/stores/script'
 
@@ -234,6 +235,7 @@ const emit = defineEmits<{
 
 const templateStore = useTemplateStore()
 const mqttStore = useMqttStore()
+const envStore = useEnvStore()
 
 // 对话框可见性
 const dialogVisible = computed({
@@ -437,15 +439,27 @@ async function publishNext() {
   currentCommand.value = command
   
   try {
+    // 确保加载环境变量
+    if (envStore.variables.length === 0) {
+      await envStore.loadVariables(props.serverId)
+    }
+    
+    // 替换环境变量
+    const processedTopic = envStore.replaceVariables(command.topic)
+    let processedPayload = envStore.replaceVariables(command.payload)
+    
     // 应用发送前处理脚本
-    let processedPayload = command.payload
     try {
       const scripts = await invoke<Script[]>('get_enabled_scripts', {
         serverId: props.serverId,
         scriptType: 'before_publish',
       })
       if (scripts.length > 0) {
-        processedPayload = await ScriptEngine.executeBeforePublish(scripts, command.payload)
+        processedPayload = await ScriptEngine.executeBeforePublish(
+          scripts, 
+          processedPayload, 
+          envStore.variablesMap
+        )
       }
     } catch (e) {
       console.error('脚本处理失败:', e)
@@ -453,13 +467,13 @@ async function publishNext() {
     
     await mqttStore.publish(
       props.serverId,
-      command.topic,
+      processedTopic,
       processedPayload,
       command.qos,
       command.retain
     )
     successCount.value++
-    addLog(command.topic, processedPayload, 'success')
+    addLog(processedTopic, processedPayload, 'success')
   } catch (error: any) {
     failCount.value++
     addLog(command.topic, command.payload, 'error', error?.message)
