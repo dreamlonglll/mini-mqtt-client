@@ -98,9 +98,7 @@ import {
   MoreFilled,
   Edit,
   CopyDocument,
-  Delete,
-  View,
-  Hide
+  Delete
 } from '@element-plus/icons-vue'
 import { useEnvStore, type EnvVariable } from '@/stores/env'
 import EnvDialog from './EnvDialog.vue'
@@ -135,22 +133,9 @@ watch(() => props.serverId, (newId) => {
   }
 })
 
-// 遮蔽值显示
-function maskValue(value: string): string {
-  if (value.length <= 4) {
-    return '*'.repeat(value.length)
-  }
-  return value.substring(0, 2) + '*'.repeat(Math.min(value.length - 4, 8)) + value.substring(value.length - 2)
-}
-
 // 获取使用语法
 function getUsageSyntax(name: string): string {
   return '{{' + name + '}}'
-}
-
-// 切换显示/隐藏值
-function toggleShowValue(id: number) {
-  showValues[id] = !showValues[id]
 }
 
 // 搜索处理
