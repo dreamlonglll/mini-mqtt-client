@@ -254,6 +254,7 @@ const handlePublish = async () => {
         processedPayload = await ScriptEngine.executeBeforePublish(
           scripts, 
           processedPayload, 
+          processedTopic,
           envStore.variablesMap
         );
       }

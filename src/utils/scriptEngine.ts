@@ -517,19 +517,21 @@ export class ScriptEngine {
    * 执行发送前处理脚本
    * @param scripts 要执行的脚本列表
    * @param payload 原始 payload
+   * @param topic 消息主题
    * @param envVariables 环境变量映射（可选）
    * @returns 处理后的 payload
    */
   static async executeBeforePublish(
     scripts: Script[], 
     payload: string, 
+    topic: string,
     envVariables?: Record<string, string>
   ): Promise<string> {
     let result = payload;
     
     for (const script of scripts) {
       try {
-        result = await this.executeScript(script.code, { payload: result, env: envVariables });
+        result = await this.executeScript(script.code, { payload: result, topic, env: envVariables });
       } catch (error: any) {
         const errorMessage = `脚本执行失败 [${script.name}]: ${error?.message || error}`;
         console.error(errorMessage, error);

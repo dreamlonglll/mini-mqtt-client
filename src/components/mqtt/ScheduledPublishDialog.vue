@@ -457,7 +457,8 @@ async function publishNext() {
       if (scripts.length > 0) {
         processedPayload = await ScriptEngine.executeBeforePublish(
           scripts, 
-          processedPayload, 
+          processedPayload,
+          processedTopic,
           envStore.variablesMap
         )
       }
