@@ -15,6 +15,9 @@ import "element-plus/theme-chalk/el-message-box.css";
 import "element-plus/theme-chalk/el-message.css";
 import "element-plus/theme-chalk/el-overlay.css";
 
+// 虚拟滚动组件样式
+import "vue-virtual-scroller/dist/vue-virtual-scroller.css";
+
 // 全局样式
 import "./assets/styles/index.scss";
 

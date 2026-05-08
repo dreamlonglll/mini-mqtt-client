@@ -39,6 +39,9 @@ interface EnvCache {
 // 脚本缓存有效期（毫秒）
 const SCRIPT_CACHE_TTL = 5000;
 
+// 消息 ID 计数器（确保每条消息有唯一标识，供虚拟滚动使用）
+let messageIdCounter = 0;
+
 export const useMqttStore = defineStore("mqtt", () => {
   // 连接状态
   const connectionStates = ref<
@@ -155,8 +158,9 @@ export const useMqttStore = defineStore("mqtt", () => {
 
   // 添加消息到队列
   function queueMessage(msg: MqttMessage) {
+    msg.id = ++messageIdCounter;
     messageQueue.push(msg);
-    
+
     if (!batchTimeout) {
       batchTimeout = setTimeout(flushMessageQueue, BATCH_INTERVAL);
     }

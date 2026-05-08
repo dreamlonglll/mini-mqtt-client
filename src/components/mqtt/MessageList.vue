@@ -40,64 +40,78 @@
       </div>
     </div>
 
-    <div class="message-container" ref="messageContainer">
-      <div
-        v-for="msg in filteredMessages"
-        :key="msg.id || msg.timestamp"
-        class="message-item"
-        :class="[msg.direction, { 'has-error': msg.scriptError }]"
-        @click="showDetail(msg)"
-      >
-        <div class="message-header">
-          <span class="msg-direction" :class="[msg.direction, { 'has-error': msg.scriptError }]">
-            <el-icon v-if="msg.direction === 'publish'"><Top /></el-icon>
-            <el-icon v-else><Bottom /></el-icon>
-            {{ msg.direction === "publish" ? "PUB" : "RCV" }}
-          </span>
-          <span 
-            class="msg-topic text-ellipsis" 
-            :style="getTopicColor(msg) ? { color: getTopicColor(msg) } : {}"
+    <DynamicScroller
+      v-if="filteredMessages.length > 0"
+      :items="filteredMessages"
+      :min-item-size="70"
+      class="message-container"
+      key-field="id"
+    >
+      <template #default="{ item: msg, index, active }">
+        <DynamicScrollerItem
+          :item="msg"
+          :active="active"
+          :size-dependencies="[msg.scriptError]"
+          :data-index="index"
+        >
+          <div
+            class="message-item"
+            :class="[msg.direction, { 'has-error': msg.scriptError }]"
+            @click="showDetail(msg)"
           >
-            <span v-if="getTopicColor(msg)" class="topic-color-dot" :style="{ backgroundColor: getTopicColor(msg) }" />
-            {{ msg.topic }}
-          </span>
-          <div class="msg-meta">
-            <el-tag
-              v-if="msg.scriptError"
-              size="small"
-              effect="plain"
-              type="danger"
-              class="error-tag"
-            >
-              {{ $t('script.testError') }}
-            </el-tag>
-            <el-tag
-              size="small"
-              effect="plain"
-              :type="getFormatTagType(getMessageFormat(msg))"
-              class="format-tag"
-            >
-              {{ getFormatLabel(getMessageFormat(msg), msg) }}
-            </el-tag>
-            <el-tag size="small" effect="plain">Q{{ msg.qos }}</el-tag>
-            <el-tag v-if="msg.retain" size="small" type="warning" effect="plain">
-              R
-            </el-tag>
-            <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
+            <div class="message-header">
+              <span class="msg-direction" :class="[msg.direction, { 'has-error': msg.scriptError }]">
+                <el-icon v-if="msg.direction === 'publish'"><Top /></el-icon>
+                <el-icon v-else><Bottom /></el-icon>
+                {{ msg.direction === "publish" ? "PUB" : "RCV" }}
+              </span>
+              <span
+                class="msg-topic text-ellipsis"
+                :style="getTopicColor(msg) ? { color: getTopicColor(msg) } : {}"
+              >
+                <span v-if="getTopicColor(msg)" class="topic-color-dot" :style="{ backgroundColor: getTopicColor(msg) }" />
+                {{ msg.topic }}
+              </span>
+              <div class="msg-meta">
+                <el-tag
+                  v-if="msg.scriptError"
+                  size="small"
+                  effect="plain"
+                  type="danger"
+                  class="error-tag"
+                >
+                  {{ $t('script.testError') }}
+                </el-tag>
+                <el-tag
+                  size="small"
+                  effect="plain"
+                  :type="getFormatTagType(getMessageFormat(msg))"
+                  class="format-tag"
+                >
+                  {{ getFormatLabel(getMessageFormat(msg), msg) }}
+                </el-tag>
+                <el-tag size="small" effect="plain">Q{{ msg.qos }}</el-tag>
+                <el-tag v-if="msg.retain" size="small" type="warning" effect="plain">
+                  R
+                </el-tag>
+                <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
+              </div>
+            </div>
+            <div v-if="msg.scriptError" class="message-error">
+              <el-icon><WarningFilled /></el-icon>
+              <span>{{ msg.scriptError }}</span>
+            </div>
+            <div class="message-body">
+              <MessagePayload :payload="msg.payload" :preview="true" :payload-type="msg.payload_type" />
+            </div>
           </div>
-        </div>
-        <div v-if="msg.scriptError" class="message-error">
-          <el-icon><WarningFilled /></el-icon>
-          <span>{{ msg.scriptError }}</span>
-        </div>
-        <div class="message-body">
-          <MessagePayload :payload="msg.payload" :preview="true" :payload-type="msg.payload_type" />
-        </div>
-      </div>
+        </DynamicScrollerItem>
+      </template>
+    </DynamicScroller>
 
-      <div v-if="filteredMessages.length === 0" class="empty-state">
-        <el-empty :description="$t('messages.noMessages')" :image-size="60">
-        </el-empty>
+    <div v-else class="message-container empty-container">
+      <div class="empty-state">
+        <el-empty :description="$t('messages.noMessages')" :image-size="60" />
       </div>
     </div>
 
@@ -176,6 +190,7 @@ import {
   WarningFilled,
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { DynamicScroller, DynamicScrollerItem } from "vue-virtual-scroller";
 import { useServerStore } from "@/stores/server";
 import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
@@ -192,8 +207,6 @@ const serverStore = useServerStore();
 const mqttStore = useMqttStore();
 const appStore = useAppStore();
 const subscriptionStore = useSubscriptionStore();
-
-const messageContainer = ref<HTMLElement>();
 
 // 获取消息的 topic 颜色
 function getTopicColor(msg: MqttMessage): string | undefined {
@@ -467,15 +480,18 @@ function copyToPublish() {
 
 .message-container {
   flex: 1;
-  overflow-y: auto;
-  padding: 8px;
+  min-height: 0;
+}
+
+.empty-container {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
 }
 
 .message-item {
   padding: 10px 12px;
+  margin: 4px 8px;
   border-radius: 8px;
   background-color: var(--sidebar-bg);
   border: 1px solid var(--app-border-color);
