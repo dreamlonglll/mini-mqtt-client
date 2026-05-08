@@ -54,11 +54,12 @@
           :size-dependencies="[msg.scriptError]"
           :data-index="index"
         >
-          <div
-            class="message-item"
-            :class="[msg.direction, { 'has-error': msg.scriptError }]"
-            @click="showDetail(msg)"
-          >
+          <div class="message-item-wrapper">
+            <div
+              class="message-item"
+              :class="[msg.direction, { 'has-error': msg.scriptError }]"
+              @click="showDetail(msg)"
+            >
             <div class="message-header">
               <span class="msg-direction" :class="[msg.direction, { 'has-error': msg.scriptError }]">
                 <el-icon v-if="msg.direction === 'publish'"><Top /></el-icon>
@@ -103,6 +104,7 @@
             </div>
             <div class="message-body">
               <MessagePayload :payload="msg.payload" :preview="true" :payload-type="msg.payload_type" />
+            </div>
             </div>
           </div>
         </DynamicScrollerItem>
@@ -489,9 +491,12 @@ function copyToPublish() {
   justify-content: center;
 }
 
+.message-item-wrapper {
+  padding: 4px 8px;
+}
+
 .message-item {
   padding: 10px 12px;
-  margin: 4px 8px;
   border-radius: 8px;
   background-color: var(--sidebar-bg);
   border: 1px solid var(--app-border-color);
