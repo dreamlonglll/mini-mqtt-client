@@ -48,11 +48,23 @@ export interface MqttMessage {
   payload?: Uint8Array;
   qos: 0 | 1 | 2;
   retain: boolean;
-  timestamp?: string;
+  /** Unix 毫秒时间戳 */
+  timestamp?: number;
   /** 脚本处理错误信息 */
   scriptError?: string;
   /** 消息格式类型（发送时用户选择的格式） */
   payload_type?: "json" | "hex" | "text";
+  /** 原始 payload 字节数（被截断时大于 payload.length） */
+  originalLength?: number;
+  /** payload 是否被后端截断 */
+  truncated?: boolean;
+  // ===== 入队时计算的派生数据缓存（渲染/搜索热路径直接读取） =====
+  /** TextDecoder 解码后的文本 */
+  decodedText?: string;
+  /** HEX 字符串（惰性计算 + memo） */
+  hexText?: string;
+  /** 展示格式（payload_type 映射或自动检测结果） */
+  payloadFormat?: "json" | "binary" | "text";
 }
 
 /**

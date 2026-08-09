@@ -55,6 +55,9 @@ sidebar:
 
 settings:
   title: 系统设置
+  messageLimit:
+    title: 消息列表上限
+    desc: 每个服务器在内存中保留的最大消息条数（高速消息流可调小，低速调试可调大）
   theme:
     title: 外观主题
     desc: 选择应用的外观主题，立即生效
@@ -124,6 +127,8 @@ messages:
   clearConfirm: 确定要清空所有消息吗？
   clearTitle: 清空消息
   copied: 消息已复制
+  truncated: 已截断
+  truncatedTip: 消息过大已截断，原始大小 {size} 字节
 
 template:
   title: 命令模板

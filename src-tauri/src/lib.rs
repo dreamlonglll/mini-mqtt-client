@@ -89,6 +89,7 @@ pub fn run() {
             toggle_script,
             // 日志命令
             write_error_log,
+            write_error_logs,
             get_recent_logs,
             get_log_dir,
             clear_logs,
@@ -99,6 +100,12 @@ pub fn run() {
             update_env_variable,
             delete_env_variable,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                // 退出前把防抖中未落盘的数据写入磁盘
+                app_handle.state::<Storage>().flush();
+            }
+        });
 }

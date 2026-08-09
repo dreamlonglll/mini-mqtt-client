@@ -10,10 +10,16 @@ pub async fn publish_message(
     server_id: i64,
     message: PublishPayload,
 ) -> Result<MessageHistory, String> {
-    // 转换消息内容
+    // 转换消息内容（HEX 边过滤空白边收集，避免 replace 产生的中间字符串）
     let payload_bytes = match message.format.as_str() {
-        "hex" => hex::decode(message.payload.replace(" ", ""))
-            .map_err(|e| format!("HEX decode failed: {}", e))?,
+        "hex" => {
+            let cleaned: Vec<u8> = message
+                .payload
+                .bytes()
+                .filter(|b| !b.is_ascii_whitespace())
+                .collect();
+            hex::decode(cleaned).map_err(|e| format!("HEX decode failed: {}", e))?
+        }
         _ => message.payload.as_bytes().to_vec(),
     };
 
@@ -50,8 +56,9 @@ pub async fn get_message_history(
     storage: State<'_, Storage>,
     server_id: i64,
     limit: Option<usize>,
+    offset: Option<usize>,
 ) -> Result<Vec<MessageHistory>, String> {
-    Ok(storage.get_messages(server_id, limit.unwrap_or(100)))
+    Ok(storage.get_messages(server_id, limit.unwrap_or(100), offset.unwrap_or(0)))
 }
 
 #[tauri::command]

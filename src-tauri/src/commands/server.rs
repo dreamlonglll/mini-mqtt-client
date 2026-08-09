@@ -3,8 +3,8 @@ use crate::db::Storage;
 use tauri::State;
 
 #[tauri::command]
-pub async fn get_servers(storage: State<'_, Storage>) -> Result<Vec<MqttServer>, String> {
-    Ok(storage.get_servers())
+pub async fn get_servers(storage: State<'_, Storage>) -> Result<serde_json::Value, String> {
+    storage.get_servers_json()
 }
 
 #[tauri::command]

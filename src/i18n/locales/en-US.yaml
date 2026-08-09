@@ -55,6 +55,9 @@ sidebar:
 
 settings:
   title: Settings
+  messageLimit:
+    title: Message List Limit
+    desc: Maximum messages kept in memory per server (lower for high-rate streams, higher for low-rate debugging)
   theme:
     title: Appearance
     desc: Select the application theme, takes effect immediately
@@ -124,6 +127,8 @@ messages:
   clearConfirm: Are you sure to clear all messages?
   clearTitle: Clear Messages
   copied: Message copied
+  truncated: Truncated
+  truncatedTip: 'Payload truncated, original size: {size} bytes'
 
 template:
   title: Command Templates

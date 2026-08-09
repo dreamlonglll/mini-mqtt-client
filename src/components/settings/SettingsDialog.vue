@@ -53,6 +53,21 @@
         </el-radio-group>
       </div>
 
+      <!-- 消息列表上限 -->
+      <div class="setting-section">
+        <div class="setting-title">{{ $t('settings.messageLimit.title') }}</div>
+        <div class="setting-desc">{{ $t('settings.messageLimit.desc') }}</div>
+        <div class="setting-row">
+          <el-input-number
+            v-model="currentMessageLimit"
+            :min="100"
+            :max="10000"
+            :step="100"
+            size="small"
+          />
+        </div>
+      </div>
+
       <!-- 数据存储设置 -->
       <div class="setting-section">
         <div class="setting-title">{{ $t('settings.storage.title') }}</div>
@@ -186,11 +201,14 @@ const logPath = ref('')
 const currentVersion = ref('')
 const checkingUpdate = ref(false)
 const updateInfo = ref<{ hasUpdate: boolean; latestVersion: string } | null>(null)
+const currentMessageLimit = ref(1000)
+const originalMessageLimit = ref(1000)
 
 // 是否有更改
 const hasChanges = computed(() => {
-  return currentTheme.value !== originalTheme.value || 
+  return currentTheme.value !== originalTheme.value ||
          currentLocale.value !== originalLocale.value ||
+         currentMessageLimit.value !== originalMessageLimit.value ||
          newDataPath.value !== ''
 })
 
@@ -200,6 +218,8 @@ async function loadSettings() {
   originalTheme.value = appStore.theme
   currentLocale.value = appStore.locale
   originalLocale.value = appStore.locale
+  currentMessageLimit.value = appStore.messageLimit
+  originalMessageLimit.value = appStore.messageLimit
   newDataPath.value = ''
   updateInfo.value = null
   
@@ -300,8 +320,13 @@ function truncatePath(path: string): string {
 // 保存设置
 async function handleSave() {
   saving.value = true
-  
+
   try {
+    // 应用消息列表上限
+    if (currentMessageLimit.value !== originalMessageLimit.value) {
+      appStore.setMessageLimit(currentMessageLimit.value)
+    }
+
     // 如果有新的数据路径
     if (newDataPath.value) {
       const action = await ElMessageBox.confirm(

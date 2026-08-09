@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, shallowRef } from "vue";
+import { ref, shallowRef, triggerRef } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ElMessage } from "element-plus";
@@ -7,6 +7,8 @@ import type { ConnectionStatus, MqttMessage, EnvVariable } from "@/types/mqtt";
 import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
 import { handleScriptError } from "@/utils/errorHandler";
+import { computeDerived } from "@/utils/messageDerived";
+import { useAppStore } from "@/stores/app";
 import i18n from "@/i18n";
 
 interface ConnectionState {
@@ -18,31 +20,55 @@ interface ConnectionState {
 interface ReceivedMessage {
   server_id: number;
   topic: string;
-  payload: number[];
+  /** base64 编码的消息体（Rust 侧编码，避免 JSON 数字数组的体积膨胀） */
+  payload: string;
   qos: number;
   retain: boolean;
-  timestamp: string;
+  /** Unix 毫秒时间戳 */
+  timestamp: number;
+  /** 原始 payload 字节数 */
+  original_length: number;
+  /** payload 是否被后端截断 */
+  truncated: boolean;
 }
 
-  // 脚本缓存接口
-interface ScriptCache {
-  scripts: Script[];
+// base64 字符串解码为 Uint8Array
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// 脚本缓存条目（缓存 Promise 而非结果，TTL 到期瞬间的并发请求共享同一次 IPC，避免惊群）
+interface ScriptCacheEntry {
+  promise: Promise<Script[]>;
+  /** promise 完成后同步可读的结果（用于无脚本同步快路径判断） */
+  resolved?: Script[];
   timestamp: number;
 }
 
-// 环境变量缓存接口
-interface EnvCache {
-  variables: Record<string, string>;
+// 环境变量缓存条目
+interface EnvCacheEntry {
+  promise: Promise<Record<string, string>>;
   timestamp: number;
 }
 
 // 脚本缓存有效期（毫秒）
 const SCRIPT_CACHE_TTL = 5000;
+// 消息批处理间隔（毫秒）
+const BATCH_INTERVAL = 50;
+// 队列背压阈值：达到即立即同步 flush，防止窗口最小化时定时器被节流导致队列无界增长
+const MAX_QUEUE_LENGTH = 2000;
 
 // 消息 ID 计数器（确保每条消息有唯一标识，供虚拟滚动使用）
 let messageIdCounter = 0;
 
 export const useMqttStore = defineStore("mqtt", () => {
+  const appStore = useAppStore();
+
   // 连接状态
   const connectionStates = ref<
     Map<number, { status: ConnectionStatus; error?: string }>
@@ -51,72 +77,98 @@ export const useMqttStore = defineStore("mqtt", () => {
   // 按 serverId 分组存储消息（使用 shallowRef 减少深度响应式开销）
   const messagesByServer = shallowRef<Map<number, MqttMessage[]>>(new Map());
 
+  // 被裁剪掉的消息总数（供 MessageList 定期重置虚拟滚动的行高缓存，防止内存泄漏）
+  const trimmedCount = ref(0);
+
   // 订阅列表（按 server_id 分组）
   const subscriptions = ref<Map<number, Set<string>>>(new Map());
 
   // 脚本缓存（避免高频调用 invoke）
-  const scriptCache = new Map<string, ScriptCache>();
+  const scriptCache = new Map<string, ScriptCacheEntry>();
 
   // 环境变量缓存
-  const envCache = new Map<number, EnvCache>();
+  const envCache = new Map<number, EnvCacheEntry>();
 
   // 消息批处理队列
   const messageQueue: MqttMessage[] = [];
   let batchTimeout: ReturnType<typeof setTimeout> | null = null;
-  const BATCH_INTERVAL = 50; // 批处理间隔（毫秒）
 
-  // 获取缓存的脚本
-  async function getCachedScripts(serverId: number, scriptType: string): Promise<Script[]> {
+  // 获取缓存的脚本（Promise 缓存：miss 时先写入 pending Promise，并发请求共享）
+  function getCachedScripts(serverId: number, scriptType: string): Promise<Script[]> {
     const cacheKey = `${serverId}-${scriptType}`;
-    const cached = scriptCache.get(cacheKey);
     const now = Date.now();
+    const cached = scriptCache.get(cacheKey);
 
     if (cached && now - cached.timestamp < SCRIPT_CACHE_TTL) {
-      return cached.scripts;
+      return cached.promise;
     }
 
-    try {
-      const scripts = await invoke<Script[]>("get_enabled_scripts", {
-        serverId,
-        scriptType,
+    const entry: ScriptCacheEntry = { promise: Promise.resolve([]), timestamp: now };
+    entry.promise = invoke<Script[]>("get_enabled_scripts", { serverId, scriptType })
+      .then((scripts) => {
+        entry.resolved = scripts;
+        return scripts;
+      })
+      .catch(() => {
+        // 失败不占用整个 TTL，下次调用重试
+        if (scriptCache.get(cacheKey) === entry) {
+          scriptCache.delete(cacheKey);
+        }
+        return [] as Script[];
       });
-      scriptCache.set(cacheKey, { scripts, timestamp: now });
-      return scripts;
-    } catch {
-      return [];
-    }
+    scriptCache.set(cacheKey, entry);
+    return entry.promise;
+  }
+
+  // 同步判断某 server 是否确定没有启用的接收脚本（缓存已解析且为空）
+  function hasNoReceiveScriptsSync(serverId: number): boolean {
+    const cached = scriptCache.get(`${serverId}-after_receive`);
+    return (
+      !!cached &&
+      cached.resolved !== undefined &&
+      cached.resolved.length === 0 &&
+      Date.now() - cached.timestamp < SCRIPT_CACHE_TTL
+    );
   }
 
   // 清除脚本缓存（当脚本更新时调用）
   function clearScriptCache(serverId?: number) {
     if (serverId) {
-      scriptCache.delete(`${serverId}-before_send`);
+      scriptCache.delete(`${serverId}-before_publish`);
       scriptCache.delete(`${serverId}-after_receive`);
     } else {
       scriptCache.clear();
     }
+    // 同步失效脚本引擎的编译缓存
+    ScriptEngine.clearCompileCache();
   }
 
-  // 获取缓存的环境变量
-  async function getCachedEnvVariables(serverId: number): Promise<Record<string, string>> {
-    const cached = envCache.get(serverId);
+  // 获取缓存的环境变量（Promise 缓存，避免 TTL 到期瞬间惊群）
+  function getCachedEnvVariables(serverId: number): Promise<Record<string, string>> {
     const now = Date.now();
+    const cached = envCache.get(serverId);
 
     if (cached && now - cached.timestamp < SCRIPT_CACHE_TTL) {
-      return cached.variables;
+      return cached.promise;
     }
 
-    try {
-      const envList = await invoke<EnvVariable[]>("list_env_variables", { serverId });
-      const variables: Record<string, string> = {};
-      for (const env of envList) {
-        variables[env.name] = env.value;
-      }
-      envCache.set(serverId, { variables, timestamp: now });
-      return variables;
-    } catch {
-      return {};
-    }
+    const entry: EnvCacheEntry = { promise: Promise.resolve({}), timestamp: now };
+    entry.promise = invoke<EnvVariable[]>("list_env_variables", { serverId })
+      .then((envList) => {
+        const variables: Record<string, string> = {};
+        for (const env of envList) {
+          variables[env.name] = env.value;
+        }
+        return variables;
+      })
+      .catch(() => {
+        if (envCache.get(serverId) === entry) {
+          envCache.delete(serverId);
+        }
+        return {} as Record<string, string>;
+      });
+    envCache.set(serverId, entry);
+    return entry.promise;
   }
 
   // 清除环境变量缓存
@@ -128,43 +180,115 @@ export const useMqttStore = defineStore("mqtt", () => {
     }
   }
 
-  // 批量处理消息队列
+  // 批量处理消息队列（就地增删 + triggerRef，避免整表拷贝）
   function flushMessageQueue() {
+    if (batchTimeout) {
+      clearTimeout(batchTimeout);
+      batchTimeout = null;
+    }
     if (messageQueue.length === 0) return;
 
-    const newMap = new Map(messagesByServer.value);
-    
-    // 按 serverId 分组处理
-    const messagesByServerId = new Map<number, MqttMessage[]>();
+    const map = messagesByServer.value;
+
+    // 按 serverId 分组
+    const grouped = new Map<number, MqttMessage[]>();
     for (const msg of messageQueue) {
-      if (!messagesByServerId.has(msg.server_id)) {
-        messagesByServerId.set(msg.server_id, []);
+      let arr = grouped.get(msg.server_id);
+      if (!arr) {
+        arr = [];
+        grouped.set(msg.server_id, arr);
       }
-      messagesByServerId.get(msg.server_id)!.push(msg);
+      arr.push(msg);
     }
 
-    // 合并到现有消息
-    for (const [serverId, newMessages] of messagesByServerId) {
-      const existing = newMap.get(serverId) || [];
-      const merged = [...newMessages, ...existing];
-      // 限制每个 server 的消息数量
-      newMap.set(serverId, merged.length > 1000 ? merged.slice(0, 1000) : merged);
+    const limit = appStore.messageLimit;
+    for (const [serverId, newMessages] of grouped) {
+      let list = map.get(serverId);
+      if (!list) {
+        list = [];
+        map.set(serverId, list);
+      }
+      // 就地头插 + 截断（虚拟滚动的更新由 triggerRef 通知）
+      list.unshift(...newMessages);
+      if (list.length > limit) {
+        trimmedCount.value += list.length - limit;
+        list.length = limit;
+      }
     }
 
-    messagesByServer.value = newMap;
     messageQueue.length = 0;
-    batchTimeout = null;
+    triggerRef(messagesByServer);
   }
 
   // 添加消息到队列
   function queueMessage(msg: MqttMessage) {
     msg.id = ++messageIdCounter;
+    // 入队时一次性计算派生数据（decodedText / payloadFormat），渲染和搜索直接读缓存
+    computeDerived(msg);
     messageQueue.push(msg);
+
+    // 背压：队列达到阈值立即同步 flush
+    if (messageQueue.length >= MAX_QUEUE_LENGTH) {
+      flushMessageQueue();
+      return;
+    }
 
     if (!batchTimeout) {
       batchTimeout = setTimeout(flushMessageQueue, BATCH_INTERVAL);
     }
   }
+
+  // ReceivedMessage → MqttMessage
+  function toReceivedMqttMessage(
+    msg: ReceivedMessage,
+    payloadBytes: Uint8Array,
+    scriptError?: string
+  ): MqttMessage {
+    return {
+      server_id: msg.server_id,
+      direction: "receive",
+      topic: msg.topic,
+      payload: payloadBytes,
+      qos: msg.qos as 0 | 1 | 2,
+      retain: msg.retain,
+      timestamp: msg.timestamp,
+      scriptError,
+      originalLength: msg.original_length,
+      truncated: msg.truncated,
+    };
+  }
+
+  // 处理单条接收到的消息（可能执行接收后脚本）
+  async function handleReceivedMessage(msg: ReceivedMessage) {
+    let payloadBytes = base64ToBytes(msg.payload);
+    let scriptError: string | undefined = undefined;
+
+    try {
+      const scripts = await getCachedScripts(msg.server_id, "after_receive");
+
+      if (scripts.length > 0) {
+        const originalPayload = new TextDecoder().decode(payloadBytes);
+        const envVariables = await getCachedEnvVariables(msg.server_id);
+        const processedPayload = await ScriptEngine.executeAfterReceive(
+          scripts,
+          originalPayload,
+          msg.topic,
+          envVariables
+        );
+        payloadBytes = new TextEncoder().encode(processedPayload);
+      }
+    } catch (error: any) {
+      // 记录脚本错误
+      scriptError = error?.message || String(error);
+      handleScriptError(error, true); // 静默处理，不显示通知（会写入日志）
+    }
+
+    queueMessage(toReceivedMqttMessage(msg, payloadBytes, scriptError));
+  }
+
+  // 接收路径的串行链：保证配置脚本时消息不乱序（慢脚本不会被后到的快消息超车）
+  let receiveChain: Promise<void> = Promise.resolve();
+  let receiveChainPending = 0;
 
   // 初始化事件监听
   const initListeners = async () => {
@@ -175,7 +299,7 @@ export const useMqttStore = defineStore("mqtt", () => {
         status: status as ConnectionStatus,
         error,
       });
-      
+
       // 如果有错误，使用 ElMessage 显示
       if (error && status === "error") {
         ElMessage.error({
@@ -185,44 +309,33 @@ export const useMqttStore = defineStore("mqtt", () => {
       }
     });
 
-    // 监听接收消息
-    await listen<ReceivedMessage>("mqtt-message", async (event) => {
-      const msg = event.payload;
-      let payloadBytes = new Uint8Array(msg.payload);
-      let scriptError: string | undefined = undefined;
-      
-      // 尝试应用接收后处理脚本（使用缓存）
-      try {
-        const scripts = await getCachedScripts(msg.server_id, "after_receive");
-        
-        if (scripts.length > 0) {
-          const originalPayload = new TextDecoder().decode(payloadBytes);
-          const envVariables = await getCachedEnvVariables(msg.server_id);
-          const processedPayload = await ScriptEngine.executeAfterReceive(
-            scripts,
-            originalPayload,
-            msg.topic,
-            envVariables
-          );
-          payloadBytes = new TextEncoder().encode(processedPayload);
+    // 监听接收消息（Rust 侧攒批 emit，一次事件携带一批消息）
+    await listen<ReceivedMessage[]>("mqtt-messages", (event) => {
+      const batch = event.payload;
+
+      // 同步快路径：确定无接收脚本且串行链空闲时直接同步入队，
+      // 零 microtask 开销且天然保序
+      if (
+        receiveChainPending === 0 &&
+        batch.every((m) => hasNoReceiveScriptsSync(m.server_id))
+      ) {
+        for (const msg of batch) {
+          queueMessage(toReceivedMqttMessage(msg, base64ToBytes(msg.payload)));
         }
-      } catch (error: any) {
-        // 记录脚本错误
-        scriptError = error?.message || String(error);
-        handleScriptError(error, true); // 静默处理，不显示通知（会写入日志）
+        return;
       }
-      
-      // 使用批处理队列
-      queueMessage({
-        server_id: msg.server_id,
-        direction: "receive",
-        topic: msg.topic,
-        payload: payloadBytes,
-        qos: msg.qos as 0 | 1 | 2,
-        retain: msg.retain,
-        timestamp: msg.timestamp,
-        scriptError: scriptError,
-      });
+
+      // 慢路径：挂到串行链上按序处理
+      receiveChainPending++;
+      receiveChain = receiveChain
+        .then(async () => {
+          for (const msg of batch) {
+            await handleReceivedMessage(msg);
+          }
+        })
+        .finally(() => {
+          receiveChainPending--;
+        });
     });
   };
 
@@ -270,7 +383,7 @@ export const useMqttStore = defineStore("mqtt", () => {
         typeof payload === "string" ? new TextEncoder().encode(payload) : payload,
       qos,
       retain,
-      timestamp: new Date().toISOString(),
+      timestamp: Date.now(),
     });
   };
 
@@ -311,13 +424,13 @@ export const useMqttStore = defineStore("mqtt", () => {
 
   // 清空消息
   const clearMessages = (serverId?: number) => {
-    const newMap = new Map(messagesByServer.value);
+    const map = messagesByServer.value;
     if (serverId) {
-      newMap.delete(serverId);
+      map.delete(serverId);
     } else {
-      newMap.clear();
+      map.clear();
     }
-    messagesByServer.value = newMap;
+    triggerRef(messagesByServer);
   };
 
   // 将 HEX 字符串转换为字节数组
@@ -351,7 +464,7 @@ export const useMqttStore = defineStore("mqtt", () => {
       // 其他格式：直接用 TextEncoder 编码
       payloadBytes = new TextEncoder().encode(msg.payload);
     }
-    
+
     // 使用批处理队列
     queueMessage({
       server_id: serverId,
@@ -360,7 +473,7 @@ export const useMqttStore = defineStore("mqtt", () => {
       payload: payloadBytes,
       qos: msg.qos,
       retain: msg.retain,
-      timestamp: new Date().toISOString(),
+      timestamp: Date.now(),
       scriptError: msg.scriptError,
       payload_type: msg.payload_type,
     });
@@ -369,6 +482,7 @@ export const useMqttStore = defineStore("mqtt", () => {
   return {
     connectionStates,
     messagesByServer,
+    trimmedCount,
     subscriptions,
     initListeners,
     connect,
@@ -381,6 +495,8 @@ export const useMqttStore = defineStore("mqtt", () => {
     getServerMessages,
     clearMessages,
     addPublishMessage,
+    getCachedScripts,
+    getCachedEnvVariables,
     clearScriptCache,
     clearEnvCache,
   };

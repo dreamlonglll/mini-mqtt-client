@@ -36,12 +36,35 @@ const errorTitles: Record<ErrorType, string> = {
 }
 
 /**
+ * 待写入文件的日志条目
+ */
+interface LogEntryPayload {
+  type: string
+  message: string
+  details: string | null
+  timestamp: string
+}
+
+/** 同一错误的去重时间窗口（毫秒） */
+const DEDUPE_WINDOW_MS = 5000
+/** 日志批量落盘间隔（毫秒） */
+const LOG_FLUSH_INTERVAL_MS = 500
+/** 单批日志最大条数（达到即立即落盘） */
+const LOG_FLUSH_MAX_ENTRIES = 100
+
+/**
  * 全局错误处理器类
  */
 class ErrorHandler {
   private errors: AppError[] = []
   private maxErrors = 100
   private logToFileEnabled = true
+
+  // 同一 type+message 在时间窗口内去重计数，避免高频消息流上的坏脚本刷爆日志
+  private recentErrors = new Map<string, { count: number; firstAt: number }>()
+  // 待批量写入文件的日志队列
+  private pendingLogs: LogEntryPayload[] = []
+  private logFlushTimer: ReturnType<typeof setTimeout> | null = null
 
   /**
    * 处理错误
@@ -51,19 +74,87 @@ class ErrorHandler {
    */
   handle(error: unknown, type: ErrorType = ErrorType.UNKNOWN, silent: boolean = false): AppError {
     const appError = this.createAppError(error, type)
+
+    // 时间窗口内的重复错误只计数，不再打日志 / 弹通知 / 写文件
+    const key = `${type}:${appError.message}`
+    const now = Date.now()
+    const recent = this.recentErrors.get(key)
+    if (recent && now - recent.firstAt < DEDUPE_WINDOW_MS) {
+      recent.count++
+      return appError
+    }
+    // 上一窗口有积累计数时补记一条汇总
+    if (recent && recent.count > 1) {
+      this.enqueueLog({
+        type: appError.type,
+        message: `${appError.message}（该错误在过去 ${Math.round(DEDUPE_WINDOW_MS / 1000)} 秒内共发生 ${recent.count} 次）`,
+        details: null,
+        timestamp: new Date().toISOString(),
+      })
+    }
+    this.recentErrors.set(key, { count: 1, firstAt: now })
+    this.pruneRecentErrors(now)
+
     this.logError(appError)
     this.storeError(appError)
-    
+
     if (!silent) {
       this.notifyUser(appError)
     }
-    
-    // 异步写入日志文件
+
+    // 排队批量写入日志文件
     if (this.logToFileEnabled) {
-      this.writeToLogFile(appError)
+      this.enqueueLog({
+        type: appError.type,
+        message: appError.message,
+        details: appError.details ? JSON.stringify(appError.details) : null,
+        timestamp: appError.timestamp.toISOString(),
+      })
     }
-    
+
     return appError
+  }
+
+  /**
+   * 清理过期的去重记录，防止 Map 无限增长
+   */
+  private pruneRecentErrors(now: number): void {
+    if (this.recentErrors.size <= 200) return
+    for (const [key, value] of this.recentErrors) {
+      if (now - value.firstAt > DEDUPE_WINDOW_MS) {
+        this.recentErrors.delete(key)
+      }
+    }
+  }
+
+  /**
+   * 日志入队，按时间/数量批量落盘
+   */
+  private enqueueLog(entry: LogEntryPayload): void {
+    this.pendingLogs.push(entry)
+    if (this.pendingLogs.length >= LOG_FLUSH_MAX_ENTRIES) {
+      this.flushLogs()
+      return
+    }
+    if (!this.logFlushTimer) {
+      this.logFlushTimer = setTimeout(() => this.flushLogs(), LOG_FLUSH_INTERVAL_MS)
+    }
+  }
+
+  /**
+   * 将排队的日志一次性写入文件
+   */
+  private flushLogs(): void {
+    if (this.logFlushTimer) {
+      clearTimeout(this.logFlushTimer)
+      this.logFlushTimer = null
+    }
+    if (this.pendingLogs.length === 0) return
+    const entries = this.pendingLogs.splice(0)
+    invoke('write_error_logs', { entries }).catch((e) => {
+      // 避免循环调用，只在控制台输出
+      console.error('写入日志文件失败:', e)
+    })
   }
 
   /**
@@ -121,24 +212,6 @@ class ErrorHandler {
       type: 'error',
       duration: 5000
     })
-  }
-
-  /**
-   * 写入错误日志到文件
-   */
-  private async writeToLogFile(error: AppError): Promise<void> {
-    try {
-      const logEntry = {
-        type: error.type,
-        message: error.message,
-        details: error.details ? JSON.stringify(error.details) : null,
-        timestamp: error.timestamp.toISOString()
-      }
-      await invoke('write_error_log', { entry: logEntry })
-    } catch (e) {
-      // 避免循环调用，只在控制台输出
-      console.error('写入日志文件失败:', e)
-    }
   }
 
   /**

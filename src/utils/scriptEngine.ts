@@ -1,6 +1,19 @@
 import type { Script } from "@/stores/script";
 import { errorHandler, ErrorType } from "@/utils/errorHandler";
 
+// CRC32 查找表（模块级只生成一次）
+const CRC32_TABLE = (() => {
+  const table = new Int32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[i] = c;
+  }
+  return table;
+})();
+
 /**
  * 加密工具类 - 提供常用的加解密函数
  */
@@ -23,7 +36,13 @@ class CryptoUtils {
    * Uint8Array 转 Base64
    */
   static bytesToBase64(bytes: Uint8Array): string {
-    return btoa(String.fromCharCode(...bytes));
+    // 分块拼接，避免 String.fromCharCode(...bytes) 在大 payload 下超出参数上限抛 RangeError
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
   }
 
   /**
@@ -488,24 +507,108 @@ class CryptoUtils {
    */
   static crc32(data: string): string {
     let crc = 0xFFFFFFFF;
-    const table: number[] = [];
-    
-    // 生成 CRC 表
-    for (let i = 0; i < 256; i++) {
-      let c = i;
-      for (let j = 0; j < 8; j++) {
-        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      }
-      table[i] = c;
-    }
-    
-    // 计算 CRC
     for (let i = 0; i < data.length; i++) {
-      crc = table[(crc ^ data.charCodeAt(i)) & 0xFF] ^ (crc >>> 8);
+      crc = CRC32_TABLE[(crc ^ data.charCodeAt(i)) & 0xFF] ^ (crc >>> 8);
     }
-    
     return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
   }
+}
+
+// ===== 脚本执行的静态沙箱（模块级只构建一次，避免每条消息重建对象和 22 次 bind） =====
+const SANDBOX_CRYPTO = {
+  // 编码转换
+  stringToBytes: CryptoUtils.stringToBytes.bind(CryptoUtils),
+  bytesToString: CryptoUtils.bytesToString.bind(CryptoUtils),
+  bytesToBase64: CryptoUtils.bytesToBase64.bind(CryptoUtils),
+  base64ToBytes: CryptoUtils.base64ToBytes.bind(CryptoUtils),
+  bytesToHex: CryptoUtils.bytesToHex.bind(CryptoUtils),
+  hexToBytes: CryptoUtils.hexToBytes.bind(CryptoUtils),
+  // 随机数
+  randomBytes: CryptoUtils.randomBytes.bind(CryptoUtils),
+  generateKey: CryptoUtils.generateKey.bind(CryptoUtils),
+  generateIv: CryptoUtils.generateIv.bind(CryptoUtils),
+  // 哈希
+  sha256: CryptoUtils.sha256.bind(CryptoUtils),
+  sha1: CryptoUtils.sha1.bind(CryptoUtils),
+  md5: CryptoUtils.md5.bind(CryptoUtils),
+  hmacSha256: CryptoUtils.hmacSha256.bind(CryptoUtils),
+  // AES 加解密（Base64 格式）
+  aesGcmEncrypt: CryptoUtils.aesGcmEncrypt.bind(CryptoUtils),
+  aesGcmDecrypt: CryptoUtils.aesGcmDecrypt.bind(CryptoUtils),
+  aesCbcEncrypt: CryptoUtils.aesCbcEncrypt.bind(CryptoUtils),
+  aesCbcDecrypt: CryptoUtils.aesCbcDecrypt.bind(CryptoUtils),
+  // AES 加解密（Hex 格式）
+  aesGcmEncryptHex: CryptoUtils.aesGcmEncryptHex.bind(CryptoUtils),
+  aesGcmDecryptHex: CryptoUtils.aesGcmDecryptHex.bind(CryptoUtils),
+  aesCbcEncryptHex: CryptoUtils.aesCbcEncryptHex.bind(CryptoUtils),
+  aesCbcDecryptHex: CryptoUtils.aesCbcDecryptHex.bind(CryptoUtils),
+  // 其他
+  xor: CryptoUtils.xor.bind(CryptoUtils),
+  crc32: CryptoUtils.crc32.bind(CryptoUtils),
+};
+
+const STATIC_SANDBOX = {
+  console: {
+    log: (...args: any[]) => console.log("[Script]", ...args),
+    error: (...args: any[]) => console.error("[Script]", ...args),
+    warn: (...args: any[]) => console.warn("[Script]", ...args),
+  },
+  JSON: JSON,
+  parseInt: parseInt,
+  parseFloat: parseFloat,
+  String: String,
+  Number: Number,
+  Boolean: Boolean,
+  Array: Array,
+  Object: Object,
+  Date: Date,
+  Math: Math,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  atob: atob,
+  btoa: btoa,
+  // 加密工具
+  crypto: SANDBOX_CRYPTO,
+};
+
+const STATIC_SANDBOX_KEYS = Object.keys(STATIC_SANDBOX);
+const STATIC_SANDBOX_VALUES = Object.values(STATIC_SANDBOX);
+
+// 使用 AsyncFunction 构造器支持 async/await
+// eslint-disable-next-line @typescript-eslint/no-implied-eval
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+type CompiledScript = (...args: any[]) => Promise<any>;
+
+// 脚本编译缓存：同一段代码只解析编译一次（按内容作 key，代码变化自动失效）
+const compiledScriptCache = new Map<string, CompiledScript>();
+const MAX_COMPILED_SCRIPTS = 100;
+
+function getCompiledScript(code: string): CompiledScript {
+  let fn = compiledScriptCache.get(code);
+  if (!fn) {
+    // 包装代码：如果定义了 process 函数，自动调用它并返回结果
+    const wrappedCode = `
+      "use strict";
+      ${code}
+      if (typeof process === 'function') {
+        return await process(payload, topic);
+      }
+      return payload;
+    `;
+    fn = new AsyncFunction(
+      "payload",
+      "topic",
+      "env",
+      ...STATIC_SANDBOX_KEYS,
+      wrappedCode
+    ) as CompiledScript;
+    if (compiledScriptCache.size >= MAX_COMPILED_SCRIPTS) {
+      compiledScriptCache.clear();
+    }
+    compiledScriptCache.set(code, fn);
+  }
+  return fn;
 }
 
 /**
@@ -610,86 +713,16 @@ export class ScriptEngine {
       },
     };
     
-    // 创建沙箱环境
-    const sandbox = {
-      payload: context.payload,
-      topic: context.topic || "",
-      env: envObject,
-      console: {
-        log: (...args: any[]) => console.log("[Script]", ...args),
-        error: (...args: any[]) => console.error("[Script]", ...args),
-        warn: (...args: any[]) => console.warn("[Script]", ...args),
-      },
-      JSON: JSON,
-      parseInt: parseInt,
-      parseFloat: parseFloat,
-      String: String,
-      Number: Number,
-      Boolean: Boolean,
-      Array: Array,
-      Object: Object,
-      Date: Date,
-      Math: Math,
-      encodeURIComponent: encodeURIComponent,
-      decodeURIComponent: decodeURIComponent,
-      atob: atob,
-      btoa: btoa,
-      // 加密工具
-      crypto: {
-        // 编码转换
-        stringToBytes: CryptoUtils.stringToBytes.bind(CryptoUtils),
-        bytesToString: CryptoUtils.bytesToString.bind(CryptoUtils),
-        bytesToBase64: CryptoUtils.bytesToBase64.bind(CryptoUtils),
-        base64ToBytes: CryptoUtils.base64ToBytes.bind(CryptoUtils),
-        bytesToHex: CryptoUtils.bytesToHex.bind(CryptoUtils),
-        hexToBytes: CryptoUtils.hexToBytes.bind(CryptoUtils),
-        // 随机数
-        randomBytes: CryptoUtils.randomBytes.bind(CryptoUtils),
-        generateKey: CryptoUtils.generateKey.bind(CryptoUtils),
-        generateIv: CryptoUtils.generateIv.bind(CryptoUtils),
-        // 哈希
-        sha256: CryptoUtils.sha256.bind(CryptoUtils),
-        sha1: CryptoUtils.sha1.bind(CryptoUtils),
-        md5: CryptoUtils.md5.bind(CryptoUtils),
-        hmacSha256: CryptoUtils.hmacSha256.bind(CryptoUtils),
-        // AES 加解密（Base64 格式）
-        aesGcmEncrypt: CryptoUtils.aesGcmEncrypt.bind(CryptoUtils),
-        aesGcmDecrypt: CryptoUtils.aesGcmDecrypt.bind(CryptoUtils),
-        aesCbcEncrypt: CryptoUtils.aesCbcEncrypt.bind(CryptoUtils),
-        aesCbcDecrypt: CryptoUtils.aesCbcDecrypt.bind(CryptoUtils),
-        // AES 加解密（Hex 格式）
-        aesGcmEncryptHex: CryptoUtils.aesGcmEncryptHex.bind(CryptoUtils),
-        aesGcmDecryptHex: CryptoUtils.aesGcmDecryptHex.bind(CryptoUtils),
-        aesCbcEncryptHex: CryptoUtils.aesCbcEncryptHex.bind(CryptoUtils),
-        aesCbcDecryptHex: CryptoUtils.aesCbcDecryptHex.bind(CryptoUtils),
-        // 其他
-        xor: CryptoUtils.xor.bind(CryptoUtils),
-        crc32: CryptoUtils.crc32.bind(CryptoUtils),
-      },
-    };
-
-    // 包装代码，确保能够获取返回值
-    // 如果代码定义了 process 函数，自动调用它
-    const wrappedCode = `
-      "use strict";
-      ${code}
-      // 如果定义了 process 函数，调用它并返回结果
-      if (typeof process === 'function') {
-        return await process(payload, topic);
-      }
-      return payload;
-    `;
-
-    // 使用 AsyncFunction 构造器支持 async/await
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-    const fn = new AsyncFunction(
-      ...Object.keys(sandbox),
-      wrappedCode
-    );
+    // 使用编译缓存：静态沙箱通过固定参数传入，每次执行只需构建 env 对象
+    const fn = getCompiledScript(code);
 
     // 执行异步函数并等待结果
-    const result = await fn(...Object.values(sandbox));
+    const result = await fn(
+      context.payload,
+      context.topic || "",
+      envObject,
+      ...STATIC_SANDBOX_VALUES
+    );
     
     // 确保返回字符串
     if (result === undefined || result === null) {
@@ -705,6 +738,13 @@ export class ScriptEngine {
     }
     
     return String(result);
+  }
+
+  /**
+   * 清空脚本编译缓存（脚本被修改或删除时调用）
+   */
+  static clearCompileCache() {
+    compiledScriptCache.clear();
   }
 
   /**

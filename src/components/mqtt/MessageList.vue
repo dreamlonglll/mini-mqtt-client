@@ -41,17 +41,21 @@
     </div>
 
     <DynamicScroller
-      v-if="filteredMessages.length > 0"
+      ref="scrollerRef"
       :items="filteredMessages"
       :min-item-size="70"
       class="message-container"
       key-field="id"
     >
+      <template #empty>
+        <div class="empty-state">
+          <el-empty :description="$t('messages.noMessages')" :image-size="60" />
+        </div>
+      </template>
       <template #default="{ item: msg, index, active }">
         <DynamicScrollerItem
           :item="msg"
           :active="active"
-          :size-dependencies="[msg.scriptError]"
           :data-index="index"
         >
           <div class="message-item-wrapper">
@@ -86,11 +90,20 @@
                 <el-tag
                   size="small"
                   effect="plain"
-                  :type="getFormatTagType(getMessageFormat(msg))"
+                  :type="getFormatTagType(getDisplayFormat(msg))"
                   class="format-tag"
                 >
-                  {{ getFormatLabel(getMessageFormat(msg), msg) }}
+                  {{ getFormatLabel(getDisplayFormat(msg)) }}
                 </el-tag>
+                <el-tooltip
+                  v-if="msg.truncated"
+                  :content="$t('messages.truncatedTip', { size: msg.originalLength })"
+                  placement="top"
+                >
+                  <el-tag size="small" type="danger" effect="plain">
+                    {{ $t('messages.truncated') }}
+                  </el-tag>
+                </el-tooltip>
                 <el-tag size="small" effect="plain">Q{{ msg.qos }}</el-tag>
                 <el-tag v-if="msg.retain" size="small" type="warning" effect="plain">
                   R
@@ -103,19 +116,13 @@
               <span>{{ msg.scriptError }}</span>
             </div>
             <div class="message-body">
-              <MessagePayload :payload="msg.payload" :preview="true" :payload-type="msg.payload_type" />
+              <MessagePayload :payload="msg.payload" :message="msg" :preview="true" :payload-type="msg.payload_type" />
             </div>
             </div>
           </div>
         </DynamicScrollerItem>
       </template>
     </DynamicScroller>
-
-    <div v-else class="message-container empty-container">
-      <div class="empty-state">
-        <el-empty :description="$t('messages.noMessages')" :image-size="60" />
-      </div>
-    </div>
 
     <!-- 消息详情对话框 -->
     <el-dialog
@@ -140,9 +147,9 @@
           <el-descriptions-item :label="$t('publish.payloadType')">
             <el-tag
               size="small"
-              :type="getFormatTagType(getMessageFormat(selectedMessage))"
+              :type="getFormatTagType(getDisplayFormat(selectedMessage))"
             >
-              {{ getFormatLabel(getMessageFormat(selectedMessage), selectedMessage) }}
+              {{ getFormatLabel(getDisplayFormat(selectedMessage)) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="Time" :span="2">
@@ -170,7 +177,7 @@
               </el-button>
             </div>
           </div>
-          <MessagePayload :payload="selectedMessage.payload" :preview="false" :payload-type="selectedMessage.payload_type" />
+          <MessagePayload :payload="selectedMessage.payload" :message="selectedMessage" :preview="false" :payload-type="selectedMessage.payload_type" />
         </div>
       </div>
     </el-dialog>
@@ -178,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   ChatDotRound,
@@ -199,10 +206,18 @@ import { useAppStore } from "@/stores/app";
 import { useSubscriptionStore } from "@/stores/subscription";
 import MessagePayload from "./MessagePayload.vue";
 import type { MqttMessage } from "@/types/mqtt";
+import { debounce } from "@/utils/debounce";
+import {
+  getDecodedText,
+  getHexText,
+  getDisplayFormat,
+  formatMsgTime,
+  formatMsgFullTime,
+  type PayloadDisplayFormat,
+} from "@/utils/messageDerived";
 
 const { t } = useI18n();
 
-type PayloadFormat = "json" | "binary" | "text";
 type DirectionFilter = "all" | "publish" | "receive";
 
 const serverStore = useServerStore();
@@ -210,18 +225,42 @@ const mqttStore = useMqttStore();
 const appStore = useAppStore();
 const subscriptionStore = useSubscriptionStore();
 
+// topic → 颜色缓存（订阅数据变化时整表重建；通配符匹配结果懒加入）
+const topicColorMap = computed(() => {
+  const cache = new Map<string, string | undefined>();
+  const serverId = serverStore.activeServerId;
+  if (!serverId) return cache;
+  // 遍历订阅以建立精确 topic 映射（同时让 computed 跟踪订阅内容变化）
+  for (const sub of subscriptionStore.getSubscriptionsByServer(serverId)) {
+    if (!cache.has(sub.topic)) {
+      cache.set(sub.topic, sub.color);
+    }
+  }
+  return cache;
+});
+
 // 获取消息的 topic 颜色
 function getTopicColor(msg: MqttMessage): string | undefined {
-  const serverId = serverStore.activeServerId;
-  if (!serverId) return undefined;
-  
   // 只有接收的消息才显示订阅颜色
   if (msg.direction !== "receive") return undefined;
-  
-  const subscription = subscriptionStore.getSubscriptionByTopic(serverId, msg.topic);
-  return subscription?.color;
+  const serverId = serverStore.activeServerId;
+  if (!serverId) return undefined;
+
+  const cache = topicColorMap.value;
+  if (cache.has(msg.topic)) return cache.get(msg.topic);
+  // 通配符订阅懒匹配一次后缓存
+  const color = subscriptionStore.getSubscriptionByTopic(serverId, msg.topic)?.color;
+  cache.set(msg.topic, color);
+  return color;
 }
 const searchKeyword = ref("");
+// 防抖后的搜索关键词（避免每个字符都触发全量过滤）
+const debouncedKeyword = ref("");
+const applyKeyword = debounce((value: string) => {
+  debouncedKeyword.value = value;
+}, 300);
+watch(searchKeyword, (value) => applyKeyword(value));
+
 const directionFilter = ref<DirectionFilter>("all");
 const showDetailDialog = ref(false);
 const selectedMessage = ref<MqttMessage | null>(null);
@@ -242,23 +281,36 @@ const filteredMessages = computed(() => {
     result = result.filter((m) => m.direction === directionFilter.value);
   }
 
-  // 关键词搜索
-  if (searchKeyword.value.trim()) {
-    const keyword = searchKeyword.value.toLowerCase();
+  // 关键词搜索（读取消息上的派生缓存，不再即算即弃）
+  if (debouncedKeyword.value.trim()) {
+    const keyword = debouncedKeyword.value.toLowerCase();
     result = result.filter((m) => {
-      const payloadStr = getPayloadString(m.payload);
-      // 同时搜索 HEX 表示（支持二进制消息搜索）
-      const hexStr = getPayloadHexString(m.payload);
       return (
         m.topic.toLowerCase().includes(keyword) ||
-        payloadStr.toLowerCase().includes(keyword) ||
-        hexStr.toLowerCase().includes(keyword)
+        getDecodedText(m).toLowerCase().includes(keyword) ||
+        getHexText(m).toLowerCase().includes(keyword)
       );
     });
   }
 
-  return result;
+  // store 侧 flush 采用就地修改，这里始终返回新数组标识，
+  // 让虚拟滚动能感知 items 变化
+  return result === messages.value ? result.slice() : result;
 });
+
+// ===== 虚拟滚动行高缓存定期重置（防止被裁剪消息的 sizes 记录无限累积） =====
+const scrollerRef = ref<{ forceUpdate: (clearCache?: boolean) => void } | null>(null);
+let trimmedBaseline = 0;
+watch(
+  () => mqttStore.trimmedCount,
+  (count) => {
+    // 每裁剪约 2000 条重置一次行高缓存，可见行会自动重新测量
+    if (count - trimmedBaseline >= 2000) {
+      trimmedBaseline = count;
+      scrollerRef.value?.forceUpdate(true);
+    }
+  }
+);
 
 // 过滤标签
 const filterLabel = computed(() => {
@@ -274,82 +326,11 @@ const filterLabel = computed(() => {
   }
 });
 
-// 获取 payload 字符串
-function getPayloadString(payload: string | Uint8Array | undefined): string {
-  if (!payload) return "";
-  if (payload instanceof Uint8Array) {
-    return new TextDecoder().decode(payload);
-  }
-  return String(payload);
-}
-
-// 获取 payload 的 HEX 字符串（用于二进制消息搜索）
-function getPayloadHexString(payload: string | Uint8Array | undefined): string {
-  if (!payload) return "";
-  const bytes = payload instanceof Uint8Array ? payload : new TextEncoder().encode(payload);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-    .join(" ");
-}
-
-// 检测 payload 格式（自动检测，用于接收的消息）
-function detectPayloadFormat(payload: string | Uint8Array | undefined): PayloadFormat {
-  if (!payload) return "text";
-
-  const str = getPayloadString(payload);
-  const bytes =
-    payload instanceof Uint8Array ? payload : new TextEncoder().encode(payload);
-
-  // 尝试检测 JSON
-  if (str.trim()) {
-    const trimmed = str.trim();
-    if (
-      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-      (trimmed.startsWith("[") && trimmed.endsWith("]"))
-    ) {
-      try {
-        JSON.parse(trimmed);
-        return "json";
-      } catch {
-        // 不是有效的 JSON
-      }
-    }
-  }
-
-  // 检测二进制数据
-  if (bytes.length > 0) {
-    let nonPrintableCount = 0;
-    for (const byte of bytes) {
-      if ((byte < 32 || byte > 126) && byte !== 9 && byte !== 10 && byte !== 13) {
-        nonPrintableCount++;
-      }
-    }
-    if (nonPrintableCount / bytes.length > 0.1) {
-      return "binary";
-    }
-  }
-
-  return "text";
-}
-
-// 获取消息的显示格式（优先使用保存的类型，否则自动检测）
-function getMessageFormat(msg: MqttMessage): PayloadFormat {
-  // 如果消息有保存的 payload_type，使用它
-  if (msg.payload_type) {
-    // hex 类型映射为 binary 显示
-    if (msg.payload_type === "hex") return "binary";
-    if (msg.payload_type === "json") return "json";
-    return "text";
-  }
-  // 否则自动检测
-  return detectPayloadFormat(msg.payload);
-}
-
 // 获取格式标签类型
 function getFormatTagType(
-  format: PayloadFormat
+  format: PayloadDisplayFormat
 ): "info" | "success" | "warning" {
-  const types: Record<PayloadFormat, "info" | "success" | "warning"> = {
+  const types: Record<PayloadDisplayFormat, "info" | "success" | "warning"> = {
     json: "success",
     binary: "warning",
     text: "info",
@@ -358,9 +339,9 @@ function getFormatTagType(
 }
 
 // 获取格式标签文本
-function getFormatLabel(format: PayloadFormat, _msg?: MqttMessage): string {
+function getFormatLabel(format: PayloadDisplayFormat): string {
   // binary 格式统一显示为 HEX
-  const labels: Record<PayloadFormat, string> = {
+  const labels: Record<PayloadDisplayFormat, string> = {
     json: "JSON",
     binary: "HEX",
     text: "TEXT",
@@ -368,25 +349,12 @@ function getFormatLabel(format: PayloadFormat, _msg?: MqttMessage): string {
   return labels[format];
 }
 
-const formatTime = (timestamp?: string) => {
-  if (!timestamp) return "";
-  const date = new Date(timestamp);
-  const locale = appStore.getDateLocale();
-  const timeStr = date.toLocaleTimeString(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  // 添加毫秒
-  const ms = date.getMilliseconds().toString().padStart(3, "0");
-  return `${timeStr}.${ms}`;
+const formatTime = (timestamp?: number) => {
+  return formatMsgTime(timestamp, appStore.getDateLocale());
 };
 
-const formatFullTime = (timestamp?: string) => {
-  if (!timestamp) return "";
-  const date = new Date(timestamp);
-  const locale = appStore.getDateLocale();
-  return date.toLocaleString(locale);
+const formatFullTime = (timestamp?: number) => {
+  return formatMsgFullTime(timestamp, appStore.getDateLocale());
 };
 
 function handleFilterCommand(command: string) {
@@ -417,11 +385,11 @@ function showDetail(message: MqttMessage) {
 
 function copyPayload() {
   if (selectedMessage.value) {
-    const format = getMessageFormat(selectedMessage.value);
+    const format = getDisplayFormat(selectedMessage.value);
     // 二进制数据复制为 HEX 格式
-    const payload = format === "binary" 
-      ? getPayloadHexString(selectedMessage.value.payload)
-      : getPayloadString(selectedMessage.value.payload);
+    const payload = format === "binary"
+      ? getHexText(selectedMessage.value)
+      : getDecodedText(selectedMessage.value);
     navigator.clipboard.writeText(payload);
     ElMessage.success(t('success.copied'));
   }
@@ -429,11 +397,11 @@ function copyPayload() {
 
 function copyToPublish() {
   if (selectedMessage.value) {
-    const format = getMessageFormat(selectedMessage.value);
+    const format = getDisplayFormat(selectedMessage.value);
     // 二进制数据使用 HEX 格式复制到发布面板
-    const payload = format === "binary" 
-      ? getPayloadHexString(selectedMessage.value.payload)
-      : getPayloadString(selectedMessage.value.payload);
+    const payload = format === "binary"
+      ? getHexText(selectedMessage.value)
+      : getDecodedText(selectedMessage.value);
     appStore.setCopyToPublish({
       topic: selectedMessage.value.topic,
       payload: payload,
@@ -501,7 +469,8 @@ function copyToPublish() {
   background-color: var(--sidebar-bg);
   border: 1px solid var(--app-border-color);
   cursor: pointer;
-  transition: all 0.2s ease;
+  // 显式列出过渡属性，避免虚拟滚动复用 view 调整 transform 时意外触发过渡
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 
   &:hover {
     background-color: var(--sidebar-hover);

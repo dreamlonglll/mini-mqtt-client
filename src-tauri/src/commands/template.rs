@@ -16,8 +16,8 @@ pub async fn get_template(id: i64, storage: State<'_, Storage>) -> Result<Option
 }
 
 #[command]
-pub async fn list_templates(server_id: i64, storage: State<'_, Storage>) -> Result<Vec<CommandTemplate>, String> {
-    Ok(storage.get_templates(server_id))
+pub async fn list_templates(server_id: i64, storage: State<'_, Storage>) -> Result<serde_json::Value, String> {
+    storage.get_templates_json(server_id)
 }
 
 #[command]
@@ -46,7 +46,7 @@ pub async fn get_template_categories(server_id: i64, storage: State<'_, Storage>
 
 #[command]
 pub async fn export_templates(server_id: i64, storage: State<'_, Storage>) -> Result<String, String> {
-    let templates = storage.get_templates(server_id);
+    let templates = storage.get_templates_json(server_id)?;
     serde_json::to_string_pretty(&templates).map_err(|e| e.to_string())
 }
 

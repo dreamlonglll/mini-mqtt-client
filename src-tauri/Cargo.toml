@@ -26,7 +26,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 rumqttc = { version = "0.24", features = ["use-rustls"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
 thiserror = "2.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.11", features = ["v4"] }
@@ -36,3 +36,10 @@ rustls-native-certs = "0.8"
 rustls-pemfile = "2"
 pkcs8 = { version = "0.10", features = ["encryption", "pem"] }
 pem = "3"
+base64 = "0.22"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

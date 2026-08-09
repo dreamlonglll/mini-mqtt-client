@@ -210,16 +210,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Position, Loading, SuccessFilled } from '@element-plus/icons-vue'
-import { invoke } from '@tauri-apps/api/core'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
 import { useMqttStore } from '@/stores/mqtt'
 import { useEnvStore } from '@/stores/env'
 import { ScriptEngine } from '@/utils/scriptEngine'
-import type { Script } from '@/stores/script'
 
 const { t } = useI18n()
 
@@ -385,23 +383,32 @@ function getOrderedCommands(): CommandTemplate[] {
   return selectedIds.value.map(id => selected.find(t => t.id === id)!).filter(Boolean)
 }
 
+// 日志滚动合并到 rAF，避免高频发布时每条日志都强制同步 reflow
+let logScrollScheduled = false
+function scheduleLogScroll() {
+  if (logScrollScheduled) return
+  logScrollScheduled = true
+  requestAnimationFrame(() => {
+    logScrollScheduled = false
+    if (logListRef.value) {
+      logListRef.value.scrollTop = logListRef.value.scrollHeight
+    }
+  })
+}
+
 // 添加日志
 function addLog(topic: string, payload: string, status: 'success' | 'error', message?: string) {
   const now = new Date()
   const time = now.toLocaleTimeString('zh-CN', { hour12: false })
   logs.value.push({ time, topic, payload, status, message })
-  
+
   // 限制日志数量
   if (logs.value.length > 100) {
     logs.value.shift()
   }
-  
+
   // 滚动到底部
-  nextTick(() => {
-    if (logListRef.value) {
-      logListRef.value.scrollTop = logListRef.value.scrollHeight
-    }
-  })
+  scheduleLogScroll()
 }
 
 // 开始发布
@@ -448,12 +455,9 @@ async function publishNext() {
     const processedTopic = envStore.replaceVariables(command.topic)
     let processedPayload = envStore.replaceVariables(command.payload)
     
-    // 应用发送前处理脚本
+    // 应用发送前处理脚本（复用 mqttStore 的脚本缓存，定时高频发布不再每条走 IPC）
     try {
-      const scripts = await invoke<Script[]>('get_enabled_scripts', {
-        serverId: props.serverId,
-        scriptType: 'before_publish',
-      })
+      const scripts = await mqttStore.getCachedScripts(props.serverId, 'before_publish')
       if (scripts.length > 0) {
         processedPayload = await ScriptEngine.executeBeforePublish(
           scripts, 

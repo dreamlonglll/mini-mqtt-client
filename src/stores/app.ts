@@ -26,9 +26,34 @@ export interface CopyToPublishData {
   payloadType?: string; // "json" | "hex" | "text"
 }
 
+// 消息列表上限的默认值与取值范围
+const DEFAULT_MESSAGE_LIMIT = 1000;
+const MIN_MESSAGE_LIMIT = 100;
+const MAX_MESSAGE_LIMIT = 10000;
+
+function readStoredMessageLimit(): number {
+  const stored = Number(localStorage.getItem("mqtt-client-message-limit"));
+  if (Number.isFinite(stored) && stored >= MIN_MESSAGE_LIMIT && stored <= MAX_MESSAGE_LIMIT) {
+    return Math.floor(stored);
+  }
+  return DEFAULT_MESSAGE_LIMIT;
+}
+
 export const useAppStore = defineStore("app", () => {
   // 主题
   const theme = ref<Theme>("light");
+
+  // 每个 server 内存中保留的最大消息条数（可在设置中调整）
+  const messageLimit = ref(readStoredMessageLimit());
+
+  const setMessageLimit = (limit: number) => {
+    const value = Math.floor(limit);
+    messageLimit.value = Math.max(
+      MIN_MESSAGE_LIMIT,
+      Math.min(MAX_MESSAGE_LIMIT, Number.isFinite(value) ? value : DEFAULT_MESSAGE_LIMIT)
+    );
+    localStorage.setItem("mqtt-client-message-limit", String(messageLimit.value));
+  };
   
   // 语言
   const locale = ref<Locale>("auto");
@@ -258,6 +283,8 @@ export const useAppStore = defineStore("app", () => {
 
   return {
     theme,
+    messageLimit,
+    setMessageLimit,
     locale,
     actualLocale,
     sidebarCollapsed,

@@ -2,16 +2,25 @@ pub mod models;
 
 use models::{CommandTemplate, CreateTemplateRequest, CreateScriptRequest, MessageHistory, MqttServer, Script, Subscription, UpdateSubscriptionRequest, UpdateTemplateRequest, UpdateScriptRequest, EnvVariable, CreateEnvVariableRequest, UpdateEnvVariableRequest};
 use parking_lot::RwLock;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tauri::AppHandle;
 use tauri::Manager;
+
+/// 后台防抖落盘的检查间隔
+const SAVE_DEBOUNCE: Duration = Duration::from_millis(1000);
+/// 每个 server 内存中保留的最大消息条数
+const MAX_MESSAGES_PER_SERVER: usize = 1000;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct AppData {
     pub servers: Vec<MqttServer>,
+    #[serde(default)]
     pub subscriptions: Vec<Subscription>,
-    pub messages: Vec<MessageHistory>,
     #[serde(default)]
     pub templates: Vec<CommandTemplate>,
     #[serde(default)]
@@ -22,8 +31,6 @@ pub struct AppData {
     next_server_id: i64,
     #[serde(default)]
     next_subscription_id: i64,
-    #[serde(default)]
-    next_message_id: i64,
     #[serde(default)]
     next_template_id: i64,
     #[serde(default)]
@@ -39,8 +46,16 @@ pub struct AppConfig {
 }
 
 pub struct Storage {
-    data: RwLock<AppData>,
-    file_path: PathBuf,
+    data: Arc<RwLock<AppData>>,
+    /// 数据文件路径（迁移数据目录后可在运行中更新）
+    file_path: Arc<RwLock<PathBuf>>,
+    /// 脏标记：写操作只置位，由后台线程防抖落盘
+    dirty: Arc<AtomicBool>,
+    /// 串行化落盘：防止退出 flush 与后台线程并发写同一临时文件
+    save_lock: Arc<parking_lot::Mutex<()>>,
+    /// 消息历史仅保留在内存（按 server 分桶），不再写入 data.yaml
+    messages: RwLock<HashMap<i64, VecDeque<MessageHistory>>>,
+    next_message_id: AtomicI64,
 }
 
 impl Storage {
@@ -79,32 +94,109 @@ impl Storage {
 
         let data = if file_path.exists() {
             let content = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
-            serde_yaml::from_str(&content).unwrap_or_default()
+            match serde_yaml::from_str(&content) {
+                Ok(data) => data,
+                Err(e) => {
+                    // 解析失败：备份损坏文件后从空数据启动，避免静默覆盖用户数据
+                    let backup = file_path.with_extension(format!(
+                        "corrupt-{}.yaml",
+                        chrono::Utc::now().format("%Y%m%d%H%M%S")
+                    ));
+                    let _ = fs::copy(&file_path, &backup);
+                    eprintln!(
+                        "Failed to parse {}: {}. Corrupt file backed up to {}",
+                        file_path.display(),
+                        e,
+                        backup.display()
+                    );
+                    AppData::default()
+                }
+            }
         } else {
             AppData::default()
         };
 
+        let data = Arc::new(RwLock::new(data));
+        let dirty = Arc::new(AtomicBool::new(false));
+        let file_path = Arc::new(RwLock::new(file_path));
+        let save_lock = Arc::new(parking_lot::Mutex::new(()));
+
+        // 后台防抖落盘线程：脏标记置位后最多 SAVE_DEBOUNCE 内落盘一次，
+        // 避免每次写操作都全量序列化 + 写磁盘，也让 async 命令不再被同步 IO 阻塞
+        {
+            let data = Arc::clone(&data);
+            let dirty = Arc::clone(&dirty);
+            let file_path = Arc::clone(&file_path);
+            let save_lock = Arc::clone(&save_lock);
+            std::thread::spawn(move || loop {
+                std::thread::sleep(SAVE_DEBOUNCE);
+                if dirty.swap(false, Ordering::AcqRel) {
+                    let _guard = save_lock.lock();
+                    if let Err(e) = Self::save_to_disk(&data, &file_path) {
+                        eprintln!("Failed to save data: {}", e);
+                        // 落盘失败时重新置脏，下个周期重试
+                        dirty.store(true, Ordering::Release);
+                    }
+                }
+            });
+        }
+
         Ok(Self {
-            data: RwLock::new(data),
+            data,
             file_path,
+            dirty,
+            save_lock,
+            messages: RwLock::new(HashMap::new()),
+            next_message_id: AtomicI64::new(0),
         })
     }
-    
+
     /// 获取当前数据文件路径
-    pub fn get_file_path(&self) -> &PathBuf {
-        &self.file_path
+    pub fn get_file_path(&self) -> PathBuf {
+        self.file_path.read().clone()
     }
 
-    fn save(&self) -> Result<(), String> {
-        let data = self.data.read();
-        let content = serde_yaml::to_string(&*data).map_err(|e| e.to_string())?;
-        fs::write(&self.file_path, content).map_err(|e| e.to_string())
+    /// 更新数据文件路径（数据目录迁移后调用，后续落盘写入新位置）
+    pub fn set_file_path(&self, path: PathBuf) {
+        *self.file_path.write() = path;
+    }
+
+    /// 标记数据已修改，等待后台线程防抖落盘
+    fn mark_dirty(&self) {
+        self.dirty.store(true, Ordering::Release);
+    }
+
+    /// 立即将未落盘的修改写入磁盘（应用退出前调用）
+    pub fn flush(&self) {
+        if self.dirty.swap(false, Ordering::AcqRel) {
+            let _guard = self.save_lock.lock();
+            if let Err(e) = Self::save_to_disk(&self.data, &self.file_path) {
+                eprintln!("Failed to flush data on exit: {}", e);
+            }
+        }
+    }
+
+    fn save_to_disk(data: &RwLock<AppData>, file_path: &RwLock<PathBuf>) -> Result<(), String> {
+        let content = {
+            let data = data.read();
+            serde_yaml::to_string(&*data).map_err(|e| e.to_string())?
+        };
+        let path = file_path.read().clone();
+        Self::write_atomic(&path, &content)
+    }
+
+    /// 写临时文件 + rename 原子替换，避免崩溃/断电留下半截文件
+    fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
+        let tmp = path.with_extension("yaml.tmp");
+        fs::write(&tmp, content).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, path).map_err(|e| e.to_string())
     }
 
     // ===== Server 操作 =====
-    pub fn get_servers(&self) -> Vec<MqttServer> {
+    /// 在锁 guard 上直接序列化返回，避免连同证书等大字段一起深拷贝
+    pub fn get_servers_json(&self) -> Result<serde_json::Value, String> {
         let data = self.data.read();
-        data.servers.clone()
+        serde_json::to_value(&data.servers).map_err(|e| e.to_string())
     }
 
     pub fn get_server(&self, id: i64) -> Option<MqttServer> {
@@ -121,7 +213,7 @@ impl Storage {
         server.updated_at = server.created_at.clone();
         data.servers.push(server);
         drop(data);
-        self.save()?;
+        self.mark_dirty();
         Ok(id)
     }
 
@@ -132,30 +224,34 @@ impl Storage {
             existing.updated_at = Some(chrono::Utc::now().to_rfc3339());
         }
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     pub fn delete_server(&self, id: i64) -> Result<(), String> {
         let mut data = self.data.write();
         data.servers.retain(|s| s.id != Some(id));
-        // 同时删除相关订阅、消息、模板、脚本和环境变量
+        // 同时删除相关订阅、模板、脚本和环境变量
         data.subscriptions.retain(|s| s.server_id != id);
-        data.messages.retain(|m| m.server_id != id);
         data.templates.retain(|t| t.server_id != id);
         data.scripts.retain(|s| s.server_id != id);
         data.env_variables.retain(|e| e.server_id != id);
         drop(data);
-        self.save()
+        // 内存中的消息历史一并清理
+        self.messages.write().remove(&id);
+        self.mark_dirty();
+        Ok(())
     }
 
     // ===== 订阅操作 =====
-    pub fn get_subscriptions(&self, server_id: i64) -> Vec<Subscription> {
+    pub fn get_subscriptions_json(&self, server_id: i64) -> Result<serde_json::Value, String> {
         let data = self.data.read();
-        data.subscriptions
+        let items: Vec<&Subscription> = data
+            .subscriptions
             .iter()
             .filter(|s| s.server_id == server_id)
-            .cloned()
-            .collect()
+            .collect();
+        serde_json::to_value(items).map_err(|e| e.to_string())
     }
 
     pub fn create_subscription(&self, mut sub: Subscription) -> Result<Subscription, String> {
@@ -166,7 +262,7 @@ impl Storage {
         let result = sub.clone();
         data.subscriptions.push(sub);
         drop(data);
-        self.save()?;
+        self.mark_dirty();
         Ok(result)
     }
 
@@ -176,7 +272,8 @@ impl Storage {
             sub.is_active = is_active;
         }
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     pub fn update_subscription(&self, req: UpdateSubscriptionRequest) -> Result<Subscription, String> {
@@ -192,7 +289,7 @@ impl Storage {
             sub.color = req.color;
             let result = sub.clone();
             drop(data);
-            self.save()?;
+            self.mark_dirty();
             Ok(result)
         } else {
             Err("Subscription not found".to_string())
@@ -203,69 +300,47 @@ impl Storage {
         let mut data = self.data.write();
         data.subscriptions.retain(|s| s.id != Some(id));
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
-    // ===== 消息操作 =====
-    pub fn get_messages(&self, server_id: i64, limit: usize) -> Vec<MessageHistory> {
-        let data = self.data.read();
-        data.messages
-            .iter()
-            .filter(|m| m.server_id == server_id)
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect()
+    // ===== 消息操作（仅内存，不落盘） =====
+    pub fn get_messages(&self, server_id: i64, limit: usize, offset: usize) -> Vec<MessageHistory> {
+        let messages = self.messages.read();
+        messages
+            .get(&server_id)
+            .map(|queue| queue.iter().rev().skip(offset).take(limit).cloned().collect())
+            .unwrap_or_default()
     }
 
     pub fn create_message(&self, mut msg: MessageHistory) -> Result<MessageHistory, String> {
-        let mut data = self.data.write();
-        data.next_message_id += 1;
-        msg.id = Some(data.next_message_id);
+        msg.id = Some(self.next_message_id.fetch_add(1, Ordering::Relaxed) + 1);
         msg.created_at = Some(chrono::Utc::now().to_rfc3339());
         let result = msg.clone();
-        data.messages.push(msg);
 
-        // 限制消息数量，每个server最多保存1000条
-        let server_id = result.server_id;
-        let count = data
-            .messages
-            .iter()
-            .filter(|m| m.server_id == server_id)
-            .count();
-        if count > 1000 {
-            let to_remove = count - 1000;
-            let mut removed = 0;
-            data.messages.retain(|m| {
-                if m.server_id == server_id && removed < to_remove {
-                    removed += 1;
-                    false
-                } else {
-                    true
-                }
-            });
+        let mut messages = self.messages.write();
+        let queue = messages.entry(result.server_id).or_default();
+        queue.push_back(msg);
+        if queue.len() > MAX_MESSAGES_PER_SERVER {
+            queue.pop_front();
         }
-
-        drop(data);
-        self.save()?;
         Ok(result)
     }
 
     pub fn clear_messages(&self, server_id: i64) -> Result<(), String> {
-        let mut data = self.data.write();
-        data.messages.retain(|m| m.server_id != server_id);
-        drop(data);
-        self.save()
+        self.messages.write().remove(&server_id);
+        Ok(())
     }
 
     // ===== 模板操作 =====
-    pub fn get_templates(&self, server_id: i64) -> Vec<CommandTemplate> {
+    pub fn get_templates_json(&self, server_id: i64) -> Result<serde_json::Value, String> {
         let data = self.data.read();
-        data.templates
+        let items: Vec<&CommandTemplate> = data
+            .templates
             .iter()
             .filter(|t| t.server_id == server_id)
-            .cloned()
-            .collect()
+            .collect();
+        serde_json::to_value(items).map_err(|e| e.to_string())
     }
 
     pub fn get_template(&self, id: i64) -> Option<CommandTemplate> {
@@ -298,7 +373,7 @@ impl Storage {
         
         data.templates.push(template);
         drop(data);
-        self.save()?;
+        self.mark_dirty();
         Ok(id)
     }
 
@@ -332,14 +407,16 @@ impl Storage {
             template.updated_at = Some(chrono::Utc::now().to_rfc3339());
         }
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     pub fn delete_template(&self, id: i64) -> Result<(), String> {
         let mut data = self.data.write();
         data.templates.retain(|t| t.id != Some(id));
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     pub fn increment_template_use_count(&self, id: i64) -> Result<(), String> {
@@ -349,7 +426,8 @@ impl Storage {
             template.last_used_at = Some(chrono::Utc::now().to_rfc3339());
         }
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     pub fn get_template_categories(&self, server_id: i64) -> Vec<String> {
@@ -366,13 +444,14 @@ impl Storage {
     }
 
     // ===== 脚本操作 =====
-    pub fn get_scripts(&self, server_id: i64) -> Vec<Script> {
+    pub fn get_scripts_json(&self, server_id: i64) -> Result<serde_json::Value, String> {
         let data = self.data.read();
-        data.scripts
+        let items: Vec<&Script> = data
+            .scripts
             .iter()
             .filter(|s| s.server_id == server_id)
-            .cloned()
-            .collect()
+            .collect();
+        serde_json::to_value(items).map_err(|e| e.to_string())
     }
 
     pub fn get_script(&self, id: i64) -> Option<Script> {
@@ -380,13 +459,18 @@ impl Storage {
         data.scripts.iter().find(|s| s.id == Some(id)).cloned()
     }
 
-    pub fn get_enabled_scripts(&self, server_id: i64, script_type: &str) -> Vec<Script> {
+    pub fn get_enabled_scripts_json(
+        &self,
+        server_id: i64,
+        script_type: &str,
+    ) -> Result<serde_json::Value, String> {
         let data = self.data.read();
-        data.scripts
+        let items: Vec<&Script> = data
+            .scripts
             .iter()
             .filter(|s| s.server_id == server_id && s.enabled && s.script_type == script_type)
-            .cloned()
-            .collect()
+            .collect();
+        serde_json::to_value(items).map_err(|e| e.to_string())
     }
 
     pub fn create_script(&self, req: CreateScriptRequest) -> Result<i64, String> {
@@ -409,7 +493,7 @@ impl Storage {
         
         data.scripts.push(script);
         drop(data);
-        self.save()?;
+        self.mark_dirty();
         Ok(id)
     }
 
@@ -431,14 +515,16 @@ impl Storage {
             script.updated_at = Some(chrono::Utc::now().to_rfc3339());
         }
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     pub fn delete_script(&self, id: i64) -> Result<(), String> {
         let mut data = self.data.write();
         data.scripts.retain(|s| s.id != Some(id));
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     pub fn toggle_script(&self, id: i64, enabled: bool) -> Result<(), String> {
@@ -448,17 +534,19 @@ impl Storage {
             script.updated_at = Some(chrono::Utc::now().to_rfc3339());
         }
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     // ===== 环境变量操作 =====
-    pub fn get_env_variables(&self, server_id: i64) -> Vec<EnvVariable> {
+    pub fn get_env_variables_json(&self, server_id: i64) -> Result<serde_json::Value, String> {
         let data = self.data.read();
-        data.env_variables
+        let items: Vec<&EnvVariable> = data
+            .env_variables
             .iter()
             .filter(|e| e.server_id == server_id)
-            .cloned()
-            .collect()
+            .collect();
+        serde_json::to_value(items).map_err(|e| e.to_string())
     }
 
     pub fn get_env_variable(&self, id: i64) -> Option<EnvVariable> {
@@ -493,7 +581,7 @@ impl Storage {
         
         data.env_variables.push(env_var);
         drop(data);
-        self.save()?;
+        self.mark_dirty();
         Ok(id)
     }
 
@@ -526,13 +614,15 @@ impl Storage {
             env_var.updated_at = Some(chrono::Utc::now().to_rfc3339());
         }
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 
     pub fn delete_env_variable(&self, id: i64) -> Result<(), String> {
         let mut data = self.data.write();
         data.env_variables.retain(|e| e.id != Some(id));
         drop(data);
-        self.save()
+        self.mark_dirty();
+        Ok(())
     }
 }

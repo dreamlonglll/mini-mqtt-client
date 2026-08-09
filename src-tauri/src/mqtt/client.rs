@@ -2,12 +2,20 @@ use parking_lot::RwLock;
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS, Transport};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 use crate::db::models::MqttServer;
+
+/// 收发包大小上限（rumqttc 默认仅 10KB，超限会导致 poll 报错断连）
+const MAX_PACKET_SIZE: usize = 10 * 1024 * 1024;
+/// 单条消息推给前端的 payload 截断上限，超出部分不进入 IPC / 渲染
+const MAX_EMIT_PAYLOAD: usize = 64 * 1024;
+/// 系统根证书库缓存（Windows 上首次加载需读注册表解析上百张证书，50-200ms）
+static SYSTEM_ROOT_STORE: OnceLock<rumqttc::tokio_rustls::rustls::RootCertStore> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionState {
@@ -20,20 +28,29 @@ pub struct ConnectionState {
 pub struct ReceivedMessage {
     pub server_id: i64,
     pub topic: String,
-    pub payload: Vec<u8>,
+    /// base64 编码的消息体（相比 JSON 数字数组体积仅膨胀 1.33x）
+    pub payload: String,
     pub qos: u8,
     pub retain: bool,
-    pub timestamp: String,
+    /// Unix 毫秒时间戳（数值型比 RFC3339 字符串轻量，由前端格式化）
+    pub timestamp: i64,
+    /// 原始 payload 字节数（截断时前端据此提示）
+    pub original_length: usize,
+    /// payload 是否被截断
+    pub truncated: bool,
 }
 
 struct ClientHandle {
     client: AsyncClient,
     shutdown_tx: mpsc::Sender<()>,
+    /// 连接代数，用于防止旧 eventloop 退出时误删新连接的句柄
+    generation: u64,
 }
 
 pub struct MqttManager {
     clients: Arc<RwLock<HashMap<i64, ClientHandle>>>,
     app_handle: AppHandle,
+    next_generation: AtomicU64,
 }
 
 impl MqttManager {
@@ -41,6 +58,7 @@ impl MqttManager {
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
             app_handle,
+            next_generation: AtomicU64::new(0),
         }
     }
 
@@ -61,6 +79,7 @@ impl MqttManager {
         let mut options = MqttOptions::new(client_id, &server.host, server.port as u16);
         options.set_keep_alive(Duration::from_secs(server.keep_alive as u64));
         options.set_clean_session(server.clean_session);
+        options.set_max_packet_size(MAX_PACKET_SIZE, MAX_PACKET_SIZE);
 
         if let (Some(username), Some(password)) = (server.username.as_ref(), server.password.as_ref())
         {
@@ -86,6 +105,9 @@ impl MqttManager {
         // 创建停止信号
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
 
+        // 连接代数：旧 eventloop 退出清理时校验，避免误删新连接的句柄
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+
         // 保存客户端句柄
         {
             let mut clients = self.clients.write();
@@ -94,6 +116,7 @@ impl MqttManager {
                 ClientHandle {
                     client: client.clone(),
                     shutdown_tx,
+                    generation,
                 },
             );
         }
@@ -103,7 +126,8 @@ impl MqttManager {
         let clients = self.clients.clone();
 
         tokio::spawn(async move {
-            Self::run_eventloop(server_id, eventloop, shutdown_rx, app_handle, clients).await;
+            Self::run_eventloop(server_id, generation, eventloop, shutdown_rx, app_handle, clients)
+                .await;
         });
 
         Ok(())
@@ -111,24 +135,49 @@ impl MqttManager {
 
     async fn run_eventloop(
         server_id: i64,
+        generation: u64,
         mut eventloop: EventLoop,
         mut shutdown_rx: mpsc::Receiver<()>,
         app_handle: AppHandle,
         clients: Arc<RwLock<HashMap<i64, ClientHandle>>>,
     ) {
+        use base64::Engine as _;
+
+        // 攒批 emit：累积 BATCH_MAX 条或到达 BATCH_INTERVAL 后一次性发给前端，
+        // 避免每条消息各付一次 serde 序列化 + WebView2 跨进程 marshal 的成本
+        const BATCH_MAX: usize = 50;
+        const BATCH_INTERVAL: Duration = Duration::from_millis(30);
+        // 瞬时错误的重连退避区间
+        const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(500);
+        const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(10);
+        // 从未连接成功时的最大重试次数（防止错误配置下无限重试）
+        const MAX_INITIAL_ATTEMPTS: u32 = 5;
+
         let mut connected = false;
+        let mut ever_connected = false;
+        let mut initial_attempts: u32 = 0;
+        let mut reconnect_delay = INITIAL_RECONNECT_DELAY;
+        let mut batch: Vec<ReceivedMessage> = Vec::new();
+        let mut flush_timer = tokio::time::interval(BATCH_INTERVAL);
+        flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
+                    Self::flush_batch(&app_handle, &mut batch);
                     Self::emit_state_static(&app_handle, server_id, "disconnected", None);
                     break;
+                }
+                _ = flush_timer.tick() => {
+                    Self::flush_batch(&app_handle, &mut batch);
                 }
                 event = eventloop.poll() => {
                     match event {
                         Ok(Event::Incoming(Packet::ConnAck(ack))) => {
                             if ack.code == rumqttc::ConnectReturnCode::Success {
                                 connected = true;
+                                ever_connected = true;
+                                reconnect_delay = INITIAL_RECONNECT_DELAY;
                                 Self::emit_state_static(&app_handle, server_id, "connected", None);
                             } else {
                                 Self::emit_state_static(
@@ -141,15 +190,26 @@ impl MqttManager {
                             }
                         }
                         Ok(Event::Incoming(Packet::Publish(publish))) => {
-                            let msg = ReceivedMessage {
+                            let original_length = publish.payload.len();
+                            let truncated = original_length > MAX_EMIT_PAYLOAD;
+                            let raw = if truncated {
+                                &publish.payload[..MAX_EMIT_PAYLOAD]
+                            } else {
+                                &publish.payload[..]
+                            };
+                            batch.push(ReceivedMessage {
                                 server_id,
-                                topic: publish.topic.clone(),
-                                payload: publish.payload.to_vec(),
+                                topic: publish.topic,
+                                payload: base64::engine::general_purpose::STANDARD.encode(raw),
                                 qos: publish.qos as u8,
                                 retain: publish.retain,
-                                timestamp: chrono::Utc::now().to_rfc3339(),
-                            };
-                            let _ = app_handle.emit("mqtt-message", msg);
+                                timestamp: chrono::Utc::now().timestamp_millis(),
+                                original_length,
+                                truncated,
+                            });
+                            if batch.len() >= BATCH_MAX {
+                                Self::flush_batch(&app_handle, &mut batch);
+                            }
                         }
                         Ok(Event::Incoming(Packet::SubAck(_))) => {
                             // 订阅成功
@@ -158,22 +218,61 @@ impl MqttManager {
                             // Ping 响应
                         }
                         Err(e) => {
-                            if connected {
-                                Self::emit_state_static(
-                                    &app_handle,
-                                    server_id,
-                                    "error",
-                                    Some(format!("Connection error: {}", e)),
-                                );
-                            } else {
-                                Self::emit_state_static(
-                                    &app_handle,
-                                    server_id,
-                                    "error",
-                                    Some(format!("Failed to connect: {}", e)),
-                                );
+                            Self::flush_batch(&app_handle, &mut batch);
+                            match e {
+                                // 服务端明确拒绝（认证失败等）：致命错误，退出事件循环
+                                rumqttc::ConnectionError::ConnectionRefused(code) => {
+                                    Self::emit_state_static(
+                                        &app_handle,
+                                        server_id,
+                                        "error",
+                                        Some(format!("Connection refused: {:?}", code)),
+                                    );
+                                    break;
+                                }
+                                // 客户端句柄已释放，无法继续
+                                rumqttc::ConnectionError::RequestsDone => {
+                                    Self::emit_state_static(&app_handle, server_id, "disconnected", None);
+                                    break;
+                                }
+                                // 瞬时错误（网络抖动、超大包等）：退避后继续轮询，
+                                // rumqttc 的 poll 会自动重连，连上后前端按 connected 状态自动恢复订阅
+                                e => {
+                                    if !ever_connected {
+                                        initial_attempts += 1;
+                                        if initial_attempts >= MAX_INITIAL_ATTEMPTS {
+                                            Self::emit_state_static(
+                                                &app_handle,
+                                                server_id,
+                                                "error",
+                                                Some(format!("Failed to connect: {}", e)),
+                                            );
+                                            break;
+                                        }
+                                    }
+                                    let detail = if connected {
+                                        format!("Connection lost, reconnecting: {}", e)
+                                    } else {
+                                        format!("Reconnecting: {}", e)
+                                    };
+                                    connected = false;
+                                    Self::emit_state_static(
+                                        &app_handle,
+                                        server_id,
+                                        "connecting",
+                                        Some(detail),
+                                    );
+                                    // 退避等待，期间允许被断开操作打断
+                                    tokio::select! {
+                                        _ = shutdown_rx.recv() => {
+                                            Self::emit_state_static(&app_handle, server_id, "disconnected", None);
+                                            break;
+                                        }
+                                        _ = tokio::time::sleep(reconnect_delay) => {}
+                                    }
+                                    reconnect_delay = (reconnect_delay * 2).min(MAX_RECONNECT_DELAY);
+                                }
                             }
-                            break;
                         }
                         _ => {}
                     }
@@ -181,9 +280,20 @@ impl MqttManager {
             }
         }
 
-        // 清理客户端
+        // 清理客户端：仅当句柄仍是本代连接时才移除，防止删掉新连接
         let mut clients = clients.write();
-        clients.remove(&server_id);
+        if clients.get(&server_id).map(|h| h.generation) == Some(generation) {
+            clients.remove(&server_id);
+        }
+    }
+
+    /// 将攒批的消息一次性 emit 给前端（emit_to 只发主窗口，避免多 webview 广播）
+    fn flush_batch(app_handle: &AppHandle, batch: &mut Vec<ReceivedMessage>) {
+        if batch.is_empty() {
+            return;
+        }
+        let messages = std::mem::take(batch);
+        let _ = app_handle.emit_to("main", "mqtt-messages", messages);
     }
 
     pub async fn disconnect(&self, server_id: i64) -> Result<(), String> {
@@ -291,14 +401,17 @@ impl MqttManager {
     ) -> Result<rumqttc::TlsConfiguration, String> {
         use std::io::BufReader;
 
-        // 创建根证书存储
-        let mut root_cert_store = rumqttc::tokio_rustls::rustls::RootCertStore::empty();
-
-        // 添加系统默认根证书
-        let native_certs = rustls_native_certs::load_native_certs();
-        for cert in native_certs.certs {
-            let _ = root_cert_store.add(cert);
-        }
+        // 系统根证书只在首次连接时加载一次，之后直接克隆缓存
+        let mut root_cert_store = SYSTEM_ROOT_STORE
+            .get_or_init(|| {
+                let mut store = rumqttc::tokio_rustls::rustls::RootCertStore::empty();
+                let native_certs = rustls_native_certs::load_native_certs();
+                for cert in native_certs.certs {
+                    let _ = store.add(cert);
+                }
+                store
+            })
+            .clone();
 
         // 如果提供了自定义 CA 证书，添加到根存储
         if let Some(ca_pem) = ca_cert {

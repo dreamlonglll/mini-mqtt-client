@@ -59,8 +59,8 @@ pub async fn remove_subscription(
 pub async fn get_subscriptions(
     storage: State<'_, Storage>,
     server_id: i64,
-) -> Result<Vec<Subscription>, String> {
-    Ok(storage.get_subscriptions(server_id))
+) -> Result<serde_json::Value, String> {
+    storage.get_subscriptions_json(server_id)
 }
 
 #[tauri::command]

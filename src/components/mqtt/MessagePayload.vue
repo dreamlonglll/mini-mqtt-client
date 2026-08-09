@@ -37,17 +37,27 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import type { MqttMessage } from "@/types/mqtt";
+import { getDecodedText, getDisplayFormat } from "@/utils/messageDerived";
 
 type PayloadFormat = "json" | "binary" | "text";
+
+// 预览模式的截断上限：超长文本一行展开会触发最贵的文本布局，
+// 基本抵消虚拟滚动收益；完整内容在详情弹窗查看
+const PREVIEW_MAX_CHARS = 300;
+const PREVIEW_MAX_HEX_BYTES = 64;
 
 const props = defineProps<{
   payload: string | Uint8Array | undefined;
   preview?: boolean;
   payloadType?: "json" | "hex" | "text";
+  /** 消息对象（提供时直接读取入队时计算的派生缓存） */
+  message?: MqttMessage;
 }>();
 
-// 将 payload 转换为字符串
+// 将 payload 转换为字符串（优先读消息对象上的派生缓存）
 const payloadString = computed(() => {
+  if (props.message) return getDecodedText(props.message);
   if (!props.payload) return "";
   if (props.payload instanceof Uint8Array) {
     return new TextDecoder().decode(props.payload);
@@ -64,8 +74,9 @@ const payloadBytes = computed(() => {
   return new TextEncoder().encode(props.payload);
 });
 
-// 自动检测格式
+// 自动检测格式（优先读消息对象上的缓存结果）
 const detectedFormat = computed<PayloadFormat>(() => {
+  if (props.message) return getDisplayFormat(props.message);
   if (!props.payload) return "text";
 
   const str = payloadString.value;
@@ -116,18 +127,25 @@ const effectiveFormat = computed<PayloadFormat>(() => {
   return detectedFormat.value;
 });
 
-// 简单的 HEX 预览（用于列表预览，不包含 offset 和 ASCII）
+// 简单的 HEX 预览（用于列表预览，截断至前 PREVIEW_MAX_HEX_BYTES 字节）
 const simpleHexPreview = computed(() => {
   const bytes = payloadBytes.value;
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-    .join(" ");
+  const shown = bytes.subarray(0, PREVIEW_MAX_HEX_BYTES);
+  const parts: string[] = new Array(shown.length);
+  for (let i = 0; i < shown.length; i++) {
+    parts[i] = shown[i].toString(16).padStart(2, "0").toUpperCase();
+  }
+  const hex = parts.join(" ");
+  return bytes.length > PREVIEW_MAX_HEX_BYTES ? `${hex} …` : hex;
 });
 
-// 显示的 payload（用于预览或文本显示）
-// 始终显示完整内容，不做截断
+// 显示的 payload（预览模式截断，完整内容在详情弹窗查看）
 const displayPayload = computed(() => {
-  return payloadString.value;
+  const str = payloadString.value;
+  if (str.length > PREVIEW_MAX_CHARS) {
+    return `${str.slice(0, PREVIEW_MAX_CHARS)} …`;
+  }
+  return str;
 });
 
 // 带换行符标记的 payload（用于详情展示）

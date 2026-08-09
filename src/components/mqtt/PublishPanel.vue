@@ -89,14 +89,12 @@ import { reactive, ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Promotion, Position, Star, FolderOpened, Timer, Loading } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
-import { invoke } from "@tauri-apps/api/core";
 import { useServerStore } from "@/stores/server";
 import { useMessageStore } from "@/stores/message";
 import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
 import { useEnvStore } from "@/stores/env";
 import { ScriptEngine } from "@/utils/scriptEngine";
-import type { Script } from "@/stores/script";
 import { validatePublishTopic, handleMqttError } from "@/utils/mqttErrorHandler";
 import { handleScriptError } from "@/utils/errorHandler";
 
@@ -244,12 +242,9 @@ const handlePublish = async () => {
     let processedPayload = envStore.replaceVariables(publishData.payload);
     let scriptError: string | undefined = undefined;
     
-    // 应用发送前处理脚本
+    // 应用发送前处理脚本（复用 mqttStore 的脚本缓存，避免每次发布都走 IPC）
     try {
-      const scripts = await invoke<Script[]>("get_enabled_scripts", {
-        serverId,
-        scriptType: "before_publish",
-      });
+      const scripts = await mqttStore.getCachedScripts(serverId, "before_publish");
       if (scripts.length > 0) {
         processedPayload = await ScriptEngine.executeBeforePublish(
           scripts, 
