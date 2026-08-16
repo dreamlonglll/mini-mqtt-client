@@ -146,7 +146,7 @@
           </div>
           <el-progress
             :percentage="progressPercentage"
-            :format="formatProgress"
+            :format="() => progressText"
             :stroke-width="10"
           />
         </div>
@@ -156,7 +156,7 @@
       <div class="section">
         <div class="section-header">
           <span class="section-title">{{ $t('scheduled.logs') }}</span>
-          <el-button text size="small" @click="logs = []">{{ $t('messages.clear') }}</el-button>
+          <el-button text size="small" @click="clearLogs">{{ $t('messages.clear') }}</el-button>
         </div>
         <div class="log-list" ref="logListRef">
           <div
@@ -210,14 +210,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Position, Loading, SuccessFilled } from '@element-plus/icons-vue'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
-import { usePublishPipeline } from '@/composables/usePublishPipeline'
+import { useScheduledPublisher } from '@/composables/useScheduledPublisher'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
 const props = defineProps<{
   visible: boolean
@@ -230,7 +230,29 @@ const emit = defineEmits<{
 }>()
 
 const templateStore = useTemplateStore()
-const { publish } = usePublishPipeline()
+
+// 调度状态机：节奏、轮次、计数与日志都在这里，组件只管选命令和显示
+const {
+  config,
+  isRunning,
+  isCompleted,
+  currentCommand,
+  currentRound,
+  sentCount,
+  successCount,
+  failCount,
+  logs,
+  progressPercentage,
+  progressText,
+  start: startPublishing,
+  stop: stopPublishing,
+  reset: resetPublisher,
+  clearLogs,
+} = useScheduledPublisher({
+  serverId: () => props.serverId,
+  onLog: scheduleLogScroll,
+  onFinished: () => ElMessage.success(t('success.published')),
+})
 
 // 对话框可见性
 const dialogVisible = computed({
@@ -249,39 +271,10 @@ const isIndeterminate = computed(() => {
   return selectedIds.value.length > 0 && selectedIds.value.length < templates.value.length
 })
 
-// 发送配置
-const config = ref({
-  interval: 1000,
-  roundInterval: 0,
-  order: 'selection' as 'selection' | 'name',
-  loopMode: 'infinite' as 'infinite' | 'count',
-  loopCount: 10
-})
+// 是否已最小化（用于区分最小化和关闭）
+const isMinimized = ref(false)
 
-// 运行状态
-const isRunning = ref(false)
-const isCompleted = ref(false)  // 是否已完成（用于保持在发布视图）
-const isMinimized = ref(false)  // 是否已最小化（用于区分最小化和关闭）
-const currentCommand = ref<CommandTemplate | null>(null)
-const currentIndex = ref(0)
-const currentRound = ref(1)
-const sentCount = ref(0)
-const successCount = ref(0)
-const failCount = ref(0)
-
-// 日志
-interface LogEntry {
-  time: string
-  topic: string
-  payload: string
-  status: 'success' | 'error'
-  message?: string
-}
-const logs = ref<LogEntry[]>([])
 const logListRef = ref<HTMLElement | null>(null)
-
-// 定时器
-let publishTimeout: ReturnType<typeof setTimeout> | null = null
 
 // 监听对话框打开
 watch(() => props.visible, (visible) => {
@@ -294,37 +287,12 @@ watch(() => props.visible, (visible) => {
   }
 })
 
-// 组件卸载时停止
-onUnmounted(() => {
-  stopPublishing()
-})
-
-// 进度百分比
-const progressPercentage = computed(() => {
-  const total = selectedIds.value.length
-  if (total === 0) return 0
-  return Math.round((currentIndex.value / total) * 100)
-})
-
-// 格式化进度
-function formatProgress(_percentage: number) {
-  return `${currentIndex.value}/${selectedIds.value.length}`
-}
-
 // 重置状态
 function resetState() {
   selectedIds.value = []
   selectAll.value = false
-  isRunning.value = false
-  isCompleted.value = false
   isMinimized.value = false
-  currentCommand.value = null
-  currentIndex.value = 0
-  currentRound.value = 1
-  sentCount.value = 0
-  successCount.value = 0
-  failCount.value = 0
-  logs.value = []
+  resetPublisher()
 }
 
 // 获取payload类型标签颜色
@@ -393,21 +361,8 @@ function scheduleLogScroll() {
   })
 }
 
-// 添加日志
-function addLog(topic: string, payload: string, status: 'success' | 'error', message?: string) {
-  const now = new Date()
-  // 跟随当前界面语言格式化时间（在调用时读取，语言切换后立即生效）
-  const time = now.toLocaleTimeString(locale.value, { hour12: false })
-  logs.value.push({ time, topic, payload, status, message })
-
-  // 限制日志数量
-  if (logs.value.length > 100) {
-    logs.value.shift()
-  }
-
-  // 滚动到底部
-  scheduleLogScroll()
-}
+// 运行状态的每次变化都通知父组件（父组件据此在主界面显示"定时发布中"）
+watch(isRunning, (running) => emit('running-change', running))
 
 // 开始发布
 async function handleStart() {
@@ -415,85 +370,7 @@ async function handleStart() {
     ElMessage.warning(t('scheduled.noTemplateSelected'))
     return
   }
-  
-  isRunning.value = true
-  currentIndex.value = 0
-  currentRound.value = 1
-  sentCount.value = 0
-  successCount.value = 0
-  failCount.value = 0
-  logs.value = []
-  
-  // 通知父组件运行状态变化
-  emit('running-change', true)
-  
-  await publishNext()
-}
-
-// 发布下一条
-async function publishNext() {
-  if (!isRunning.value) return
-  
-  const commands = getOrderedCommands()
-  if (commands.length === 0) {
-    stopPublishing()
-    return
-  }
-  
-  const command = commands[currentIndex.value]
-  currentCommand.value = command
-  
-  try {
-    // 与手动发布共用同一条发布管线：变量替换 → 脚本 → 发布（HEX 由 Rust 解码）→ 写历史 → UI 入队
-    const result = await publish({
-      serverId: props.serverId,
-      topic: command.topic,
-      payload: command.payload,
-      qos: command.qos,
-      retain: command.retain,
-      format: command.payload_type as 'json' | 'hex' | 'text',
-    })
-
-    if (result.success) {
-      successCount.value++
-      addLog(result.topic, result.payload, 'success')
-    } else {
-      // 脚本失败或后端发布失败：本条计为失败，未处理的原文不会被发出
-      failCount.value++
-      addLog(command.topic, command.payload, 'error', result.error)
-    }
-  } catch (error: any) {
-    failCount.value++
-    addLog(command.topic, command.payload, 'error', error?.message)
-  }
-
-  sentCount.value++
-  currentIndex.value++
-  
-  // 检查是否完成一轮
-  if (currentIndex.value >= commands.length) {
-    currentIndex.value = 0
-    
-    // 检查是否达到循环次数
-    if (config.value.loopMode === 'count' && currentRound.value >= config.value.loopCount) {
-      stopPublishing(true)
-      ElMessage.success(t('success.published'))
-      return
-    }
-    
-    currentRound.value++
-    
-    // 每轮间隔
-    if (config.value.roundInterval > 0) {
-      publishTimeout = setTimeout(() => publishNext(), config.value.roundInterval)
-      return
-    }
-  }
-  
-  // 继续下一条
-  if (isRunning.value) {
-    publishTimeout = setTimeout(() => publishNext(), config.value.interval)
-  }
+  await startPublishing(getOrderedCommands())
 }
 
 // 停止发布
@@ -502,36 +379,15 @@ function handleStop() {
   ElMessage.info(t('scheduled.stop'))
 }
 
-function stopPublishing(keepView: boolean = false) {
-  isRunning.value = false
-  if (keepView) {
-    isCompleted.value = true
-  }
-  if (publishTimeout) {
-    clearTimeout(publishTimeout)
-    publishTimeout = null
-  }
-  // 通知父组件运行状态变化
-  emit('running-change', false)
-}
-
 // 返回配置界面
 function handleBackToConfig() {
-  isCompleted.value = false
-  currentIndex.value = 0
-  currentRound.value = 1
-  sentCount.value = 0
-  successCount.value = 0
-  failCount.value = 0
-  logs.value = []
+  resetPublisher()
 }
 
-// 最小化对话框
+// 最小化对话框：只关窗口，发布继续在后台跑
 function handleMinimize() {
   isMinimized.value = true
   dialogVisible.value = false
-  // 通知父组件运行状态
-  emit('running-change', true)
 }
 
 // 对话框关闭事件（由 el-dialog 的 @close 触发或取消按钮调用）
@@ -546,7 +402,6 @@ function handleClose() {
     stopPublishing()
   }
   dialogVisible.value = false
-  emit('running-change', false)
 }
 </script>
 
