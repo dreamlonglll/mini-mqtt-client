@@ -128,6 +128,11 @@ export const useSubscriptionStore = defineStore("subscription", () => {
     return result;
   }
 
+  /** 清理某个 Server 的订阅缓存（供 Server 删除后级联调用） */
+  function clearServerSubscriptions(serverId: number) {
+    subscriptions.value.delete(serverId);
+  }
+
   // 根据 topic 获取订阅（用于消息列表查找颜色）
   function getSubscriptionByTopic(serverId: number, topic: string): Subscription | undefined {
     const serverSubs = subscriptions.value.get(serverId) || [];
@@ -180,6 +185,7 @@ export const useSubscriptionStore = defineStore("subscription", () => {
     removeSubscription,
     toggleSubscription,
     updateSubscription,
+    clearServerSubscriptions,
     getSubscriptionByTopic,
   };
 });

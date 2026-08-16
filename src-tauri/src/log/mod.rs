@@ -2,7 +2,7 @@ use chrono::Local;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri::Manager;
@@ -191,47 +191,6 @@ impl LogManager {
         &self.log_dir
     }
 
-    /// 读取最近的日志条目（从文件尾部按块回读，不载入全文件）
-    pub fn get_recent_logs(&self, limit: usize) -> Result<Vec<String>, String> {
-        let log_file = self.get_current_log_file();
-
-        if !log_file.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut file =
-            File::open(&log_file).map_err(|e| format!("Failed to read log file: {}", e))?;
-        let len = file
-            .metadata()
-            .map_err(|e| e.to_string())?
-            .len();
-
-        const CHUNK: u64 = 64 * 1024;
-        let mut buf: Vec<u8> = Vec::new();
-        let mut pos = len;
-
-        // 从尾部回读，直到覆盖 limit 行或到达文件头
-        while pos > 0 {
-            let newline_count = buf.iter().filter(|&&b| b == b'\n').count();
-            if newline_count > limit {
-                break;
-            }
-            let read_size = CHUNK.min(pos);
-            pos -= read_size;
-            file.seek(SeekFrom::Start(pos)).map_err(|e| e.to_string())?;
-            let mut chunk = vec![0u8; read_size as usize];
-            file.read_exact(&mut chunk).map_err(|e| e.to_string())?;
-            chunk.extend_from_slice(&buf);
-            buf = chunk;
-        }
-
-        let text = String::from_utf8_lossy(&buf);
-        let mut lines: Vec<String> = text.lines().map(String::from).collect();
-        if lines.len() > limit {
-            lines = lines.split_off(lines.len() - limit);
-        }
-        Ok(lines)
-    }
 
     /// 清空所有日志
     pub fn clear_logs(&self) -> Result<(), String> {

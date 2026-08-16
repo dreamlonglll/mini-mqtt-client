@@ -1,5 +1,6 @@
 import type { Script } from "@/stores/script";
 import { errorHandler, ErrorType } from "@/utils/errorHandler";
+import { translate } from "@/i18n";
 import { replaceEnvVariables } from "@/utils/envReplacer";
 import {
   base64ToBytes,
@@ -653,7 +654,11 @@ export class ScriptEngine {
       try {
         result = await this.executeScript(script.code, { payload: result, topic, env: envVariables });
       } catch (error: any) {
-        const errorMessage = `脚本执行失败 [${script.name}]: ${error?.message || error}`;
+        // 文案在出错时才求值，跟随当前语言
+        const errorMessage = translate("scriptErrors.executeFailed", {
+          name: script.name,
+          reason: error?.message || String(error),
+        });
         console.error(errorMessage, error);
         // 写入错误日志（静默处理，不显示通知）
         errorHandler.handle(errorMessage, ErrorType.SCRIPT, true);
@@ -685,7 +690,11 @@ export class ScriptEngine {
       try {
         result = await this.executeScript(script.code, { payload: result, topic, env: envVariables });
       } catch (error: any) {
-        const errorMessage = `脚本执行失败 [${script.name}]: ${error?.message || error}`;
+        // 文案在出错时才求值，跟随当前语言
+        const errorMessage = translate("scriptErrors.executeFailed", {
+          name: script.name,
+          reason: error?.message || String(error),
+        });
         console.error(errorMessage, error);
         // 写入错误日志（静默处理，不显示通知）
         errorHandler.handle(errorMessage, ErrorType.SCRIPT, true);
@@ -785,7 +794,7 @@ export class ScriptEngine {
       compileScript(code);
       return null;
     } catch (error: any) {
-      return error?.message || "脚本语法错误";
+      return error?.message || translate("scriptErrors.syntaxError");
     }
   }
 }

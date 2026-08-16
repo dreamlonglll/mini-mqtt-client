@@ -217,7 +217,7 @@ import { Position, Loading, SuccessFilled } from '@element-plus/icons-vue'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
 import { usePublishPipeline } from '@/composables/usePublishPipeline'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   visible: boolean
@@ -396,7 +396,8 @@ function scheduleLogScroll() {
 // 添加日志
 function addLog(topic: string, payload: string, status: 'success' | 'error', message?: string) {
   const now = new Date()
-  const time = now.toLocaleTimeString('zh-CN', { hour12: false })
+  // 跟随当前界面语言格式化时间（在调用时读取，语言切换后立即生效）
+  const time = now.toLocaleTimeString(locale.value, { hour12: false })
   logs.value.push({ time, topic, payload, status, message })
 
   // 限制日志数量

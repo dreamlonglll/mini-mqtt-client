@@ -1,5 +1,5 @@
 import { errorHandler, ErrorType } from './errorHandler'
-import i18n from '@/i18n'
+import i18n, { translate } from '@/i18n'
 
 /**
  * MQTT 错误信息接口
@@ -22,102 +22,46 @@ export type MqttConnectionStatus =
 
 /**
  * MQTT 错误映射表
+ *
+ * key 为错误原文（小写）的匹配子串，value 的 i18nKey 指向语言文件中的
+ * `mqttErrors.*` 节点（含 message / suggestion 两个叶子）。
+ * 文案在匹配命中时才求值，因此跟随当前语言。
+ *
+ * 注意：第二批之后 Rust 侧的入口校验返回中文错误消息，这些消息不会命中
+ * 下面任何一个英文子串，会走末尾的"未知错误"分支原样透传——这正是期望行为。
  */
-const mqttErrorMap: Record<string, MqttErrorInfo> = {
-  'connection_refused': {
-    code: 'CONNECTION_REFUSED',
-    message: '连接被拒绝',
-    suggestion: '请检查服务器地址和端口是否正确'
-  },
-  'connection_timeout': {
-    code: 'CONNECTION_TIMEOUT',
-    message: '连接超时',
-    suggestion: '请检查网络连接或服务器是否可用'
-  },
-  'connection refused': {
-    code: 'CONNECTION_REFUSED',
-    message: '连接被拒绝',
-    suggestion: '请检查服务器地址和端口是否正确'
-  },
-  'timeout': {
-    code: 'CONNECTION_TIMEOUT',
-    message: '连接超时',
-    suggestion: '请检查网络连接或服务器是否可用'
-  },
-  'auth_failed': {
-    code: 'AUTH_FAILED',
-    message: '认证失败',
-    suggestion: '请检查用户名和密码是否正确'
-  },
-  'authentication': {
-    code: 'AUTH_FAILED',
-    message: '认证失败',
-    suggestion: '请检查用户名和密码是否正确'
-  },
-  'bad user name or password': {
-    code: 'AUTH_FAILED',
-    message: '用户名或密码错误',
-    suggestion: '请检查用户名和密码是否正确'
-  },
-  'not_authorized': {
-    code: 'NOT_AUTHORIZED',
-    message: '未授权',
-    suggestion: '当前用户没有该操作权限'
-  },
-  'not authorized': {
-    code: 'NOT_AUTHORIZED',
-    message: '未授权',
-    suggestion: '当前用户没有该操作权限'
-  },
-  'topic_invalid': {
-    code: 'TOPIC_INVALID',
-    message: '主题格式无效',
-    suggestion: '请检查主题格式是否符合MQTT规范'
-  },
-  'invalid topic': {
-    code: 'TOPIC_INVALID',
-    message: '主题格式无效',
-    suggestion: '请检查主题格式是否符合MQTT规范'
-  },
-  'payload_too_large': {
-    code: 'PAYLOAD_TOO_LARGE',
-    message: '消息体过大',
-    suggestion: '请减小消息体大小'
-  },
-  'packet too large': {
-    code: 'PAYLOAD_TOO_LARGE',
-    message: '消息包过大',
-    suggestion: '请减小消息体大小'
-  },
-  'disconnected': {
-    code: 'DISCONNECTED',
-    message: '连接已断开',
-    suggestion: '请重新连接服务器'
-  },
-  'network': {
-    code: 'NETWORK_ERROR',
-    message: '网络错误',
-    suggestion: '请检查网络连接是否正常'
-  },
-  'io error': {
-    code: 'IO_ERROR',
-    message: 'IO错误',
-    suggestion: '请检查网络连接或重试'
-  },
-  'broker unavailable': {
-    code: 'BROKER_UNAVAILABLE',
-    message: '服务器不可用',
-    suggestion: '请检查服务器是否正常运行'
-  },
-  'client identifier not valid': {
-    code: 'INVALID_CLIENT_ID',
-    message: 'Client ID 无效',
-    suggestion: '请检查 Client ID 格式是否正确'
-  },
-  'protocol': {
-    code: 'PROTOCOL_ERROR',
-    message: '协议错误',
-    suggestion: '请检查 MQTT 协议版本是否匹配'
+const mqttErrorMap: Record<string, { code: string; i18nKey: string }> = {
+  'connection_refused': { code: 'CONNECTION_REFUSED', i18nKey: 'mqttErrors.connectionRefused' },
+  'connection_timeout': { code: 'CONNECTION_TIMEOUT', i18nKey: 'mqttErrors.connectionTimeout' },
+  'connection refused': { code: 'CONNECTION_REFUSED', i18nKey: 'mqttErrors.connectionRefused' },
+  'timeout': { code: 'CONNECTION_TIMEOUT', i18nKey: 'mqttErrors.connectionTimeout' },
+  'auth_failed': { code: 'AUTH_FAILED', i18nKey: 'mqttErrors.authFailed' },
+  'authentication': { code: 'AUTH_FAILED', i18nKey: 'mqttErrors.authFailed' },
+  'bad user name or password': { code: 'AUTH_FAILED', i18nKey: 'mqttErrors.badCredentials' },
+  'badusernamepassword': { code: 'AUTH_FAILED', i18nKey: 'mqttErrors.badCredentials' },
+  'not_authorized': { code: 'NOT_AUTHORIZED', i18nKey: 'mqttErrors.notAuthorized' },
+  'not authorized': { code: 'NOT_AUTHORIZED', i18nKey: 'mqttErrors.notAuthorized' },
+  'notauthorized': { code: 'NOT_AUTHORIZED', i18nKey: 'mqttErrors.notAuthorized' },
+  'topic_invalid': { code: 'TOPIC_INVALID', i18nKey: 'mqttErrors.topicInvalid' },
+  'invalid topic': { code: 'TOPIC_INVALID', i18nKey: 'mqttErrors.topicInvalid' },
+  'payload_too_large': { code: 'PAYLOAD_TOO_LARGE', i18nKey: 'mqttErrors.payloadTooLarge' },
+  'packet too large': { code: 'PAYLOAD_TOO_LARGE', i18nKey: 'mqttErrors.packetTooLarge' },
+  'disconnected': { code: 'DISCONNECTED', i18nKey: 'mqttErrors.disconnected' },
+  'network': { code: 'NETWORK_ERROR', i18nKey: 'mqttErrors.network' },
+  'io error': { code: 'IO_ERROR', i18nKey: 'mqttErrors.io' },
+  'broker unavailable': { code: 'BROKER_UNAVAILABLE', i18nKey: 'mqttErrors.brokerUnavailable' },
+  'serviceunavailable': { code: 'BROKER_UNAVAILABLE', i18nKey: 'mqttErrors.brokerUnavailable' },
+  'client identifier not valid': { code: 'INVALID_CLIENT_ID', i18nKey: 'mqttErrors.invalidClientId' },
+  'badclientid': { code: 'INVALID_CLIENT_ID', i18nKey: 'mqttErrors.invalidClientId' },
+  'protocol': { code: 'PROTOCOL_ERROR', i18nKey: 'mqttErrors.protocol' }
+}
+
+/** 把映射表条目展开成带文案的错误信息（调用时求值，跟随当前语言） */
+function resolveErrorInfo(entry: { code: string; i18nKey: string }): MqttErrorInfo {
+  return {
+    code: entry.code,
+    message: translate(`${entry.i18nKey}.message`),
+    suggestion: translate(`${entry.i18nKey}.suggestion`)
   }
 }
 
@@ -129,10 +73,11 @@ const mqttErrorMap: Record<string, MqttErrorInfo> = {
  */
 export function handleMqttError(error: string, silent: boolean = false): MqttErrorInfo {
   const lowerError = error.toLowerCase()
-  
+
   // 尝试匹配已知错误
-  for (const [key, info] of Object.entries(mqttErrorMap)) {
+  for (const [key, entry] of Object.entries(mqttErrorMap)) {
     if (lowerError.includes(key)) {
+      const info = resolveErrorInfo(entry)
       if (!silent) {
         errorHandler.handle(`${info.message}: ${info.suggestion}`, ErrorType.MQTT)
       }
@@ -140,17 +85,17 @@ export function handleMqttError(error: string, silent: boolean = false): MqttErr
     }
   }
 
-  // 未知 MQTT 错误
+  // 未知 MQTT 错误：原样透传后端消息（第二批起后端已返回本地化的中文提示）
   const unknownError: MqttErrorInfo = {
     code: 'UNKNOWN',
     message: error,
-    suggestion: '请查看详细日志获取更多信息'
+    suggestion: translate('mqttErrors.unknownSuggestion')
   }
-  
+
   if (!silent) {
     errorHandler.handle(error, ErrorType.MQTT)
   }
-  
+
   return unknownError
 }
 
@@ -186,12 +131,12 @@ export function getMqttStatusInfo(status: MqttConnectionStatus): {
  * @param errorCode 错误代码
  */
 export function getMqttErrorSuggestion(errorCode: string): string {
-  for (const info of Object.values(mqttErrorMap)) {
-    if (info.code === errorCode) {
-      return info.suggestion
+  for (const entry of Object.values(mqttErrorMap)) {
+    if (entry.code === errorCode) {
+      return translate(`${entry.i18nKey}.suggestion`)
     }
   }
-  return '请查看详细日志获取更多信息'
+  return translate('mqttErrors.unknownSuggestion')
 }
 
 /**

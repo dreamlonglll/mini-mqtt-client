@@ -11,11 +11,6 @@ pub async fn create_template(
 }
 
 #[command]
-pub async fn get_template(id: i64, storage: State<'_, Storage>) -> Result<Option<CommandTemplate>, String> {
-    Ok(storage.get_template(id))
-}
-
-#[command]
 pub async fn list_templates(server_id: i64, storage: State<'_, Storage>) -> Result<serde_json::Value, String> {
     storage.get_templates_json(server_id)
 }

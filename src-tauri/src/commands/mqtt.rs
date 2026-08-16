@@ -22,18 +22,6 @@ pub async fn mqtt_disconnect(mqtt: State<'_, MqttManager>, server_id: i64) -> Re
 }
 
 #[tauri::command]
-pub async fn mqtt_publish(
-    mqtt: State<'_, MqttManager>,
-    server_id: i64,
-    topic: String,
-    payload: Vec<u8>,
-    qos: u8,
-    retain: bool,
-) -> Result<(), String> {
-    mqtt.publish(server_id, topic, payload, qos, retain).await
-}
-
-#[tauri::command]
 pub async fn mqtt_subscribe(
     mqtt: State<'_, MqttManager>,
     server_id: i64,
@@ -50,9 +38,4 @@ pub async fn mqtt_unsubscribe(
     topic: String,
 ) -> Result<(), String> {
     mqtt.unsubscribe(server_id, topic).await
-}
-
-#[tauri::command]
-pub fn mqtt_is_connected(mqtt: State<'_, MqttManager>, server_id: i64) -> bool {
-    mqtt.is_connected(server_id)
 }

@@ -191,19 +191,6 @@ export const useTemplateStore = defineStore('template', () => {
     }
   }
 
-  // 搜索模板
-  async function searchTemplates(serverId: number, keyword: string) {
-    try {
-      templates.value = await invoke<CommandTemplate[]>('search_templates', {
-        serverId,
-        keyword
-      })
-    } catch (error) {
-      console.error('搜索模板失败:', error)
-      throw error
-    }
-  }
-
   // 导出模板
   async function exportTemplates(serverId: number): Promise<string> {
     try {
@@ -272,7 +259,6 @@ export const useTemplateStore = defineStore('template', () => {
     updateTemplate,
     deleteTemplate,
     useTemplate,
-    searchTemplates,
     exportTemplates,
     importTemplates,
     duplicateTemplate,

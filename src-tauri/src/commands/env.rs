@@ -1,17 +1,11 @@
 use tauri::State;
-use crate::db::models::{EnvVariable, CreateEnvVariableRequest, UpdateEnvVariableRequest};
+use crate::db::models::{CreateEnvVariableRequest, UpdateEnvVariableRequest};
 use crate::db::Storage;
 
 /// 获取服务器的所有环境变量
 #[tauri::command]
 pub async fn list_env_variables(storage: State<'_, Storage>, server_id: i64) -> Result<serde_json::Value, String> {
     storage.get_env_variables_json(server_id)
-}
-
-/// 获取单个环境变量
-#[tauri::command]
-pub async fn get_env_variable(storage: State<'_, Storage>, id: i64) -> Result<Option<EnvVariable>, String> {
-    Ok(storage.get_env_variable(id))
 }
 
 /// 创建环境变量

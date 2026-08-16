@@ -411,8 +411,23 @@ watch(() => formData.value.script_type, (newType) => {
   }
 })
 
-// 导入文件
+// 导入文件（外部脚本可调用应用全部能力，导入前给出一次风险确认）
 async function handleImportFile() {
+  try {
+    await ElMessageBox.confirm(
+      t('scriptErrors.importWarningMessage'),
+      t('scriptErrors.importWarningTitle'),
+      {
+        confirmButtonText: t('scriptErrors.importWarningConfirm'),
+        cancelButtonText: t('common.cancel'),
+        type: 'warning'
+      }
+    )
+  } catch {
+    // 用户取消导入
+    return
+  }
+
   try {
     const filePath = await open({
       multiple: false,
@@ -421,7 +436,7 @@ async function handleImportFile() {
         extensions: ['js', 'txt']
       }]
     })
-    
+
     if (filePath) {
       const content = await readTextFile(filePath as string)
       formData.value.code = content

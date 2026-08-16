@@ -1,17 +1,11 @@
 use tauri::State;
-use crate::db::models::{Script, CreateScriptRequest, UpdateScriptRequest};
+use crate::db::models::{CreateScriptRequest, UpdateScriptRequest};
 use crate::db::Storage;
 
 /// 获取服务器的所有脚本
 #[tauri::command]
 pub async fn list_scripts(storage: State<'_, Storage>, server_id: i64) -> Result<serde_json::Value, String> {
     storage.get_scripts_json(server_id)
-}
-
-/// 获取单个脚本
-#[tauri::command]
-pub async fn get_script(storage: State<'_, Storage>, id: i64) -> Result<Option<Script>, String> {
-    Ok(storage.get_script(id))
 }
 
 /// 获取启用的脚本（按类型）

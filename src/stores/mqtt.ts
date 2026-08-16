@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, shallowRef, triggerRef } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ElMessage } from "element-plus";
 import type { ConnectionStatus, MqttMessage, EnvVariable } from "@/types/mqtt";
 import { ScriptEngine } from "@/utils/scriptEngine";
@@ -71,9 +71,6 @@ export const useMqttStore = defineStore("mqtt", () => {
 
   // 被裁剪掉的消息总数（供 MessageList 定期重置虚拟滚动的行高缓存，防止内存泄漏）
   const trimmedCount = ref(0);
-
-  // 订阅列表（按 server_id 分组）
-  const subscriptions = ref<Map<number, Set<string>>>(new Map());
 
   // 脚本缓存（避免高频调用 invoke）
   const scriptCache = new Map<string, ScriptCacheEntry>();
@@ -318,10 +315,40 @@ export const useMqttStore = defineStore("mqtt", () => {
     }
   }
 
-  // 初始化事件监听
-  const initListeners = async () => {
+  // 事件监听的注销函数（已初始化时非空，用作幂等守卫）
+  let listenerUnsubscribers: UnlistenFn[] | null = null;
+  // 初始化中的 Promise，防止并发调用产生双份监听
+  let initListenersPromise: Promise<void> | null = null;
+
+  // 初始化事件监听（幂等：重复调用不会产生双份监听）
+  const initListeners = async (): Promise<void> => {
+    if (listenerUnsubscribers) return;
+    if (initListenersPromise) return initListenersPromise;
+
+    initListenersPromise = doInitListeners()
+      .catch((e) => {
+        // 失败时允许下次重试
+        initListenersPromise = null;
+        throw e;
+      })
+      .finally(() => {
+        initListenersPromise = null;
+      });
+    return initListenersPromise;
+  };
+
+  // 注销全部事件监听（供测试与热重载复位使用）
+  const disposeListeners = () => {
+    if (!listenerUnsubscribers) return;
+    for (const unlisten of listenerUnsubscribers) {
+      unlisten();
+    }
+    listenerUnsubscribers = null;
+  };
+
+  const doInitListeners = async () => {
     // 监听连接状态变化
-    await listen<ConnectionState>("mqtt-connection-state", (event) => {
+    const unlistenConnectionState = await listen<ConnectionState>("mqtt-connection-state", (event) => {
       const { server_id, status, error } = event.payload;
       const previousStatus = connectionStates.value.get(server_id)?.status;
       connectionStates.value.set(server_id, {
@@ -345,7 +372,7 @@ export const useMqttStore = defineStore("mqtt", () => {
     });
 
     // 监听接收消息（Rust 侧攒批 emit，一次事件携带一批消息）
-    await listen<ReceivedMessage[]>("mqtt-messages", (event) => {
+    const unlistenMessages = await listen<ReceivedMessage[]>("mqtt-messages", (event) => {
       const batch = event.payload;
 
       // 同步快路径：确定无接收脚本且串行链空闲时直接同步入队，
@@ -376,6 +403,8 @@ export const useMqttStore = defineStore("mqtt", () => {
           receiveChainPending--;
         });
     });
+
+    listenerUnsubscribers = [unlistenConnectionState, unlistenMessages];
   };
 
   // 连接
@@ -392,40 +421,6 @@ export const useMqttStore = defineStore("mqtt", () => {
     await invoke("mqtt_disconnect", { serverId });
   };
 
-  // 发布消息
-  const publish = async (
-    serverId: number,
-    topic: string,
-    payload: string | Uint8Array,
-    qos: 0 | 1 | 2 = 0,
-    retain: boolean = false
-  ) => {
-    const payloadBytes =
-      typeof payload === "string"
-        ? Array.from(new TextEncoder().encode(payload))
-        : Array.from(payload);
-
-    await invoke("mqtt_publish", {
-      serverId,
-      topic,
-      payload: payloadBytes,
-      qos,
-      retain,
-    });
-
-    // 添加到消息列表（使用批处理）
-    queueMessage({
-      server_id: serverId,
-      direction: "publish",
-      topic,
-      payload:
-        typeof payload === "string" ? new TextEncoder().encode(payload) : payload,
-      qos,
-      retain,
-      timestamp: Date.now(),
-    });
-  };
-
   // 订阅
   const subscribe = async (
     serverId: number,
@@ -433,17 +428,11 @@ export const useMqttStore = defineStore("mqtt", () => {
     qos: 0 | 1 | 2 = 0
   ) => {
     await invoke("mqtt_subscribe", { serverId, topic, qos });
-
-    if (!subscriptions.value.has(serverId)) {
-      subscriptions.value.set(serverId, new Set());
-    }
-    subscriptions.value.get(serverId)!.add(topic);
   };
 
   // 取消订阅
   const unsubscribe = async (serverId: number, topic: string) => {
     await invoke("mqtt_unsubscribe", { serverId, topic });
-    subscriptions.value.get(serverId)?.delete(topic);
   };
 
   // 获取连接状态
@@ -470,6 +459,26 @@ export const useMqttStore = defineStore("mqtt", () => {
       map.clear();
     }
     triggerRef(messagesByServer);
+  };
+
+  /**
+   * 清理某个 Server 在本 store 的全部残留状态
+   *
+   * 供 Server 删除后级联调用，避免连接状态、消息、脚本与环境变量缓存
+   * 长期残留（ID 复用时还会读到旧 Server 的数据）。
+   */
+  const clearServerState = (serverId: number) => {
+    connectionStates.value.delete(serverId);
+    messagesByServer.value.delete(serverId);
+    triggerRef(messagesByServer);
+    clearScriptCache(serverId);
+    clearEnvCache(serverId);
+    // 丢弃队列中该 Server 尚未 flush 的消息
+    for (let i = messageQueue.length - 1; i >= 0; i--) {
+      if (messageQueue[i].server_id === serverId) {
+        messageQueue.splice(i, 1);
+      }
+    }
   };
 
   // 添加发布消息到列表（用于UI显示）
@@ -518,17 +527,17 @@ export const useMqttStore = defineStore("mqtt", () => {
     connectionStates,
     messagesByServer,
     trimmedCount,
-    subscriptions,
     initListeners,
+    disposeListeners,
     connect,
     disconnect,
-    publish,
     subscribe,
     unsubscribe,
     getConnectionStatus,
     getConnectionError,
     getServerMessages,
     clearMessages,
+    clearServerState,
     addPublishMessage,
     getCachedScripts,
     getCachedEnvVariables,

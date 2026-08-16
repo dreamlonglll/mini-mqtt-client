@@ -554,11 +554,6 @@ impl Storage {
         serde_json::to_value(items).map_err(|e| e.to_string())
     }
 
-    pub fn get_script(&self, id: i64) -> Option<Script> {
-        let data = self.data.read();
-        data.scripts.iter().find(|s| s.id == Some(id)).cloned()
-    }
-
     pub fn get_enabled_scripts_json(
         &self,
         server_id: i64,
@@ -653,11 +648,6 @@ impl Storage {
             .filter(|e| e.server_id == server_id)
             .collect();
         serde_json::to_value(items).map_err(|e| e.to_string())
-    }
-
-    pub fn get_env_variable(&self, id: i64) -> Option<EnvVariable> {
-        let data = self.data.read();
-        data.env_variables.iter().find(|e| e.id == Some(id)).cloned()
     }
 
     pub fn create_env_variable(&self, req: CreateEnvVariableRequest) -> Result<i64, String> {

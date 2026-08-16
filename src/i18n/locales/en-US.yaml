@@ -8,11 +8,6 @@ common:
   edit: Edit
   copy: Copy
   close: Close
-  loading: Loading...
-  success: Success
-  error: Error
-  warning: Warning
-  info: Info
 
 header:
   welcome: Welcome to Mini MQTT Client
@@ -104,7 +99,6 @@ publish:
   qos: QoS
   retain: Retain
   send: Send
-  clear: Clear
   saveTemplate: Save Template
   scheduledPublish: Scheduled Publish
   openScripts: Script Manager
@@ -112,7 +106,6 @@ publish:
   payloadType: Format
   topicPlaceholder: Enter topic
   payloadPlaceholder: Enter message content
-  type: Type
 
 messages:
   title: Messages
@@ -135,32 +128,21 @@ messages:
 template:
   title: Command Templates
   drawerTitle: Command Templates
-  save: Save Template
   format: Format
   minify: Minify
   name: Template Name
   namePlaceholder: Enter template name
   category: Category
   categoryPlaceholder: Select or create category
-  newCategory: New Category
   noTemplate: No templates
   addTemplate: Add Template
-  useTemplate: Use Template
   deleteConfirm: Are you sure to delete this template?
   deleteTitle: Delete Template
   allCategories: All
-  uncategorized: Uncategorized
   searchPlaceholder: Search templates...
   saveSuccess: Template saved
   loadSuccess: Loaded
   deleteSuccess: Template deleted
-  usedTimes: Used {count} times
-  import: Import Templates
-  export: Export Templates
-  frequentTemplates: Frequent Templates
-  useCount: Use Count
-  importSuccess: Successfully imported {count} templates
-  exportSuccess: Templates exported
 
 script:
   title: Preprocessing Scripts
@@ -171,11 +153,7 @@ script:
   type: Type
   beforeSend: Before Send
   afterReceive: After Receive
-  enabled: Enabled
   code: Script Code
-  testRun: Test Run
-  testInput: Test Input
-  testOutput: Output
   noScript: No scripts
   addScript: Add Script
   editScript: Edit Script
@@ -183,14 +161,10 @@ script:
   deleteTitle: Delete Script
   saveSuccess: Script saved
   deleteSuccess: Script deleted
-  testSuccess: Test passed
   testError: Test failed
   syntaxError: Script syntax error
   functions: Available Functions
   importJs: Import JS
-  codeHint:
-    beforePublish: Define process(payload) function, return processed payload
-    afterReceive: Define process(payload, topic) function, return processed payload
   functionCategories:
     basic: Basic Functions
     encoding: Encoding
@@ -204,7 +178,7 @@ script:
   envFunctions:
     getVar: Get environment variable value
     getVarAlt: Get environment variable value (alternative)
-    replace: Replace {{var}} placeholders in text
+    replace: "Replace {'{{'}var{'}}'} placeholders in text"
     getAll: Get all environment variables as array
 
 scheduled:
@@ -212,20 +186,11 @@ scheduled:
   selectTemplate: Select Templates
   noTemplateSelected: Please select templates to publish
   mode: Publish Mode
-  once: Once
-  interval: Interval
-  cron: Cron Expression
   intervalSeconds: Interval (seconds)
   roundInterval: Round Interval
-  cronExpression: Cron Expression
-  cronHelp: "Example: */5 * * * * (every 5 minutes)"
-  executeTime: Execute Time
-  selectTime: Select Time
   start: Start
   stop: Stop
   running: Running
-  nextExecution: Next Execution
-  executionCount: Executed {count} times
   selectedTemplates: "{count} templates selected"
   status: Publish Status
   completed: Completed
@@ -264,7 +229,6 @@ server:
   passwordPlaceholder: Optional
   advanced: Advanced Settings
   tls:
-    title: TLS Settings
     caCert: CA Certificate
     caCertPlaceholder: Paste PEM format CA certificate
     clientCert: Client Certificate
@@ -273,6 +237,7 @@ server:
     clientKeyPlaceholder: Paste PEM format private key
     keyPassword: Key Password
     keyPasswordPlaceholder: If private key is password protected
+  duplicateSuffix: "{name} (Copy)"
   saveSuccess: Server saved
   duplicateSuccess: Duplicated successfully
   deleteSuccess: Deleted successfully
@@ -280,7 +245,6 @@ server:
 errors:
   connectFailed: Connection failed
   disconnectFailed: Disconnect failed
-  publishFailed: Publish failed
   subscribeFailed: Subscribe failed
   unsubscribeFailed: Unsubscribe failed
   saveFailed: Save failed
@@ -298,7 +262,6 @@ errors:
   copyFailed: Copy failed
   checkUpdateFailed: Failed to check for updates
   openBrowserFailed: Failed to open browser
-  selectFile: Please select a file first
   storageFailed: Failed to save configuration
 
 env:
@@ -324,8 +287,6 @@ env:
   copyValue: Copy Value
 
 success:
-  connected: Connected successfully
-  disconnected: Disconnected
   published: Published successfully
   subscribed: Subscribed successfully
   resumed: Subscription resumed
@@ -334,5 +295,64 @@ success:
   saved: Saved successfully
   deleted: Deleted successfully
   copied: Copied to clipboard
-  templateLoaded: Template loaded
-  autoSubscribed: Auto-subscribed to {count} topics
+
+# Wording used by utility modules (resolved at call time so it follows the current locale)
+errorTypes:
+  network: Network Error
+  mqtt: MQTT Error
+  database: Database Error
+  validation: Validation Error
+  script: Script Error
+  unknown: Error
+
+mqttErrors:
+  connectionRefused:
+    message: Connection refused
+    suggestion: Check that the broker host and port are correct
+  connectionTimeout:
+    message: Connection timed out
+    suggestion: Check your network connection or whether the broker is reachable
+  authFailed:
+    message: Authentication failed
+    suggestion: Check that the username and password are correct
+  badCredentials:
+    message: Bad username or password
+    suggestion: Check that the username and password are correct
+  notAuthorized:
+    message: Not authorized
+    suggestion: The current user is not allowed to perform this operation
+  topicInvalid:
+    message: Invalid topic format
+    suggestion: Check that the topic conforms to the MQTT specification
+  payloadTooLarge:
+    message: Payload too large
+    suggestion: Reduce the payload size
+  packetTooLarge:
+    message: Packet too large
+    suggestion: Reduce the payload size
+  disconnected:
+    message: Disconnected
+    suggestion: Reconnect to the broker
+  network:
+    message: Network error
+    suggestion: Check that the network connection is working
+  io:
+    message: IO error
+    suggestion: Check the network connection or try again
+  brokerUnavailable:
+    message: Broker unavailable
+    suggestion: Check that the broker is running
+  invalidClientId:
+    message: Invalid Client ID
+    suggestion: Check that the Client ID format is correct
+  protocol:
+    message: Protocol error
+    suggestion: Check that the MQTT protocol version matches
+  unknownSuggestion: See the detailed log for more information
+
+scriptErrors:
+  executeFailed: "Script execution failed [{name}]: {reason}"
+  syntaxError: Script syntax error
+  importWarningTitle: Import External Script
+  importWarningMessage: An external script can use every capability of this app (including network and file access). Make sure you trust its source before importing.
+  importWarningConfirm: Import anyway

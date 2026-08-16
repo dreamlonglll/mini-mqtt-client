@@ -26,8 +26,3 @@ pub async fn update_server(storage: State<'_, Storage>, server: MqttServer) -> R
 pub async fn delete_server(storage: State<'_, Storage>, id: i64) -> Result<(), String> {
     storage.delete_server(id)
 }
-
-#[tauri::command]
-pub async fn get_server(storage: State<'_, Storage>, id: i64) -> Result<Option<MqttServer>, String> {
-    Ok(storage.get_server(id))
-}

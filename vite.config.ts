@@ -3,6 +3,7 @@ import vue from "@vitejs/plugin-vue";
 import AutoImport from "unplugin-auto-import/vite";
 import Components from "unplugin-vue-components/vite";
 import { ElementPlusResolver } from "unplugin-vue-components/resolvers";
+import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite";
 import { resolve } from "path";
 
 // @ts-expect-error process is a nodejs global
@@ -20,6 +21,14 @@ export default defineConfig(async () => ({
     Components({
       resolvers: [ElementPlusResolver()],
       dts: "src/components.d.ts",
+    }),
+    // 语言 YAML 在构建期预编译为消息函数，运行期不再需要 js-yaml 与消息编译器
+    VueI18nPlugin({
+      include: [resolve(__dirname, "src/i18n/locales/**")],
+      // 只打包 vue-i18n 的 runtime 版本（消息已预编译，不需要编译器）
+      runtimeOnly: true,
+      compositionOnly: true,
+      dropMessageCompiler: true,
     }),
   ],
 

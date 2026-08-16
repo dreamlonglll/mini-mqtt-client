@@ -2,12 +2,14 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { MqttServer, ConnectionStatus } from "@/types/mqtt";
+import { useMqttStore } from "@/stores/mqtt";
+import { useSubscriptionStore } from "@/stores/subscription";
+import { translate } from "@/i18n";
 
 // 运行时 Server 状态
+// 连接状态的唯一真源是 mqttStore.connectionStates，此处只保留配置本身
 export interface ServerState {
   server: MqttServer;
-  status: ConnectionStatus;
-  errorMessage?: string;
 }
 
 export const useServerStore = defineStore("server", () => {
@@ -30,10 +32,7 @@ export const useServerStore = defineStore("server", () => {
     loading.value = true;
     try {
       const data = await invoke<MqttServer[]>("get_servers");
-      servers.value = data.map((server) => ({
-        server,
-        status: "disconnected" as ConnectionStatus,
-      }));
+      servers.value = data.map((server) => ({ server }));
     } catch (e) {
       console.error("Failed to fetch servers:", e);
     } finally {
@@ -55,10 +54,7 @@ export const useServerStore = defineStore("server", () => {
       updated_at: now,
     };
 
-    servers.value.unshift({
-      server,
-      status: "disconnected",
-    });
+    servers.value.unshift({ server });
 
     return id;
   };
@@ -76,10 +72,10 @@ export const useServerStore = defineStore("server", () => {
     }
   };
 
-  // 删除 Server
+  // 删除 Server（成功后级联清理其他 store 中该 Server 的残留状态）
   const removeServer = async (id: number) => {
     await invoke("delete_server", { id });
-    
+
     const index = servers.value.findIndex((s) => s.server.id === id);
     if (index !== -1) {
       servers.value.splice(index, 1);
@@ -87,30 +83,16 @@ export const useServerStore = defineStore("server", () => {
         activeServerId.value = servers.value[0]?.server.id ?? null;
       }
     }
+
+    // 级联清理：连接状态、消息、脚本 / 环境变量缓存、订阅缓存
+    // （否则 ID 复用时新 Server 会读到旧 Server 的残留数据）
+    useMqttStore().clearServerState(id);
+    useSubscriptionStore().clearServerSubscriptions(id);
   };
 
   // 设置当前 Server
   const setActiveServer = (id: number | null) => {
     activeServerId.value = id;
-  };
-
-  // 更新连接状态
-  const setConnectionStatus = (
-    id: number,
-    status: ConnectionStatus,
-    errorMessage?: string
-  ) => {
-    const serverState = servers.value.find((s) => s.server.id === id);
-    if (serverState) {
-      serverState.status = status;
-      serverState.errorMessage = errorMessage;
-    }
-  };
-
-  // 获取连接状态
-  const getConnectionStatus = (id: number): ConnectionStatus => {
-    const serverState = servers.value.find((s) => s.server.id === id);
-    return serverState?.status || "disconnected";
   };
 
   // 复制 Server
@@ -119,7 +101,10 @@ export const useServerStore = defineStore("server", () => {
     if (source) {
       const newServer = {
         ...source.server,
-        name: `${source.server.name} (副本)`,
+        // 在调用时求值，跟随当前语言
+        name: translate("server.duplicateSuffix", {
+          name: source.server.name,
+        }),
         client_id: "", // 清空 Client ID
       };
       // 移除 id 和时间戳
@@ -138,8 +123,6 @@ export const useServerStore = defineStore("server", () => {
     updateServer,
     removeServer,
     setActiveServer,
-    setConnectionStatus,
-    getConnectionStatus,
     duplicateServer,
   };
 });

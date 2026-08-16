@@ -1,5 +1,6 @@
 import { ElNotification } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
+import { translate } from '@/i18n'
 
 /**
  * 错误类型枚举
@@ -24,15 +25,22 @@ export interface AppError {
 }
 
 /**
- * 错误类型对应的标题
+ * 错误类型对应的 i18n 标题键
  */
-const errorTitles: Record<ErrorType, string> = {
-  [ErrorType.NETWORK]: '网络错误',
-  [ErrorType.MQTT]: 'MQTT错误',
-  [ErrorType.DATABASE]: '数据库错误',
-  [ErrorType.VALIDATION]: '验证错误',
-  [ErrorType.SCRIPT]: '脚本错误',
-  [ErrorType.UNKNOWN]: '错误'
+const errorTitleKeys: Record<ErrorType, string> = {
+  [ErrorType.NETWORK]: 'errorTypes.network',
+  [ErrorType.MQTT]: 'errorTypes.mqtt',
+  [ErrorType.DATABASE]: 'errorTypes.database',
+  [ErrorType.VALIDATION]: 'errorTypes.validation',
+  [ErrorType.SCRIPT]: 'errorTypes.script',
+  [ErrorType.UNKNOWN]: 'errorTypes.unknown'
+}
+
+/**
+ * 取错误类型的标题（在调用时求值，跟随当前语言）
+ */
+function errorTitleOf(type: ErrorType): string {
+  return translate(errorTitleKeys[type] ?? errorTitleKeys[ErrorType.UNKNOWN])
 }
 
 /**
@@ -207,7 +215,7 @@ class ErrorHandler {
    */
   private notifyUser(error: AppError): void {
     ElNotification({
-      title: errorTitles[error.type],
+      title: errorTitleOf(error.type),
       message: error.message,
       type: 'error',
       duration: 5000

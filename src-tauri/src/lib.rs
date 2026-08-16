@@ -43,17 +43,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Server 命令
             get_servers,
-            get_server,
             create_server,
             update_server,
             delete_server,
             // MQTT 命令
             mqtt_connect,
             mqtt_disconnect,
-            mqtt_publish,
             mqtt_subscribe,
             mqtt_unsubscribe,
-            mqtt_is_connected,
             // 订阅命令
             add_subscription,
             remove_subscription,
@@ -66,7 +63,6 @@ pub fn run() {
             clear_message_history,
             // 模板命令
             create_template,
-            get_template,
             list_templates,
             update_template,
             delete_template,
@@ -81,21 +77,17 @@ pub fn run() {
             select_data_folder,
             // 脚本命令
             list_scripts,
-            get_script,
             get_enabled_scripts,
             create_script,
             update_script,
             delete_script,
             toggle_script,
             // 日志命令
-            write_error_log,
             write_error_logs,
-            get_recent_logs,
             get_log_dir,
             clear_logs,
             // 环境变量命令
             list_env_variables,
-            get_env_variable,
             create_env_variable,
             update_env_variable,
             delete_env_variable,
