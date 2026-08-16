@@ -93,8 +93,8 @@ import { useServerStore } from "@/stores/server";
 import { useMessageStore } from "@/stores/message";
 import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
-import { useEnvStore } from "@/stores/env";
 import { ScriptEngine } from "@/utils/scriptEngine";
+import { replaceEnvVariables } from "@/utils/envReplacer";
 import { validatePublishTopic, handleMqttError } from "@/utils/mqttErrorHandler";
 import { handleScriptError } from "@/utils/errorHandler";
 
@@ -116,7 +116,6 @@ const serverStore = useServerStore();
 const messageStore = useMessageStore();
 const mqttStore = useMqttStore();
 const appStore = useAppStore();
-const envStore = useEnvStore();
 
 const publishing = ref(false);
 
@@ -232,14 +231,10 @@ const handlePublish = async () => {
 
   publishing.value = true;
   try {
-    // 确保加载环境变量
-    if (envStore.variables.length === 0) {
-      await envStore.loadVariables(serverId);
-    }
-    
-    // 替换环境变量
-    const processedTopic = envStore.replaceVariables(publishData.topic);
-    let processedPayload = envStore.replaceVariables(publishData.payload);
+    // 替换本 server 的环境变量
+    const envVariables = await mqttStore.getCachedEnvVariables(serverId);
+    const processedTopic = replaceEnvVariables(publishData.topic, envVariables);
+    let processedPayload = replaceEnvVariables(publishData.payload, envVariables);
     let scriptError: string | undefined = undefined;
     
     // 应用发送前处理脚本（复用 mqttStore 的脚本缓存，避免每次发布都走 IPC）
@@ -248,9 +243,9 @@ const handlePublish = async () => {
       if (scripts.length > 0) {
         processedPayload = await ScriptEngine.executeBeforePublish(
           scripts, 
-          processedPayload, 
+          processedPayload,
           processedTopic,
-          envStore.variablesMap
+          envVariables
         );
       }
     } catch (error: any) {

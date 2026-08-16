@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useMqttStore } from "@/stores/mqtt";
 
 export type ScriptType = "before_publish" | "after_receive";
 
@@ -60,9 +61,15 @@ export const useScriptStore = defineStore("script", () => {
     }
   }
 
+  // 使该 server 的脚本缓存与编译缓存失效，保证改动对下一条消息立即生效
+  function invalidateCache(serverId: number) {
+    useMqttStore().clearScriptCache(serverId);
+  }
+
   // 创建脚本
   async function createScript(request: CreateScriptRequest): Promise<number> {
     const id = await invoke<number>("create_script", { request });
+    invalidateCache(request.server_id);
     await loadScripts(request.server_id);
     return id;
   }
@@ -70,18 +77,21 @@ export const useScriptStore = defineStore("script", () => {
   // 更新脚本
   async function updateScript(request: UpdateScriptRequest, serverId: number): Promise<void> {
     await invoke("update_script", { request });
+    invalidateCache(serverId);
     await loadScripts(serverId);
   }
 
   // 删除脚本
   async function deleteScript(id: number, serverId: number): Promise<void> {
     await invoke("delete_script", { id });
+    invalidateCache(serverId);
     await loadScripts(serverId);
   }
 
   // 切换脚本启用状态
   async function toggleScript(id: number, enabled: boolean, serverId: number): Promise<void> {
     await invoke("toggle_script", { id, enabled });
+    invalidateCache(serverId);
     await loadScripts(serverId);
   }
 

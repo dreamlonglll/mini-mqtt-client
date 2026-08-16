@@ -2,9 +2,14 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { EnvVariable, CreateEnvVariableRequest, UpdateEnvVariableRequest } from "@/types/mqtt";
+import { useMqttStore } from "@/stores/mqtt";
 
 export type { EnvVariable, CreateEnvVariableRequest, UpdateEnvVariableRequest };
 
+/**
+ * 环境变量管理界面（EnvDrawer）的数据源。
+ * 替换用的变量一律走 mqttStore.getCachedEnvVariables（按 serverId 隔离）。
+ */
 export const useEnvStore = defineStore("env", () => {
   // 状态
   const variables = ref<EnvVariable[]>([]);
@@ -24,14 +29,10 @@ export const useEnvStore = defineStore("env", () => {
     );
   });
 
-  // 获取变量映射（用于替换）
-  const variablesMap = computed(() => {
-    const map: Record<string, string> = {};
-    for (const v of variables.value) {
-      map[v.name] = v.value;
-    }
-    return map;
-  });
+  // 使某个变量所属 server 的替换缓存失效（找不到归属时全部失效）
+  const invalidateCache = (serverId?: number) => {
+    useMqttStore().clearEnvCache(serverId);
+  };
 
   // 加载环境变量
   const loadVariables = async (serverId: number) => {
@@ -62,6 +63,7 @@ export const useEnvStore = defineStore("env", () => {
       created_at: now,
       updated_at: now,
     });
+    invalidateCache(request.server_id);
     return id;
   };
 
@@ -70,8 +72,10 @@ export const useEnvStore = defineStore("env", () => {
     await invoke("update_env_variable", { request });
     // 更新本地列表
     const index = variables.value.findIndex((v) => v.id === request.id);
+    let serverId: number | undefined = undefined;
     if (index !== -1) {
       const current = variables.value[index];
+      serverId = current.server_id;
       variables.value[index] = {
         ...current,
         name: request.name ?? current.name,
@@ -80,6 +84,7 @@ export const useEnvStore = defineStore("env", () => {
         updated_at: new Date().toISOString(),
       };
     }
+    invalidateCache(serverId);
   };
 
   // 删除环境变量
@@ -87,22 +92,16 @@ export const useEnvStore = defineStore("env", () => {
     await invoke("delete_env_variable", { id });
     // 从本地列表移除
     const index = variables.value.findIndex((v) => v.id === id);
+    const serverId = index !== -1 ? variables.value[index].server_id : undefined;
     if (index !== -1) {
       variables.value.splice(index, 1);
     }
+    invalidateCache(serverId);
   };
 
   // 设置搜索关键词
   const setSearchKeyword = (keyword: string) => {
     searchKeyword.value = keyword;
-  };
-
-  // 替换文本中的环境变量
-  const replaceVariables = (text: string): string => {
-    if (!text) return text;
-    return text.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
-      return variablesMap.value[varName] ?? match;
-    });
   };
 
   // 清空状态
@@ -117,14 +116,12 @@ export const useEnvStore = defineStore("env", () => {
     loading,
     searchKeyword,
     filteredVariables,
-    variablesMap,
     // 方法
     loadVariables,
     createVariable,
     updateVariable,
     deleteVariable,
     setSearchKeyword,
-    replaceVariables,
     clearVariables,
   };
 });

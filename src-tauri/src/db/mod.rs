@@ -92,6 +92,11 @@ impl Storage {
             app_dir.join("data.yaml")
         };
 
+        Self::open_at(file_path)
+    }
+
+    /// 按给定数据文件路径构造 Storage（`new` 解析出路径后调用；测试可直接传入临时目录路径）
+    fn open_at(file_path: PathBuf) -> Result<Self, String> {
         let data = if file_path.exists() {
             let content = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
             match serde_yaml::from_str(&content) {
@@ -166,13 +171,15 @@ impl Storage {
         self.dirty.store(true, Ordering::Release);
     }
 
-    /// 立即将未落盘的修改写入磁盘（应用退出前调用）
+    /// 立即将内存数据写入磁盘（应用退出前调用）
+    ///
+    /// 这里**不检查脏标记**：后台防抖线程是先 `dirty.swap(false)` 再写盘，
+    /// 若恰好在 swap 之后、写完之前退出，按脏标记判断会跳过落盘导致最后一次修改丢失。
+    /// 退出场景多写一次的成本可忽略，故无条件落盘。
     pub fn flush(&self) {
-        if self.dirty.swap(false, Ordering::AcqRel) {
-            let _guard = self.save_lock.lock();
-            if let Err(e) = Self::save_to_disk(&self.data, &self.file_path) {
-                eprintln!("Failed to flush data on exit: {}", e);
-            }
+        let _guard = self.save_lock.lock();
+        if let Err(e) = Self::save_to_disk(&self.data, &self.file_path) {
+            eprintln!("Failed to flush data on exit: {}", e);
         }
     }
 
@@ -624,5 +631,211 @@ impl Storage {
         drop(data);
         self.mark_dirty();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// 在临时目录里准备一个数据文件路径（TempDir 需由调用方持有，drop 后目录被清理）
+    fn temp_data_path() -> (TempDir, PathBuf) {
+        let dir = TempDir::new().expect("创建临时目录失败");
+        let path = dir.path().join("data.yaml");
+        (dir, path)
+    }
+
+    fn sample_server(name: &str) -> MqttServer {
+        MqttServer {
+            id: None,
+            name: name.to_string(),
+            host: "127.0.0.1".to_string(),
+            port: 1883,
+            protocol_version: "3.1.1".to_string(),
+            username: None,
+            password: None,
+            client_id: Some("test-client".to_string()),
+            keep_alive: 60,
+            clean_session: true,
+            use_tls: false,
+            ca_cert: None,
+            client_cert: None,
+            client_key: None,
+            client_key_password: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    fn sample_template(server_id: i64, name: &str) -> CreateTemplateRequest {
+        CreateTemplateRequest {
+            server_id,
+            name: name.to_string(),
+            topic: "test/topic".to_string(),
+            payload: "{\"a\":1}".to_string(),
+            payload_type: "json".to_string(),
+            qos: 1,
+            retain: false,
+            description: Some("测试模板".to_string()),
+            category: Some("默认".to_string()),
+        }
+    }
+
+    fn server_count(storage: &Storage) -> usize {
+        storage
+            .get_servers_json()
+            .unwrap()
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0)
+    }
+
+    /// 列出数据目录下的损坏备份文件名
+    fn corrupt_backups(dir: &Path) -> Vec<String> {
+        fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|name| name.starts_with("data.corrupt-"))
+            .collect()
+    }
+
+    #[test]
+    fn server_crud_survives_flush_and_reload() {
+        let (_dir, path) = temp_data_path();
+        let storage = Storage::open_at(path.clone()).unwrap();
+
+        let keep_id = storage.create_server(sample_server("保留的服务器")).unwrap();
+        let drop_id = storage.create_server(sample_server("待删除的服务器")).unwrap();
+
+        let mut updated = storage.get_server(keep_id).unwrap();
+        updated.name = "保留的服务器-已改名".to_string();
+        updated.port = 8883;
+        storage.update_server(updated).unwrap();
+        storage.delete_server(drop_id).unwrap();
+
+        storage.flush();
+        drop(storage);
+
+        let reloaded = Storage::open_at(path).unwrap();
+        assert_eq!(server_count(&reloaded), 1);
+        let server = reloaded.get_server(keep_id).expect("保留的服务器应被读回");
+        assert_eq!(server.name, "保留的服务器-已改名");
+        assert_eq!(server.port, 8883);
+        assert!(server.created_at.is_some());
+        assert!(reloaded.get_server(drop_id).is_none());
+    }
+
+    #[test]
+    fn template_crud_survives_flush_and_reload() {
+        let (_dir, path) = temp_data_path();
+        let storage = Storage::open_at(path.clone()).unwrap();
+
+        let template_id = storage.create_template(sample_template(1, "模板A")).unwrap();
+        storage
+            .create_template(sample_template(2, "另一个 server 的模板"))
+            .unwrap();
+
+        storage
+            .update_template(UpdateTemplateRequest {
+                id: template_id,
+                name: Some("模板A-已改名".to_string()),
+                topic: None,
+                payload: Some("DEADBEEF".to_string()),
+                payload_type: Some("hex".to_string()),
+                qos: Some(2),
+                retain: Some(true),
+                description: None,
+                category: None,
+            })
+            .unwrap();
+        storage.increment_template_use_count(template_id).unwrap();
+
+        storage.flush();
+        drop(storage);
+
+        let reloaded = Storage::open_at(path).unwrap();
+        let template = reloaded.get_template(template_id).expect("模板应被读回");
+        assert_eq!(template.name, "模板A-已改名");
+        assert_eq!(template.topic, "test/topic");
+        assert_eq!(template.payload, "DEADBEEF");
+        assert_eq!(template.payload_type, "hex");
+        assert_eq!(template.qos, 2);
+        assert!(template.retain);
+        assert_eq!(template.use_count, 1);
+        assert!(template.last_used_at.is_some());
+
+        // 按 server 过滤的读取在重载后仍然正确
+        let server1 = reloaded.get_templates_json(1).unwrap();
+        assert_eq!(server1.as_array().unwrap().len(), 1);
+        let server2 = reloaded.get_templates_json(2).unwrap();
+        assert_eq!(server2.as_array().unwrap().len(), 1);
+        assert_eq!(reloaded.get_template_categories(1), vec!["默认".to_string()]);
+    }
+
+    #[test]
+    fn ids_keep_increasing_after_reload() {
+        let (_dir, path) = temp_data_path();
+        let storage = Storage::open_at(path.clone()).unwrap();
+        let first_id = storage.create_server(sample_server("第一个")).unwrap();
+        storage.delete_server(first_id).unwrap();
+        storage.flush();
+        drop(storage);
+
+        let reloaded = Storage::open_at(path).unwrap();
+        let second_id = reloaded.create_server(sample_server("第二个")).unwrap();
+        assert!(
+            second_id > first_id,
+            "重载后新建的 ID 不应与已用过的 ID 冲突：{} vs {}",
+            second_id,
+            first_id
+        );
+    }
+
+    /// flush() 必须无条件落盘：脏标记已被后台线程取走（swap 为 false）时，
+    /// 退出前的 flush 仍要把内存数据写到磁盘，否则最后一次修改丢失。
+    #[test]
+    fn flush_writes_even_when_dirty_flag_already_consumed() {
+        let (_dir, path) = temp_data_path();
+        let storage = Storage::open_at(path.clone()).unwrap();
+        storage.create_server(sample_server("退出前的最后一次修改")).unwrap();
+
+        // 第一次 flush 后脏标记已被消费，等价于"后台线程刚 swap 完"的状态
+        storage.flush();
+        assert!(path.exists());
+
+        // 删掉文件模拟"脏标记已取走但写盘尚未完成"，此时退出前的 flush 必须重新落盘
+        fs::remove_file(&path).unwrap();
+        storage.flush();
+        assert!(path.exists(), "flush() 检查脏标记会跳过落盘，导致最后一次修改丢失");
+
+        let reloaded = Storage::open_at(path).unwrap();
+        assert_eq!(server_count(&reloaded), 1);
+        assert_eq!(
+            reloaded.get_server(1).unwrap().name,
+            "退出前的最后一次修改"
+        );
+    }
+
+    #[test]
+    fn corrupt_data_file_is_backed_up_and_storage_starts_empty() {
+        let (dir, path) = temp_data_path();
+        let corrupt = "servers: [unclosed\nnext_server_id: \"not-a-number\"\n";
+        fs::write(&path, corrupt).unwrap();
+
+        let storage = Storage::open_at(path.clone()).unwrap();
+        assert_eq!(server_count(&storage), 0, "损坏文件应以空数据启动");
+
+        let backups = corrupt_backups(dir.path());
+        assert_eq!(backups.len(), 1, "损坏文件应被备份为 data.corrupt-*，实际：{:?}", backups);
+        let backup_content = fs::read_to_string(dir.path().join(&backups[0])).unwrap();
+        assert_eq!(backup_content, corrupt, "备份内容应与损坏原文一致");
+
+        // 损坏恢复后仍可正常写入并落盘
+        storage.create_server(sample_server("恢复后新建")).unwrap();
+        storage.flush();
+        let reloaded = Storage::open_at(path).unwrap();
+        assert_eq!(server_count(&reloaded), 1);
     }
 }

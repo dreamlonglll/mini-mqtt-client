@@ -6,7 +6,7 @@ import { ElMessage } from "element-plus";
 import type { ConnectionStatus, MqttMessage, EnvVariable } from "@/types/mqtt";
 import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
-import { handleScriptError } from "@/utils/errorHandler";
+import { handleScriptError, handleMqttError } from "@/utils/errorHandler";
 import { computeDerived } from "@/utils/messageDerived";
 import { useAppStore } from "@/stores/app";
 import i18n from "@/i18n";
@@ -208,8 +208,8 @@ export const useMqttStore = defineStore("mqtt", () => {
         list = [];
         map.set(serverId, list);
       }
-      // 就地头插 + 截断（虚拟滚动的更新由 triggerRef 通知）
-      list.unshift(...newMessages);
+      // 就地头插 + 截断（批内反转，维持 index 0 = 最新的约定）
+      list.unshift(...newMessages.reverse());
       if (list.length > limit) {
         trimmedCount.value += list.length - limit;
         list.length = limit;
@@ -332,6 +332,10 @@ export const useMqttStore = defineStore("mqtt", () => {
           for (const msg of batch) {
             await handleReceivedMessage(msg);
           }
+        })
+        // 单条消息处理失败时链必须恢复，否则后续消息会被静默丢弃
+        .catch((error) => {
+          handleMqttError(error, true);
         })
         .finally(() => {
           receiveChainPending--;

@@ -38,6 +38,9 @@ pkcs8 = { version = "0.10", features = ["encryption", "pem"] }
 pem = "3"
 base64 = "0.22"
 
+[dev-dependencies]
+tempfile = "3"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

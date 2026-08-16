@@ -3,7 +3,8 @@ import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { Subscription, UpdateSubscriptionRequest } from "@/types/mqtt";
 import { validateSubscribeTopic } from "@/utils/mqttErrorHandler";
-import { useEnvStore } from "@/stores/env";
+import { useMqttStore } from "@/stores/mqtt";
+import { replaceEnvVariables } from "@/utils/envReplacer";
 
 export const useSubscriptionStore = defineStore("subscription", () => {
   const subscriptions = ref<Map<number, Subscription[]>>(new Map());
@@ -26,13 +27,11 @@ export const useSubscriptionStore = defineStore("subscription", () => {
   }
 
   async function addSubscription(serverId: number, topic: string, qos: number) {
-    // 获取环境变量并替换 topic 中的变量
-    const envStore = useEnvStore();
-    if (envStore.variables.length === 0) {
-      await envStore.loadVariables(serverId);
-    }
-    const processedTopic = envStore.replaceVariables(topic);
-    
+    // 获取本 server 的环境变量并替换 topic 中的变量
+    const envVariables = await useMqttStore().getCachedEnvVariables(serverId);
+    const processedTopic = replaceEnvVariables(topic, envVariables);
+
+
     // 验证订阅 Topic（使用替换后的 topic）
     const validation = validateSubscribeTopic(processedTopic);
     if (!validation.valid) {
