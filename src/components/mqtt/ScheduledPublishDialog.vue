@@ -215,11 +215,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Position, Loading, SuccessFilled } from '@element-plus/icons-vue'
 import { useTemplateStore, type CommandTemplate } from '@/stores/template'
-import { useMqttStore } from '@/stores/mqtt'
-import { useMessageStore } from '@/stores/message'
-import { ScriptEngine } from '@/utils/scriptEngine'
-import { replaceEnvVariables } from '@/utils/envReplacer'
-import { handleScriptError } from '@/utils/errorHandler'
+import { usePublishPipeline } from '@/composables/usePublishPipeline'
 
 const { t } = useI18n()
 
@@ -234,8 +230,7 @@ const emit = defineEmits<{
 }>()
 
 const templateStore = useTemplateStore()
-const mqttStore = useMqttStore()
-const messageStore = useMessageStore()
+const { publish } = usePublishPipeline()
 
 // 对话框可见性
 const dialogVisible = computed({
@@ -448,61 +443,29 @@ async function publishNext() {
   currentCommand.value = command
   
   try {
-    // 替换本 server 的环境变量
-    const envVariables = await mqttStore.getCachedEnvVariables(props.serverId)
-    const processedTopic = replaceEnvVariables(command.topic, envVariables)
-    let processedPayload = replaceEnvVariables(command.payload, envVariables)
+    // 与手动发布共用同一条发布管线：变量替换 → 脚本 → 发布（HEX 由 Rust 解码）→ 写历史 → UI 入队
+    const result = await publish({
+      serverId: props.serverId,
+      topic: command.topic,
+      payload: command.payload,
+      qos: command.qos,
+      retain: command.retain,
+      format: command.payload_type as 'json' | 'hex' | 'text',
+    })
 
-    // 应用发送前处理脚本（复用 mqttStore 的脚本缓存，定时高频发布不再每条走 IPC）
-    try {
-      const scripts = await mqttStore.getCachedScripts(props.serverId, 'before_publish')
-      if (scripts.length > 0) {
-        processedPayload = await ScriptEngine.executeBeforePublish(
-          scripts,
-          processedPayload,
-          processedTopic,
-          envVariables
-        )
-      }
-    } catch (e: any) {
-      // 脚本失败则中止本条发送，未处理的原始 payload 不能发出
-      handleScriptError(e)
-      mqttStore.addPublishMessage(props.serverId, {
-        topic: processedTopic,
-        payload: command.payload,
-        qos: command.qos,
-        retain: command.retain,
-        scriptError: e?.message || String(e),
-        payload_type: command.payload_type,
-      })
-      throw e
+    if (result.success) {
+      successCount.value++
+      addLog(result.topic, result.payload, 'success')
+    } else {
+      // 脚本失败或后端发布失败：本条计为失败，未处理的原文不会被发出
+      failCount.value++
+      addLog(command.topic, command.payload, 'error', result.error)
     }
-
-    // 与手动发布走同一条后端管线：HEX 由 Rust 侧解码，并写入发布历史
-    await messageStore.publishMessage(props.serverId, {
-      topic: processedTopic,
-      payload: processedPayload,
-      qos: command.qos,
-      retain: command.retain,
-      format: command.payload_type,
-    })
-
-    // UI 消息列表携带 payload 类型，避免 HEX 被当作文本展示
-    mqttStore.addPublishMessage(props.serverId, {
-      topic: processedTopic,
-      payload: processedPayload,
-      qos: command.qos,
-      retain: command.retain,
-      payload_type: command.payload_type,
-    })
-
-    successCount.value++
-    addLog(processedTopic, processedPayload, 'success')
   } catch (error: any) {
     failCount.value++
     addLog(command.topic, command.payload, 'error', error?.message)
   }
-  
+
   sentCount.value++
   currentIndex.value++
   

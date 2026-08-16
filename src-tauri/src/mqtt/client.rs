@@ -181,8 +181,10 @@ impl MqttManager {
         let mut initial_attempts: u32 = 0;
         let mut reconnect_delay = INITIAL_RECONNECT_DELAY;
         let mut batch: Vec<ReceivedMessage> = Vec::new();
-        let mut flush_timer = tokio::time::interval(BATCH_INTERVAL);
-        flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // 攒批 flush 定时器：仅在批非空时参与 select，并在本批第一条消息到达时才 arm，
+        // 消除空闲连接上每 30ms 一次的无谓唤醒（攒批语义仍是 50 条 / 30ms）
+        let flush_timer = tokio::time::sleep(BATCH_INTERVAL);
+        tokio::pin!(flush_timer);
 
         loop {
             tokio::select! {
@@ -192,7 +194,7 @@ impl MqttManager {
                     Self::emit_state_if_current(&app_handle, &clients, server_id, generation, "disconnected", None);
                     break;
                 }
-                _ = flush_timer.tick() => {
+                _ = &mut flush_timer, if !batch.is_empty() => {
                     Self::flush_batch(&app_handle, &mut batch);
                 }
                 event = eventloop.poll() => {
@@ -225,6 +227,7 @@ impl MqttManager {
                             } else {
                                 &publish.payload[..]
                             };
+                            let batch_was_empty = batch.is_empty();
                             batch.push(ReceivedMessage {
                                 server_id,
                                 topic: publish.topic,
@@ -235,6 +238,12 @@ impl MqttManager {
                                 original_length,
                                 truncated,
                             });
+                            // 本批第一条消息到达时才重置定时器，保证等待上限为 BATCH_INTERVAL
+                            if batch_was_empty {
+                                flush_timer
+                                    .as_mut()
+                                    .reset(tokio::time::Instant::now() + BATCH_INTERVAL);
+                            }
                             if batch.len() >= BATCH_MAX {
                                 Self::flush_batch(&app_handle, &mut batch);
                             }

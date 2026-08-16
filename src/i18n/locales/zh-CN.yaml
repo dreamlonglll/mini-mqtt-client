@@ -129,6 +129,8 @@ messages:
   copied: 消息已复制
   truncated: 已截断
   truncatedTip: 消息过大已截断，原始大小 {size} 字节
+  hexPartial: 仅显示前 {shown} 字节，共 {total} 字节
+  hexLoadMore: 加载更多
 
 template:
   title: 命令模板
@@ -183,6 +185,7 @@ script:
   deleteSuccess: 脚本已删除
   testSuccess: 测试通过
   testError: 测试失败
+  syntaxError: 脚本语法错误
   functions: 可用函数
   importJs: 导入 JS
   codeHint:

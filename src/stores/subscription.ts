@@ -97,18 +97,25 @@ export const useSubscriptionStore = defineStore("subscription", () => {
     oldTopic: string,
     request: UpdateSubscriptionRequest
   ) {
-    // 如果 topic 改变了，需要验证新 topic
+    // 如果 topic 改变了：先按本 Server 的环境变量替换（与 addSubscription 一致的入库前替换语义），
+    // 再验证替换后的 topic
+    let payload = request;
     if (request.topic) {
-      const validation = validateSubscribeTopic(request.topic);
+      const envVariables = await useMqttStore().getCachedEnvVariables(serverId);
+      const processedTopic = replaceEnvVariables(request.topic, envVariables);
+
+      const validation = validateSubscribeTopic(processedTopic);
       if (!validation.valid) {
         throw new Error(validation.error || "Topic 格式无效");
       }
+
+      payload = { ...request, topic: processedTopic };
     }
 
     const result = await invoke<Subscription>("update_subscription", {
       serverId,
       oldTopic,
-      request,
+      request: payload,
     });
 
     const serverSubs = subscriptions.value.get(serverId) || [];

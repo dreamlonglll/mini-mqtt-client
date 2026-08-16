@@ -90,13 +90,11 @@ import { useI18n } from "vue-i18n";
 import { Promotion, Position, Star, FolderOpened, Timer, Loading } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { useServerStore } from "@/stores/server";
-import { useMessageStore } from "@/stores/message";
 import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
-import { ScriptEngine } from "@/utils/scriptEngine";
-import { replaceEnvVariables } from "@/utils/envReplacer";
+import { usePublishPipeline } from "@/composables/usePublishPipeline";
+import { isValidHex } from "@/utils/encoding";
 import { validatePublishTopic, handleMqttError } from "@/utils/mqttErrorHandler";
-import { handleScriptError } from "@/utils/errorHandler";
 
 const { t } = useI18n();
 
@@ -113,9 +111,9 @@ const formatOptions = [
 ];
 
 const serverStore = useServerStore();
-const messageStore = useMessageStore();
 const mqttStore = useMqttStore();
 const appStore = useAppStore();
+const { publish } = usePublishPipeline();
 
 const publishing = ref(false);
 
@@ -211,13 +209,10 @@ const handlePublish = async () => {
     return;
   }
 
-  // 验证格式
-  if (payloadFormat.value === "hex") {
-    const hex = publishData.payload.replace(/\s/g, "");
-    if (!/^[0-9A-Fa-f]*$/.test(hex)) {
-      ElMessage.warning(t('errors.hexInvalid'));
-      return;
-    }
+  // 验证格式（字符集与偶数长度一并检查，避免奇数长度 HEX 被后端拒绝）
+  if (payloadFormat.value === "hex" && !isValidHex(publishData.payload)) {
+    ElMessage.warning(t('errors.hexInvalid'));
+    return;
   }
 
   if (payloadFormat.value === "json" && publishData.payload.trim()) {
@@ -231,60 +226,24 @@ const handlePublish = async () => {
 
   publishing.value = true;
   try {
-    // 替换本 server 的环境变量
-    const envVariables = await mqttStore.getCachedEnvVariables(serverId);
-    const processedTopic = replaceEnvVariables(publishData.topic, envVariables);
-    let processedPayload = replaceEnvVariables(publishData.payload, envVariables);
-    let scriptError: string | undefined = undefined;
-    
-    // 应用发送前处理脚本（复用 mqttStore 的脚本缓存，避免每次发布都走 IPC）
-    try {
-      const scripts = await mqttStore.getCachedScripts(serverId, "before_publish");
-      if (scripts.length > 0) {
-        processedPayload = await ScriptEngine.executeBeforePublish(
-          scripts, 
-          processedPayload,
-          processedTopic,
-          envVariables
-        );
-      }
-    } catch (error: any) {
-      // 记录脚本错误
-      scriptError = error?.message || String(error);
-      // 使用脚本错误处理器（会写入日志）
-      handleScriptError(error);
-      
-      // 将原始消息添加到列表中（带错误标记，不实际发布）
-      mqttStore.addPublishMessage(serverId, {
-        topic: processedTopic,
-        payload: publishData.payload,
-        qos: publishData.qos as 0 | 1 | 2,
-        retain: publishData.retain,
-        scriptError: scriptError,
-        payload_type: payloadFormat.value,
-      });
-      
-      ElMessage.error(`${t('script.testError')}: ${scriptError}`);
-      return;
-    }
-
-    // 调用 messageStore 发布消息（保存到数据库）
-    await messageStore.publishMessage(serverId, {
-      topic: processedTopic,
-      payload: processedPayload,
-      qos: publishData.qos,
+    // 变量替换、脚本、发布、写历史、UI 入队全部走统一发布管线
+    const result = await publish({
+      serverId,
+      topic: publishData.topic,
+      payload: publishData.payload,
+      qos: publishData.qos as 0 | 1 | 2,
       retain: publishData.retain,
       format: payloadFormat.value,
     });
 
-    // 同时添加到 mqttStore 的消息列表（用于实时显示）
-    mqttStore.addPublishMessage(serverId, {
-      topic: processedTopic,
-      payload: processedPayload,
-      qos: publishData.qos as 0 | 1 | 2,
-      retain: publishData.retain,
-      payload_type: payloadFormat.value,
-    });
+    if (!result.success) {
+      if (result.scriptError) {
+        ElMessage.error(`${t('script.testError')}: ${result.scriptError}`);
+      } else {
+        handleMqttError(result.error || "");
+      }
+      return;
+    }
 
     ElMessage.success(t('success.published'));
   } catch (error: any) {

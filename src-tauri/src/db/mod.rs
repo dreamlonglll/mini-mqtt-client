@@ -15,6 +15,28 @@ use tauri::Manager;
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(1000);
 /// 每个 server 内存中保留的最大消息条数
 const MAX_MESSAGES_PER_SERVER: usize = 1000;
+/// 发布历史中单条 payload 保留的最大字节数（与接收方向的截断策略一致）
+const MAX_HISTORY_PAYLOAD: usize = 64 * 1024;
+
+/// 截断过大的发布历史 payload
+///
+/// 反复发布大 payload 会让常驻内存持续膨胀；超限时保留前 64KB 并在尾部追加标记，
+/// 不新增模型字段，前后端契约保持不变。
+fn truncate_history_payload(payload: String) -> String {
+    if payload.len() <= MAX_HISTORY_PAYLOAD {
+        return payload;
+    }
+    let original_len = payload.len();
+    // 回退到最近的 UTF-8 字符边界，避免切出非法字符串
+    let mut end = MAX_HISTORY_PAYLOAD;
+    while end > 0 && !payload.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut truncated = payload;
+    truncated.truncate(end);
+    truncated.push_str(&format!("...[已截断，原始 {} 字节]", original_len));
+    truncated
+}
 
 /// 持久化失败的通知回调
 ///
@@ -389,6 +411,8 @@ impl Storage {
     pub fn create_message(&self, mut msg: MessageHistory) -> Result<MessageHistory, String> {
         msg.id = Some(self.next_message_id.fetch_add(1, Ordering::Relaxed) + 1);
         msg.created_at = Some(chrono::Utc::now().to_rfc3339());
+        // 超大 payload 只留前 64KB + 截断标记，防止反复发布导致常驻内存膨胀
+        msg.payload = msg.payload.map(truncate_history_payload);
         let result = msg.clone();
 
         let mut messages = self.messages.write();
@@ -1114,5 +1138,76 @@ env_variables: []
             "通知消息应为中文：{}",
             messages[0]
         );
+    }
+
+    fn sample_message(server_id: i64, payload: String) -> MessageHistory {
+        MessageHistory {
+            id: None,
+            server_id,
+            topic: "test/topic".to_string(),
+            payload: Some(payload),
+            payload_format: Some("text".to_string()),
+            direction: "publish".to_string(),
+            qos: 0,
+            retain: false,
+            created_at: None,
+        }
+    }
+
+    /// 超长发布 payload 写入后读回应为截断版并带中文标记
+    #[test]
+    fn oversized_publish_payload_is_truncated_with_marker() {
+        let (_dir, path) = temp_data_path();
+        let storage = open(path);
+
+        let original_len = MAX_HISTORY_PAYLOAD + 5000;
+        let payload = "a".repeat(original_len);
+        storage.create_message(sample_message(1, payload)).unwrap();
+
+        let stored = storage.get_messages(1, 10, 0);
+        assert_eq!(stored.len(), 1);
+        let content = stored[0].payload.clone().unwrap();
+
+        assert!(content.len() < original_len, "超长 payload 应被截断");
+        assert!(
+            content.starts_with(&"a".repeat(MAX_HISTORY_PAYLOAD)),
+            "截断应保留前 {} 字节原文",
+            MAX_HISTORY_PAYLOAD
+        );
+        assert!(
+            content.ends_with(&format!("...[已截断，原始 {} 字节]", original_len)),
+            "截断内容尾部应带中文标记：{}",
+            &content[content.len().saturating_sub(60)..]
+        );
+    }
+
+    /// 未超限的 payload 原样保留
+    #[test]
+    fn normal_publish_payload_is_kept_intact() {
+        let (_dir, path) = temp_data_path();
+        let storage = open(path);
+
+        storage
+            .create_message(sample_message(1, "{\"a\":1}".to_string()))
+            .unwrap();
+
+        let stored = storage.get_messages(1, 10, 0);
+        assert_eq!(stored[0].payload.as_deref(), Some("{\"a\":1}"));
+    }
+
+    /// 截断点落在多字节字符中间时不能切出非法 UTF-8
+    #[test]
+    fn truncation_respects_utf8_char_boundary() {
+        let (_dir, path) = temp_data_path();
+        let storage = open(path);
+
+        // 每个中文字符 3 字节，64KB 不是 3 的整数倍，截断点必然落在字符中间
+        let payload = "中".repeat(MAX_HISTORY_PAYLOAD);
+        storage.create_message(sample_message(1, payload)).unwrap();
+
+        let content = storage.get_messages(1, 10, 0)[0].payload.clone().unwrap();
+        assert!(content.contains("已截断"));
+        // 能取到内容本身即说明是合法 UTF-8（String 保证），再确认未出现替换字符
+        assert!(!content.contains('\u{FFFD}'));
     }
 }

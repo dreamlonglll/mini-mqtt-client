@@ -1,5 +1,12 @@
 import type { Script } from "@/stores/script";
 import { errorHandler, ErrorType } from "@/utils/errorHandler";
+import { replaceEnvVariables } from "@/utils/envReplacer";
+import {
+  base64ToBytes,
+  bytesToBase64,
+  bytesToHex,
+  hexToBytes,
+} from "@/utils/encoding";
 
 // CRC32 查找表（模块级只生成一次）
 const CRC32_TABLE = (() => {
@@ -33,41 +40,34 @@ class CryptoUtils {
   }
 
   /**
-   * Uint8Array 转 Base64
+   * Uint8Array 转 Base64（委托 encoding 工具的唯一实现）
    */
   static bytesToBase64(bytes: Uint8Array): string {
-    // 分块拼接，避免 String.fromCharCode(...bytes) 在大 payload 下超出参数上限抛 RangeError
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-    }
-    return btoa(binary);
+    return bytesToBase64(bytes);
   }
 
   /**
-   * Base64 转 Uint8Array
+   * Base64 转 Uint8Array（委托 encoding 工具的唯一实现）
    */
   static base64ToBytes(base64: string): Uint8Array {
-    return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    return base64ToBytes(base64);
   }
 
   /**
-   * Uint8Array 转 Hex
+   * Uint8Array 转 Hex（委托 encoding 工具的唯一实现）
    */
   static bytesToHex(bytes: Uint8Array): string {
-    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    return bytesToHex(bytes);
   }
 
   /**
-   * Hex 转 Uint8Array
+   * Hex 转 Uint8Array（委托 encoding 工具的唯一实现）
+   *
+   * 注意：语义由宽松改为严格——奇数长度或含非法字符时抛错，
+   * 不再静默产生 NaN 字节。
    */
   static hexToBytes(hex: string): Uint8Array {
-    const bytes = new Uint8Array(hex.length / 2);
-    for (let i = 0; i < hex.length; i += 2) {
-      bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-    }
-    return bytes;
+    return hexToBytes(hex);
   }
 
   /**
@@ -584,11 +584,13 @@ type CompiledScript = (...args: any[]) => Promise<any>;
 const compiledScriptCache = new Map<string, CompiledScript>();
 const MAX_COMPILED_SCRIPTS = 100;
 
-function getCompiledScript(code: string): CompiledScript {
-  let fn = compiledScriptCache.get(code);
-  if (!fn) {
-    // 包装代码：如果定义了 process 函数，自动调用它并返回结果
-    const wrappedCode = `
+/**
+ * 包装用户脚本：定义了 process 函数就自动调用它并返回结果
+ *
+ * 编译与语法校验共用同一份包装，保证校验结果与实际执行一致。
+ */
+function wrapScriptSource(code: string): string {
+  return `
       "use strict";
       ${code}
       if (typeof process === 'function') {
@@ -596,15 +598,30 @@ function getCompiledScript(code: string): CompiledScript {
       }
       return payload;
     `;
-    fn = new AsyncFunction(
-      "payload",
-      "topic",
-      "env",
-      ...STATIC_SANDBOX_KEYS,
-      wrappedCode
-    ) as CompiledScript;
+}
+
+/** 用与执行完全一致的参数签名构造脚本函数 */
+function compileScript(code: string): CompiledScript {
+  return new AsyncFunction(
+    "payload",
+    "topic",
+    "env",
+    ...STATIC_SANDBOX_KEYS,
+    wrapScriptSource(code)
+  ) as CompiledScript;
+}
+
+function getCompiledScript(code: string): CompiledScript {
+  let fn = compiledScriptCache.get(code);
+  if (!fn) {
+    fn = compileScript(code);
     if (compiledScriptCache.size >= MAX_COMPILED_SCRIPTS) {
-      compiledScriptCache.clear();
+      // FIFO 淘汰：Map 天然按插入序迭代，只逐出最旧一条，
+      // 避免整表清空导致其余仍在高频使用的脚本全部重新编译
+      const oldestKey = compiledScriptCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        compiledScriptCache.delete(oldestKey);
+      }
     }
     compiledScriptCache.set(code, fn);
   }
@@ -698,15 +715,9 @@ export class ScriptEngine {
       // 方法：env.get("VAR_NAME")
       get: (name: string): string | undefined => envData[name],
       // 方法：env.replace(text) - 替换 {{var}} 占位符
-      replace: (text: string): string => {
-        if (!text) return text;
-        let result = text;
-        for (const [name, value] of Object.entries(envData)) {
-          const regex = new RegExp(`\\{\\{${name}\\}\\}`, 'g');
-          result = result.replace(regex, value);
-        }
-        return result;
-      },
+      // 委托全局唯一的替换实现：单遍替换、变量名不参与正则拼接，
+      // 与发布 / 订阅路径行为完全一致
+      replace: (text: string): string => replaceEnvVariables(text, envData),
       // 方法：env.all() - 获取所有环境变量
       all: (): Array<{ name: string; value: string }> => {
         return Object.entries(envData).map(([name, value]) => ({ name, value }));
@@ -748,16 +759,33 @@ export class ScriptEngine {
   }
 
   /**
+   * 编译缓存当前条目数（诊断 / 测试用）
+   */
+  static get compileCacheSize(): number {
+    return compiledScriptCache.size;
+  }
+
+  /**
+   * 某段脚本代码是否仍在编译缓存中（诊断 / 测试用）
+   */
+  static isCompiled(code: string): boolean {
+    return compiledScriptCache.has(code);
+  }
+
+  /**
    * 验证脚本语法
+   *
+   * 用与实际执行完全相同的 AsyncFunction 构造器与参数签名，
+   * 否则含顶层 await 的合法脚本会被同步 Function 误报为语法错误。
    * @param code 脚本代码
    * @returns 错误信息或 null
    */
   static validateScript(code: string): string | null {
     try {
-      new Function("payload", "topic", `"use strict"; ${code}`);
+      compileScript(code);
       return null;
     } catch (error: any) {
-      return error.message || "脚本语法错误";
+      return error?.message || "脚本语法错误";
     }
   }
 }

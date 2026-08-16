@@ -11,7 +11,7 @@
       <div v-if="preview" class="hex-preview-simple">
         <span>{{ simpleHexPreview }}</span>
       </div>
-      <!-- 详情模式：显示完整的 HEX + ASCII 展示 -->
+      <!-- 详情模式：显示完整的 HEX + ASCII 展示（按需增量渲染，避免大 payload 一次性生成数万 DOM 节点） -->
       <div v-else class="hex-display">
         <div class="hex-row" v-for="(row, index) in hexRows" :key="index">
           <span class="offset">{{ formatOffset(index * 16) }}</span>
@@ -25,6 +25,14 @@
           </span>
           <span class="ascii">{{ row.ascii }}</span>
         </div>
+        <div v-if="hasMoreHex" class="hex-more">
+          <span class="hex-more-hint">
+            {{ $t('messages.hexPartial', { shown: hexVisibleBytes, total: payloadBytes.length }) }}
+          </span>
+          <el-button text type="primary" size="small" @click="loadMoreHex">
+            {{ $t('messages.hexLoadMore') }}
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -36,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { MqttMessage } from "@/types/mqtt";
 import { getDecodedText, getDisplayFormat } from "@/utils/messageDerived";
 
@@ -46,6 +54,8 @@ type PayloadFormat = "json" | "binary" | "text";
 // 基本抵消虚拟滚动收益；完整内容在详情弹窗查看
 const PREVIEW_MAX_CHARS = 300;
 const PREVIEW_MAX_HEX_BYTES = 64;
+// 详情模式 HEX 视图每次渲染的字节数（1024 字节 = 64 行）
+const HEX_PAGE_BYTES = 1024;
 
 const props = defineProps<{
   payload: string | Uint8Array | undefined;
@@ -155,9 +165,27 @@ const displayPayloadWithLineBreaks = computed(() => {
   return str.replace(/\r?\n/g, '↵$&');
 });
 
-// HEX 行数据
+// 详情模式 HEX 视图当前已渲染的字节数（切换消息时重置）
+const hexVisibleBytes = ref(HEX_PAGE_BYTES);
+
+watch(
+  () => payloadBytes.value,
+  () => {
+    hexVisibleBytes.value = HEX_PAGE_BYTES;
+  }
+);
+
+// 是否还有未渲染的字节
+const hasMoreHex = computed(() => payloadBytes.value.length > hexVisibleBytes.value);
+
+// 再多渲染一页
+function loadMoreHex() {
+  hexVisibleBytes.value += HEX_PAGE_BYTES;
+}
+
+// HEX 行数据（只取当前可见的字节，防止 64KB payload 一次生成数万节点）
 const hexRows = computed(() => {
-  const bytes = payloadBytes.value;
+  const bytes = payloadBytes.value.subarray(0, hexVisibleBytes.value);
   const rows: { bytes: string[]; ascii: string }[] = [];
 
   for (let i = 0; i < bytes.length; i += 16) {
@@ -249,6 +277,20 @@ defineExpose({
 
 .hex-display {
   overflow-x: auto;
+}
+
+.hex-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  margin-top: 6px;
+  border-top: 1px dashed var(--app-border-color);
+
+  .hex-more-hint {
+    color: var(--app-text-secondary);
+    font-size: 12px;
+  }
 }
 
 .hex-row {

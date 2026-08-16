@@ -173,6 +173,7 @@ import { useI18n } from 'vue-i18n'
 import { Plus, Delete, Document, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useScriptStore, type Script, type ScriptType } from '@/stores/script'
+import { ScriptEngine } from '@/utils/scriptEngine'
 import { open } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
 
@@ -326,6 +327,13 @@ async function handleSave() {
   }
   if (!formData.value.code.trim()) {
     ElMessage.warning(t('script.code'))
+    return
+  }
+
+  // 语法校验：用与实际执行一致的 AsyncFunction 构造器，含顶层 await 的脚本不会被误报
+  const syntaxError = ScriptEngine.validateScript(formData.value.code)
+  if (syntaxError) {
+    ElMessage.error(`${t('script.syntaxError')}: ${syntaxError}`)
     return
   }
 

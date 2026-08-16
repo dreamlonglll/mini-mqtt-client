@@ -129,6 +129,8 @@ messages:
   copied: Message copied
   truncated: Truncated
   truncatedTip: 'Payload truncated, original size: {size} bytes'
+  hexPartial: Showing first {shown} of {total} bytes
+  hexLoadMore: Load more
 
 template:
   title: Command Templates
@@ -183,6 +185,7 @@ script:
   deleteSuccess: Script deleted
   testSuccess: Test passed
   testError: Test failed
+  syntaxError: Script syntax error
   functions: Available Functions
   importJs: Import JS
   codeHint:

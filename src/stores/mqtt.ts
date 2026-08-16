@@ -8,6 +8,7 @@ import { ScriptEngine } from "@/utils/scriptEngine";
 import type { Script } from "@/stores/script";
 import { handleScriptError, handleMqttError } from "@/utils/errorHandler";
 import { computeDerived } from "@/utils/messageDerived";
+import { base64ToBytes, hexToBytes } from "@/utils/encoding";
 import { useAppStore } from "@/stores/app";
 import { useSubscriptionStore } from "@/stores/subscription";
 import i18n from "@/i18n";
@@ -31,16 +32,6 @@ interface ReceivedMessage {
   original_length: number;
   /** payload 是否被后端截断 */
   truncated: boolean;
-}
-
-// base64 字符串解码为 Uint8Array
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
 }
 
 // 脚本缓存条目（缓存 Promise 而非结果，TTL 到期瞬间的并发请求共享同一次 IPC，避免惊群）
@@ -481,16 +472,6 @@ export const useMqttStore = defineStore("mqtt", () => {
     triggerRef(messagesByServer);
   };
 
-  // 将 HEX 字符串转换为字节数组
-  const hexToBytes = (hex: string): Uint8Array => {
-    const cleanHex = hex.replace(/\s/g, "");
-    const bytes = new Uint8Array(cleanHex.length / 2);
-    for (let i = 0; i < cleanHex.length; i += 2) {
-      bytes[i / 2] = parseInt(cleanHex.substring(i, i + 2), 16);
-    }
-    return bytes;
-  };
-
   // 添加发布消息到列表（用于UI显示）
   const addPublishMessage = (
     serverId: number,
@@ -507,7 +488,13 @@ export const useMqttStore = defineStore("mqtt", () => {
     let payloadBytes: Uint8Array;
     if (msg.payload_type === "hex") {
       // HEX 格式：将 HEX 字符串转换为实际字节
-      payloadBytes = hexToBytes(msg.payload);
+      try {
+        payloadBytes = hexToBytes(msg.payload);
+      } catch {
+        // 非法 HEX（例如脚本失败时展示的未替换原文）按文本展示，
+        // UI 入队不能因为展示用的解码失败而抛错
+        payloadBytes = new TextEncoder().encode(msg.payload);
+      }
     } else {
       // 其他格式：直接用 TextEncoder 编码
       payloadBytes = new TextEncoder().encode(msg.payload);
