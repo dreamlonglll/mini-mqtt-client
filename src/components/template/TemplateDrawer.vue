@@ -229,7 +229,10 @@ async function handleCommand(command: string, template: CommandTemplate) {
           {
             inputValue: `${template.name} - Copy`,
             inputPattern: /\S+/,
-            inputErrorMessage: t('errors.inputName')
+            inputErrorMessage: t('errors.inputName'),
+            // API 式弹窗不在 el-config-provider 的作用范围内，按钮文案需显式给出
+            confirmButtonText: t('common.confirm'),
+            cancelButtonText: t('common.cancel')
           }
         )
         await templateStore.duplicateTemplate(template.id!, newName)

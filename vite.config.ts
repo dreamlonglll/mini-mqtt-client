@@ -38,6 +38,32 @@ export default defineConfig(async () => ({
     },
   },
 
+  build: {
+    // 只面向 Tauri 内置的 WebView2（Windows 上为常青 Chromium），
+    // 不必为浏览器兼容性做降级转译
+    target: "chrome105",
+    rollupOptions: {
+      output: {
+        // 把体积最大的第三方库从应用代码里分出来，
+        // 避免按需加载的对话框 chunk 重复打包组件库
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("element-plus")) return "element-plus";
+          if (id.includes("vue-virtual-scroller")) return "virtual-scroller";
+          if (
+            id.includes("@vue/") ||
+            id.includes("/vue/") ||
+            id.includes("pinia") ||
+            id.includes("vue-i18n") ||
+            id.includes("@intlify")
+          ) {
+            return "vue-vendor";
+          }
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

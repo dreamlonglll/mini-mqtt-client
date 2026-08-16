@@ -1,86 +1,97 @@
 <template>
-  <AppLayout @open-templates="handleOpenTemplates" @open-scripts="handleOpenScripts" @open-env="handleOpenEnv" @settings="handleOpenSettings">
-    <!-- 消息调试视图 -->
-    <MainContent 
-      :scheduled-publish-running="isScheduledPublishRunning"
-      @save-template="handleSaveTemplate" 
-      @open-templates="handleOpenTemplates"
-      @scheduled-publish="handleScheduledPublish"
+  <!-- 组件按需引入后不再全局 app.use(ElementPlus)，组件库语言改由这里下发 -->
+  <el-config-provider :locale="elementLocale">
+    <AppLayout @open-templates="handleOpenTemplates" @open-scripts="handleOpenScripts" @open-env="handleOpenEnv" @settings="handleOpenSettings">
+      <!-- 消息调试视图 -->
+      <MainContent
+        :scheduled-publish-running="isScheduledPublishRunning"
+        @save-template="handleSaveTemplate"
+        @open-templates="handleOpenTemplates"
+        @scheduled-publish="handleScheduledPublish"
+      />
+    </AppLayout>
+
+    <!-- 模板管理抽屉 -->
+    <el-drawer
+      v-model="showTemplateDrawer"
+      :title="$t('template.drawerTitle')"
+      direction="rtl"
+      size="480px"
+      :close-on-click-modal="true"
+    >
+      <TemplateDrawer
+        v-if="activeServerId"
+        :server-id="activeServerId"
+        @use="handleUseTemplate"
+      />
+    </el-drawer>
+
+    <!-- 保存模板对话框 -->
+    <TemplateDialog
+      v-if="saveTemplateDialogMounted"
+      v-model:visible="showSaveTemplateDialog"
+      :template="templateToSave"
+      :server-id="activeServerId ?? 0"
+      :categories="templateCategories"
+      @saved="handleTemplateSaved"
     />
-  </AppLayout>
 
-  <!-- 模板管理抽屉 -->
-  <el-drawer
-    v-model="showTemplateDrawer"
-    :title="$t('template.drawerTitle')"
-    direction="rtl"
-    size="480px"
-    :close-on-click-modal="true"
-  >
-    <TemplateDrawer 
-      v-if="activeServerId"
-      :server-id="activeServerId"
-      @use="handleUseTemplate"
+    <!-- 定时发布对话框 -->
+    <ScheduledPublishDialog
+      v-if="scheduledPublishDialogMounted"
+      v-model:visible="showScheduledPublishDialog"
+      :server-id="activeServerId ?? 0"
+      @running-change="handleScheduledPublishRunningChange"
     />
-  </el-drawer>
 
-  <!-- 保存模板对话框 -->
-  <TemplateDialog
-    v-model:visible="showSaveTemplateDialog"
-    :template="templateToSave"
-    :server-id="activeServerId ?? 0"
-    :categories="templateCategories"
-    @saved="handleTemplateSaved"
-  />
+    <!-- 系统设置对话框 -->
+    <SettingsDialog v-if="settingsDialogMounted" v-model:visible="showSettingsDialog" />
 
-  <!-- 定时发布对话框 -->
-  <ScheduledPublishDialog
-    v-model:visible="showScheduledPublishDialog"
-    :server-id="activeServerId ?? 0"
-    @running-change="handleScheduledPublishRunningChange"
-  />
-
-  <!-- 系统设置对话框 -->
-  <SettingsDialog v-model:visible="showSettingsDialog" />
-
-  <!-- 脚本管理对话框 -->
-  <ScriptDialog
-    v-model:visible="showScriptDialog"
-    :server-id="activeServerId ?? 0"
-  />
-
-  <!-- 环境变量抽屉 -->
-  <el-drawer
-    v-model="showEnvDrawer"
-    :title="$t('env.drawerTitle')"
-    direction="rtl"
-    size="480px"
-    :close-on-click-modal="true"
-  >
-    <EnvDrawer 
-      v-if="activeServerId"
-      :server-id="activeServerId"
+    <!-- 脚本管理对话框 -->
+    <ScriptDialog
+      v-if="scriptDialogMounted"
+      v-model:visible="showScriptDialog"
+      :server-id="activeServerId ?? 0"
     />
-  </el-drawer>
+
+    <!-- 环境变量抽屉 -->
+    <el-drawer
+      v-model="showEnvDrawer"
+      :title="$t('env.drawerTitle')"
+      direction="rtl"
+      size="480px"
+      :close-on-click-modal="true"
+    >
+      <EnvDrawer
+        v-if="activeServerId"
+        :server-id="activeServerId"
+      />
+    </el-drawer>
+  </el-config-provider>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, defineAsyncComponent } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import MainContent from "@/components/mqtt/MainContent.vue";
-import TemplateDrawer from "@/components/template/TemplateDrawer.vue";
-import TemplateDialog from "@/components/template/TemplateDialog.vue";
-import ScheduledPublishDialog from "@/components/mqtt/ScheduledPublishDialog.vue";
-import SettingsDialog from "@/components/settings/SettingsDialog.vue";
-import ScriptDialog from "@/components/script/ScriptDialog.vue";
-import EnvDrawer from "@/components/env/EnvDrawer.vue";
+import { useLazyDialog } from "@/composables/useLazyDialog";
 import { useAppStore } from "@/stores/app";
 import { useMqttStore } from "@/stores/mqtt";
 import { useServerStore } from "@/stores/server";
 import { useTemplateStore, type CommandTemplate } from "@/stores/template";
 import { ElMessage } from "element-plus";
+import zhCn from "element-plus/es/locale/lang/zh-cn";
+import en from "element-plus/es/locale/lang/en";
+
+// 以下弹窗与抽屉都只在用户主动打开时才需要，拆成独立 chunk 不进首屏
+const TemplateDrawer = defineAsyncComponent(() => import("@/components/template/TemplateDrawer.vue"));
+const EnvDrawer = defineAsyncComponent(() => import("@/components/env/EnvDrawer.vue"));
+const TemplateDialog = defineAsyncComponent(() => import("@/components/template/TemplateDialog.vue"));
+const ScheduledPublishDialog = defineAsyncComponent(() => import("@/components/mqtt/ScheduledPublishDialog.vue"));
+const SettingsDialog = defineAsyncComponent(() => import("@/components/settings/SettingsDialog.vue"));
+const ScriptDialog = defineAsyncComponent(() => import("@/components/script/ScriptDialog.vue"));
 
 const { t } = useI18n();
 
@@ -91,26 +102,42 @@ const templateStore = useTemplateStore();
 
 const activeServerId = computed(() => serverStore.activeServerId);
 const templateCategories = computed(() => templateStore.categories);
+// 组件库内置文案跟随应用语言（切换语言即时生效，无需重启）
+const elementLocale = computed(() => (appStore.actualLocale === "zh-CN" ? zhCn : en));
 
-// 模板管理抽屉
+// 抽屉的内容由 el-drawer 惰性渲染，首次打开时才会加载对应 chunk
 const showTemplateDrawer = ref(false);
+const showEnvDrawer = ref(false);
 
 // 保存模板对话框
-const showSaveTemplateDialog = ref(false);
+const {
+  mounted: saveTemplateDialogMounted,
+  visible: showSaveTemplateDialog,
+  open: openSaveTemplateDialog,
+} = useLazyDialog();
 const templateToSave = ref<CommandTemplate | null>(null);
 
 // 定时发布对话框
-const showScheduledPublishDialog = ref(false);
+const {
+  mounted: scheduledPublishDialogMounted,
+  visible: showScheduledPublishDialog,
+  open: openScheduledPublishDialog,
+} = useLazyDialog();
 const isScheduledPublishRunning = ref(false);
 
 // 系统设置对话框
-const showSettingsDialog = ref(false);
+const {
+  mounted: settingsDialogMounted,
+  visible: showSettingsDialog,
+  open: openSettingsDialog,
+} = useLazyDialog();
 
 // 脚本管理对话框
-const showScriptDialog = ref(false);
-
-// 环境变量抽屉
-const showEnvDrawer = ref(false);
+const {
+  mounted: scriptDialogMounted,
+  visible: showScriptDialog,
+  open: openScriptDialog,
+} = useLazyDialog();
 
 onMounted(() => {
   // 初始化主题
@@ -149,7 +176,7 @@ function handleSaveTemplate(data: { topic: string; payload: string; qos: number;
   
   // 加载分类列表
   templateStore.loadCategories(activeServerId.value);
-  showSaveTemplateDialog.value = true;
+  openSaveTemplateDialog();
 }
 
 // 模板保存成功
@@ -189,7 +216,7 @@ function handleScheduledPublish() {
     ElMessage.warning(t('errors.selectServer'));
     return;
   }
-  showScheduledPublishDialog.value = true;
+  openScheduledPublishDialog();
 }
 
 // 定时发布运行状态变化
@@ -199,7 +226,7 @@ function handleScheduledPublishRunningChange(running: boolean) {
 
 // 打开系统设置
 function handleOpenSettings() {
-  showSettingsDialog.value = true;
+  openSettingsDialog();
 }
 
 // 打开脚本管理
@@ -208,7 +235,7 @@ function handleOpenScripts() {
     ElMessage.warning(t('errors.selectServer'));
     return;
   }
-  showScriptDialog.value = true;
+  openScriptDialog();
 }
 
 // 打开环境变量管理
