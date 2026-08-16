@@ -296,6 +296,7 @@ errors:
   checkUpdateFailed: 检查更新失败
   openBrowserFailed: 打开浏览器失败
   selectFile: 请先选择文件
+  storageFailed: 配置保存失败
 
 env:
   title: 环境变量

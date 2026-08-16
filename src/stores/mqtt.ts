@@ -9,6 +9,7 @@ import type { Script } from "@/stores/script";
 import { handleScriptError, handleMqttError } from "@/utils/errorHandler";
 import { computeDerived } from "@/utils/messageDerived";
 import { useAppStore } from "@/stores/app";
+import { useSubscriptionStore } from "@/stores/subscription";
 import i18n from "@/i18n";
 
 interface ConnectionState {
@@ -290,15 +291,58 @@ export const useMqttStore = defineStore("mqtt", () => {
   let receiveChain: Promise<void> = Promise.resolve();
   let receiveChainPending = 0;
 
+  // 正在恢复订阅的 Server，防止连续事件导致重复订阅
+  const restoringServers = new Set<number>();
+
+  /**
+   * 恢复某个 Server 的全部活跃订阅
+   *
+   * 按事件携带的 server_id 处理，不依赖"当前活跃 Server"的派生状态，
+   * 因此后台 Server 断线重连后订阅同样会被恢复。
+   */
+  async function restoreSubscriptions(serverId: number) {
+    if (restoringServers.has(serverId)) return;
+    restoringServers.add(serverId);
+    try {
+      const subscriptionStore = useSubscriptionStore();
+      // 非活跃 Server 的订阅可能还没加载进 store，先按需拉取
+      if (!subscriptionStore.subscriptions.has(serverId)) {
+        await subscriptionStore.fetchSubscriptions(serverId);
+      }
+      const activeSubscriptions = subscriptionStore
+        .getSubscriptionsByServer(serverId)
+        .filter((sub) => sub.is_active);
+
+      for (const sub of activeSubscriptions) {
+        try {
+          await subscribe(serverId, sub.topic, sub.qos as 0 | 1 | 2);
+        } catch (e) {
+          handleMqttError(String(e), true);
+        }
+      }
+    } catch (e) {
+      handleMqttError(String(e), true);
+    } finally {
+      restoringServers.delete(serverId);
+    }
+  }
+
   // 初始化事件监听
   const initListeners = async () => {
     // 监听连接状态变化
     await listen<ConnectionState>("mqtt-connection-state", (event) => {
       const { server_id, status, error } = event.payload;
+      const previousStatus = connectionStates.value.get(server_id)?.status;
       connectionStates.value.set(server_id, {
         status: status as ConnectionStatus,
         error,
       });
+
+      // 任意 Server 出现"非连接 → 已连接"转变时恢复其订阅
+      // （重连后 broker 侧订阅已失效，且后台 Server 也必须恢复）
+      if (status === "connected" && previousStatus !== "connected") {
+        void restoreSubscriptions(server_id);
+      }
 
       // 如果有错误，使用 ElMessage 显示
       if (error && status === "error") {

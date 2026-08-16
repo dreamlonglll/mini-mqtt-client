@@ -16,6 +16,12 @@ const SAVE_DEBOUNCE: Duration = Duration::from_millis(1000);
 /// 每个 server 内存中保留的最大消息条数
 const MAX_MESSAGES_PER_SERVER: usize = 1000;
 
+/// 持久化失败的通知回调
+///
+/// 生产环境由 `Storage::new` 注入"向前端 emit `storage-error` + 写日志"的实现；
+/// 测试可注入普通闭包，从而无需 AppHandle 即可覆盖失败通知路径。
+pub type StorageErrorNotifier = Arc<dyn Fn(String) + Send + Sync>;
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct AppData {
     pub servers: Vec<MqttServer>,
@@ -56,6 +62,8 @@ pub struct Storage {
     /// 消息历史仅保留在内存（按 server 分桶），不再写入 data.yaml
     messages: RwLock<HashMap<i64, VecDeque<MessageHistory>>>,
     next_message_id: AtomicI64,
+    /// 持久化失败时的通知回调（GUI 下 stderr 不可见，必须让用户看到）
+    notify_error: StorageErrorNotifier,
 }
 
 impl Storage {
@@ -92,12 +100,29 @@ impl Storage {
             app_dir.join("data.yaml")
         };
 
-        Self::open_at(file_path)
+        Self::open_at(file_path, Self::app_error_notifier(app_handle))
     }
 
-    /// 按给定数据文件路径构造 Storage（`new` 解析出路径后调用；测试可直接传入临时目录路径）
-    fn open_at(file_path: PathBuf) -> Result<Self, String> {
-        let data = if file_path.exists() {
+    /// 构造生产环境的持久化失败通知器：写入日志文件并向前端 emit `storage-error`
+    fn app_error_notifier(app_handle: &AppHandle) -> StorageErrorNotifier {
+        let app_handle = app_handle.clone();
+        Arc::new(move |message: String| {
+            // LogManager 在 Storage 之后才被 manage，这里延迟取用
+            if let Some(log_manager) = app_handle.try_state::<crate::log::LogManager>() {
+                let _ = log_manager.write_log(&crate::log::LogEntry {
+                    r#type: "storage".to_string(),
+                    message: message.clone(),
+                    details: None,
+                    timestamp: chrono::Local::now().to_rfc3339(),
+                });
+            }
+            let _ = tauri::Emitter::emit(&app_handle, "storage-error", message);
+        })
+    }
+
+    /// 按给定数据文件路径构造 Storage（`new` 解析出路径后调用；测试可直接传入临时目录路径与通知器）
+    fn open_at(file_path: PathBuf, notify_error: StorageErrorNotifier) -> Result<Self, String> {
+        let mut data: AppData = if file_path.exists() {
             let content = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
             match serde_yaml::from_str(&content) {
                 Ok(data) => data,
@@ -121,6 +146,10 @@ impl Storage {
             AppData::default()
         };
 
+        // 计数器可能因手改 YAML / 从损坏备份恢复而缺失（#[serde(default)] 归零），
+        // 归零后新建实体会与现有实体撞 ID，而 delete 按 id retain 会连带误删
+        Self::normalize_id_counters(&mut data);
+
         let data = Arc::new(RwLock::new(data));
         let dirty = Arc::new(AtomicBool::new(false));
         let file_path = Arc::new(RwLock::new(file_path));
@@ -133,12 +162,13 @@ impl Storage {
             let dirty = Arc::clone(&dirty);
             let file_path = Arc::clone(&file_path);
             let save_lock = Arc::clone(&save_lock);
+            let notify_error = Arc::clone(&notify_error);
             std::thread::spawn(move || loop {
                 std::thread::sleep(SAVE_DEBOUNCE);
                 if dirty.swap(false, Ordering::AcqRel) {
                     let _guard = save_lock.lock();
                     if let Err(e) = Self::save_to_disk(&data, &file_path) {
-                        eprintln!("Failed to save data: {}", e);
+                        notify_error(format!("配置保存失败：{}", e));
                         // 落盘失败时重新置脏，下个周期重试
                         dirty.store(true, Ordering::Release);
                     }
@@ -153,7 +183,28 @@ impl Storage {
             save_lock,
             messages: RwLock::new(HashMap::new()),
             next_message_id: AtomicI64::new(0),
+            notify_error,
         })
+    }
+
+    /// 将各 ID 计数器校正到不小于现有实体的最大 ID
+    ///
+    /// 注意：`next_*_id` 语义是"最后分配出去的 ID"（create 时先自增再取值），
+    /// 因此校正目标是 `max(计数器, 现有最大 ID)`，下一次 create 得到的即为最大 ID + 1。
+    fn normalize_id_counters(data: &mut AppData) {
+        fn max_id<T>(items: &[T], id_of: impl Fn(&T) -> Option<i64>) -> i64 {
+            items.iter().filter_map(id_of).max().unwrap_or(0)
+        }
+
+        data.next_server_id = data.next_server_id.max(max_id(&data.servers, |s| s.id));
+        data.next_subscription_id = data
+            .next_subscription_id
+            .max(max_id(&data.subscriptions, |s| s.id));
+        data.next_template_id = data.next_template_id.max(max_id(&data.templates, |t| t.id));
+        data.next_script_id = data.next_script_id.max(max_id(&data.scripts, |s| s.id));
+        data.next_env_variable_id = data
+            .next_env_variable_id
+            .max(max_id(&data.env_variables, |e| e.id));
     }
 
     /// 获取当前数据文件路径
@@ -179,7 +230,7 @@ impl Storage {
     pub fn flush(&self) {
         let _guard = self.save_lock.lock();
         if let Err(e) = Self::save_to_disk(&self.data, &self.file_path) {
-            eprintln!("Failed to flush data on exit: {}", e);
+            (self.notify_error)(format!("退出时保存配置失败：{}", e));
         }
     }
 
@@ -193,9 +244,18 @@ impl Storage {
     }
 
     /// 写临时文件 + rename 原子替换，避免崩溃/断电留下半截文件
+    ///
+    /// rename 之前必须 `sync_all`：否则断电时可能出现"目录项已指向新文件、
+    /// 而文件内容仍在页缓存里"的空文件/半截文件。
     fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
+        use std::io::Write;
+
         let tmp = path.with_extension("yaml.tmp");
-        fs::write(&tmp, content).map_err(|e| e.to_string())?;
+        {
+            let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+            file.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| e.to_string())?;
+        }
         fs::rename(&tmp, path).map_err(|e| e.to_string())
     }
 
@@ -224,11 +284,16 @@ impl Storage {
         Ok(id)
     }
 
-    pub fn update_server(&self, server: MqttServer) -> Result<(), String> {
+    pub fn update_server(&self, mut server: MqttServer) -> Result<(), String> {
         let mut data = self.data.write();
-        if let Some(existing) = data.servers.iter_mut().find(|s| s.id == server.id) {
-            *existing = server;
-            existing.updated_at = Some(chrono::Utc::now().to_rfc3339());
+        match data.servers.iter_mut().find(|s| s.id == server.id) {
+            Some(existing) => {
+                // 创建时间由服务端维护，不接受客户端覆盖
+                server.created_at = existing.created_at.clone();
+                server.updated_at = Some(chrono::Utc::now().to_rfc3339());
+                *existing = server;
+            }
+            None => return Err("服务器不存在".to_string()),
         }
         drop(data);
         self.mark_dirty();
@@ -275,8 +340,9 @@ impl Storage {
 
     pub fn update_subscription_status(&self, id: i64, is_active: bool) -> Result<(), String> {
         let mut data = self.data.write();
-        if let Some(sub) = data.subscriptions.iter_mut().find(|s| s.id == Some(id)) {
-            sub.is_active = is_active;
+        match data.subscriptions.iter_mut().find(|s| s.id == Some(id)) {
+            Some(sub) => sub.is_active = is_active,
+            None => return Err("订阅不存在".to_string()),
         }
         drop(data);
         self.mark_dirty();
@@ -386,32 +452,35 @@ impl Storage {
 
     pub fn update_template(&self, req: UpdateTemplateRequest) -> Result<(), String> {
         let mut data = self.data.write();
-        if let Some(template) = data.templates.iter_mut().find(|t| t.id == Some(req.id)) {
-            if let Some(name) = req.name {
-                template.name = name;
+        match data.templates.iter_mut().find(|t| t.id == Some(req.id)) {
+            Some(template) => {
+                if let Some(name) = req.name {
+                    template.name = name;
+                }
+                if let Some(topic) = req.topic {
+                    template.topic = topic;
+                }
+                if let Some(payload) = req.payload {
+                    template.payload = payload;
+                }
+                if let Some(payload_type) = req.payload_type {
+                    template.payload_type = payload_type;
+                }
+                if let Some(qos) = req.qos {
+                    template.qos = qos;
+                }
+                if let Some(retain) = req.retain {
+                    template.retain = retain;
+                }
+                if let Some(description) = req.description {
+                    template.description = Some(description);
+                }
+                if let Some(category) = req.category {
+                    template.category = Some(category);
+                }
+                template.updated_at = Some(chrono::Utc::now().to_rfc3339());
             }
-            if let Some(topic) = req.topic {
-                template.topic = topic;
-            }
-            if let Some(payload) = req.payload {
-                template.payload = payload;
-            }
-            if let Some(payload_type) = req.payload_type {
-                template.payload_type = payload_type;
-            }
-            if let Some(qos) = req.qos {
-                template.qos = qos;
-            }
-            if let Some(retain) = req.retain {
-                template.retain = retain;
-            }
-            if let Some(description) = req.description {
-                template.description = Some(description);
-            }
-            if let Some(category) = req.category {
-                template.category = Some(category);
-            }
-            template.updated_at = Some(chrono::Utc::now().to_rfc3339());
+            None => return Err("模板不存在".to_string()),
         }
         drop(data);
         self.mark_dirty();
@@ -506,20 +575,23 @@ impl Storage {
 
     pub fn update_script(&self, req: UpdateScriptRequest) -> Result<(), String> {
         let mut data = self.data.write();
-        if let Some(script) = data.scripts.iter_mut().find(|s| s.id == Some(req.id)) {
-            if let Some(name) = req.name {
-                script.name = name;
+        match data.scripts.iter_mut().find(|s| s.id == Some(req.id)) {
+            Some(script) => {
+                if let Some(name) = req.name {
+                    script.name = name;
+                }
+                if let Some(code) = req.code {
+                    script.code = code;
+                }
+                if let Some(enabled) = req.enabled {
+                    script.enabled = enabled;
+                }
+                if let Some(description) = req.description {
+                    script.description = Some(description);
+                }
+                script.updated_at = Some(chrono::Utc::now().to_rfc3339());
             }
-            if let Some(code) = req.code {
-                script.code = code;
-            }
-            if let Some(enabled) = req.enabled {
-                script.enabled = enabled;
-            }
-            if let Some(description) = req.description {
-                script.description = Some(description);
-            }
-            script.updated_at = Some(chrono::Utc::now().to_rfc3339());
+            None => return Err("脚本不存在".to_string()),
         }
         drop(data);
         self.mark_dirty();
@@ -536,9 +608,12 @@ impl Storage {
 
     pub fn toggle_script(&self, id: i64, enabled: bool) -> Result<(), String> {
         let mut data = self.data.write();
-        if let Some(script) = data.scripts.iter_mut().find(|s| s.id == Some(id)) {
-            script.enabled = enabled;
-            script.updated_at = Some(chrono::Utc::now().to_rfc3339());
+        match data.scripts.iter_mut().find(|s| s.id == Some(id)) {
+            Some(script) => {
+                script.enabled = enabled;
+                script.updated_at = Some(chrono::Utc::now().to_rfc3339());
+            }
+            None => return Err("脚本不存在".to_string()),
         }
         drop(data);
         self.mark_dirty();
@@ -608,17 +683,20 @@ impl Storage {
             }
         }
 
-        if let Some(env_var) = data.env_variables.iter_mut().find(|e| e.id == Some(req.id)) {
-            if let Some(name) = req.name {
-                env_var.name = name;
+        match data.env_variables.iter_mut().find(|e| e.id == Some(req.id)) {
+            Some(env_var) => {
+                if let Some(name) = req.name {
+                    env_var.name = name;
+                }
+                if let Some(value) = req.value {
+                    env_var.value = value;
+                }
+                if let Some(description) = req.description {
+                    env_var.description = Some(description);
+                }
+                env_var.updated_at = Some(chrono::Utc::now().to_rfc3339());
             }
-            if let Some(value) = req.value {
-                env_var.value = value;
-            }
-            if let Some(description) = req.description {
-                env_var.description = Some(description);
-            }
-            env_var.updated_at = Some(chrono::Utc::now().to_rfc3339());
+            None => return Err("环境变量不存在".to_string()),
         }
         drop(data);
         self.mark_dirty();
@@ -644,6 +722,19 @@ mod tests {
         let dir = TempDir::new().expect("创建临时目录失败");
         let path = dir.path().join("data.yaml");
         (dir, path)
+    }
+
+    /// 忽略持久化失败通知的 Storage（大部分用例不关心通知）
+    fn open(path: PathBuf) -> Storage {
+        Storage::open_at(path, Arc::new(|_| {})).unwrap()
+    }
+
+    /// 把持久化失败消息收集到共享 Vec 的 Storage
+    fn open_recording(path: PathBuf) -> (Storage, Arc<parking_lot::Mutex<Vec<String>>>) {
+        let recorded: Arc<parking_lot::Mutex<Vec<String>>> = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&recorded);
+        let storage = Storage::open_at(path, Arc::new(move |msg| sink.lock().push(msg))).unwrap();
+        (storage, recorded)
     }
 
     fn sample_server(name: &str) -> MqttServer {
@@ -704,7 +795,7 @@ mod tests {
     #[test]
     fn server_crud_survives_flush_and_reload() {
         let (_dir, path) = temp_data_path();
-        let storage = Storage::open_at(path.clone()).unwrap();
+        let storage = open(path.clone());
 
         let keep_id = storage.create_server(sample_server("保留的服务器")).unwrap();
         let drop_id = storage.create_server(sample_server("待删除的服务器")).unwrap();
@@ -718,7 +809,7 @@ mod tests {
         storage.flush();
         drop(storage);
 
-        let reloaded = Storage::open_at(path).unwrap();
+        let reloaded = open(path);
         assert_eq!(server_count(&reloaded), 1);
         let server = reloaded.get_server(keep_id).expect("保留的服务器应被读回");
         assert_eq!(server.name, "保留的服务器-已改名");
@@ -730,7 +821,7 @@ mod tests {
     #[test]
     fn template_crud_survives_flush_and_reload() {
         let (_dir, path) = temp_data_path();
-        let storage = Storage::open_at(path.clone()).unwrap();
+        let storage = open(path.clone());
 
         let template_id = storage.create_template(sample_template(1, "模板A")).unwrap();
         storage
@@ -755,7 +846,7 @@ mod tests {
         storage.flush();
         drop(storage);
 
-        let reloaded = Storage::open_at(path).unwrap();
+        let reloaded = open(path);
         let template = reloaded.get_template(template_id).expect("模板应被读回");
         assert_eq!(template.name, "模板A-已改名");
         assert_eq!(template.topic, "test/topic");
@@ -777,13 +868,13 @@ mod tests {
     #[test]
     fn ids_keep_increasing_after_reload() {
         let (_dir, path) = temp_data_path();
-        let storage = Storage::open_at(path.clone()).unwrap();
+        let storage = open(path.clone());
         let first_id = storage.create_server(sample_server("第一个")).unwrap();
         storage.delete_server(first_id).unwrap();
         storage.flush();
         drop(storage);
 
-        let reloaded = Storage::open_at(path).unwrap();
+        let reloaded = open(path);
         let second_id = reloaded.create_server(sample_server("第二个")).unwrap();
         assert!(
             second_id > first_id,
@@ -798,7 +889,7 @@ mod tests {
     #[test]
     fn flush_writes_even_when_dirty_flag_already_consumed() {
         let (_dir, path) = temp_data_path();
-        let storage = Storage::open_at(path.clone()).unwrap();
+        let storage = open(path.clone());
         storage.create_server(sample_server("退出前的最后一次修改")).unwrap();
 
         // 第一次 flush 后脏标记已被消费，等价于"后台线程刚 swap 完"的状态
@@ -810,7 +901,7 @@ mod tests {
         storage.flush();
         assert!(path.exists(), "flush() 检查脏标记会跳过落盘，导致最后一次修改丢失");
 
-        let reloaded = Storage::open_at(path).unwrap();
+        let reloaded = open(path);
         assert_eq!(server_count(&reloaded), 1);
         assert_eq!(
             reloaded.get_server(1).unwrap().name,
@@ -824,7 +915,7 @@ mod tests {
         let corrupt = "servers: [unclosed\nnext_server_id: \"not-a-number\"\n";
         fs::write(&path, corrupt).unwrap();
 
-        let storage = Storage::open_at(path.clone()).unwrap();
+        let storage = open(path.clone());
         assert_eq!(server_count(&storage), 0, "损坏文件应以空数据启动");
 
         let backups = corrupt_backups(dir.path());
@@ -835,7 +926,193 @@ mod tests {
         // 损坏恢复后仍可正常写入并落盘
         storage.create_server(sample_server("恢复后新建")).unwrap();
         storage.flush();
-        let reloaded = Storage::open_at(path).unwrap();
+        let reloaded = open(path);
         assert_eq!(server_count(&reloaded), 1);
+    }
+
+    /// 手改 YAML / 从损坏备份恢复时计数器可能缺失（#[serde(default)] 归零），
+    /// 加载后必须按现有实体的最大 ID 校正，否则新建实体会与现有实体撞 ID，
+    /// 而 delete 是按 id retain，会连带误删。
+    #[test]
+    fn id_counters_are_corrected_from_existing_entities_on_load() {
+        let (_dir, path) = temp_data_path();
+        // 只有实体、没有任何 next_*_id 字段的数据文件
+        let hand_written = r#"
+servers:
+  - id: 7
+    name: 手工恢复的服务器
+    host: 127.0.0.1
+    port: 1883
+    protocol_version: 3.1.1
+    username: null
+    password: null
+    client_id: null
+    keep_alive: 60
+    clean_session: true
+    use_tls: false
+    ca_cert: null
+    client_cert: null
+    client_key: null
+    client_key_password: null
+    created_at: null
+    updated_at: null
+subscriptions:
+  - id: 3
+    server_id: 7
+    topic: a/b
+    qos: 0
+    is_active: true
+    color: null
+    created_at: null
+templates: []
+scripts: []
+env_variables: []
+"#;
+        fs::write(&path, hand_written).unwrap();
+
+        let storage = open(path);
+        assert_eq!(server_count(&storage), 1, "手写数据应被正常读取");
+
+        let new_id = storage.create_server(sample_server("新建服务器")).unwrap();
+        assert_ne!(new_id, 7, "新建的 Server ID 不能与现有实体冲突");
+        assert!(new_id > 7, "新建的 Server ID 应大于现有最大 ID，实际：{}", new_id);
+
+        let new_sub = storage
+            .create_subscription(Subscription {
+                id: None,
+                server_id: 7,
+                topic: "c/d".to_string(),
+                qos: 0,
+                is_active: true,
+                color: None,
+                created_at: None,
+            })
+            .unwrap();
+        assert!(
+            new_sub.id.unwrap() > 3,
+            "新建订阅 ID 应大于现有最大 ID，实际：{:?}",
+            new_sub.id
+        );
+
+        // 删除新建的 Server 不应误删同 ID 的旧数据
+        storage.delete_server(new_id).unwrap();
+        assert!(storage.get_server(7).is_some(), "删除新建实体时误删了现有实体");
+    }
+
+    #[test]
+    fn update_of_missing_id_returns_error() {
+        let (_dir, path) = temp_data_path();
+        let storage = open(path);
+
+        let mut ghost = sample_server("不存在的服务器");
+        ghost.id = Some(999);
+        assert!(storage.update_server(ghost).is_err(), "update_server 目标不存在应返回错误");
+
+        assert!(
+            storage.update_subscription_status(999, false).is_err(),
+            "update_subscription_status 目标不存在应返回错误"
+        );
+        assert!(
+            storage
+                .update_template(UpdateTemplateRequest {
+                    id: 999,
+                    name: Some("x".to_string()),
+                    topic: None,
+                    payload: None,
+                    payload_type: None,
+                    qos: None,
+                    retain: None,
+                    description: None,
+                    category: None,
+                })
+                .is_err(),
+            "update_template 目标不存在应返回错误"
+        );
+        assert!(
+            storage
+                .update_script(UpdateScriptRequest {
+                    id: 999,
+                    name: None,
+                    code: Some("x".to_string()),
+                    enabled: None,
+                    description: None,
+                })
+                .is_err(),
+            "update_script 目标不存在应返回错误"
+        );
+        assert!(
+            storage.toggle_script(999, true).is_err(),
+            "toggle_script 目标不存在应返回错误"
+        );
+        assert!(
+            storage
+                .update_env_variable(UpdateEnvVariableRequest {
+                    id: 999,
+                    name: None,
+                    value: Some("x".to_string()),
+                    description: None,
+                })
+                .is_err(),
+            "update_env_variable 目标不存在应返回错误"
+        );
+    }
+
+    /// 目标不存在的 update 不应置脏标记（否则会触发一次无意义的全量落盘）
+    #[test]
+    fn failed_update_does_not_mark_dirty() {
+        let (_dir, path) = temp_data_path();
+        let storage = open(path);
+        storage.dirty.store(false, Ordering::Release);
+
+        let mut ghost = sample_server("不存在的服务器");
+        ghost.id = Some(999);
+        let _ = storage.update_server(ghost);
+
+        assert!(
+            !storage.dirty.load(Ordering::Acquire),
+            "update 失败时不应置脏标记"
+        );
+    }
+
+    /// created_at 由服务端维护，客户端传来的值不得覆盖
+    #[test]
+    fn update_server_preserves_created_at() {
+        let (_dir, path) = temp_data_path();
+        let storage = open(path);
+        let id = storage.create_server(sample_server("原始服务器")).unwrap();
+        let original_created_at = storage.get_server(id).unwrap().created_at.unwrap();
+
+        let mut modified = storage.get_server(id).unwrap();
+        modified.name = "改名后的服务器".to_string();
+        modified.created_at = Some("1970-01-01T00:00:00+00:00".to_string());
+        storage.update_server(modified).unwrap();
+
+        let after = storage.get_server(id).unwrap();
+        assert_eq!(after.name, "改名后的服务器");
+        assert_eq!(
+            after.created_at.unwrap(),
+            original_created_at,
+            "created_at 不应被客户端覆盖"
+        );
+    }
+
+    /// 持久化失败必须走通知回调（GUI 下 eprintln 不可见）
+    #[test]
+    fn persist_failure_is_reported_through_notifier() {
+        let dir = TempDir::new().unwrap();
+        // 父目录不存在 → 写临时文件必然失败
+        let bad_path = dir.path().join("不存在的子目录").join("data.yaml");
+        let (storage, recorded) = open_recording(bad_path);
+
+        storage.create_server(sample_server("写不进去的数据")).unwrap();
+        storage.flush();
+
+        let messages = recorded.lock().clone();
+        assert!(!messages.is_empty(), "持久化失败应触发通知回调");
+        assert!(
+            messages[0].chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
+            "通知消息应为中文：{}",
+            messages[0]
+        );
     }
 }

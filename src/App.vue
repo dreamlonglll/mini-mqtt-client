@@ -67,6 +67,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { listen } from "@tauri-apps/api/event";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import MainContent from "@/components/mqtt/MainContent.vue";
 import TemplateDrawer from "@/components/template/TemplateDrawer.vue";
@@ -118,6 +119,13 @@ onMounted(() => {
   appStore.initLocale();
   // 初始化 MQTT 事件监听
   mqttStore.initListeners();
+  // 持久化失败在 GUI 下不可见，后端 emit 后这里弹出提示
+  listen<string>("storage-error", (event) => {
+    ElMessage.error({
+      message: `${t('errors.storageFailed')}: ${event.payload}`,
+      duration: 8000,
+    });
+  });
 });
 
 // 处理保存模板请求

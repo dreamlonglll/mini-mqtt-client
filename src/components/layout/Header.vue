@@ -70,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   Connection,
@@ -80,14 +80,12 @@ import {
 import { ElMessage } from "element-plus";
 import { useServerStore } from "@/stores/server";
 import { useMqttStore } from "@/stores/mqtt";
-import { useSubscriptionStore } from "@/stores/subscription";
 import type { MqttServer } from "@/types/mqtt";
 
 const { t } = useI18n();
 
 const serverStore = useServerStore();
 const mqttStore = useMqttStore();
-const subscriptionStore = useSubscriptionStore();
 const connecting = ref(false);
 
 // 格式化服务器地址为 协议://host:port 格式
@@ -129,30 +127,9 @@ const statusTagType = computed(() => {
   }
 });
 
-// 监听连接状态变化，自动订阅活跃的订阅
-watch(connectionStatus, async (newStatus, oldStatus) => {
-  if (newStatus === "connected" && oldStatus !== "connected") {
-    const serverId = activeServer.value?.server.id;
-    if (!serverId) return;
-
-    // 获取所有活跃的订阅
-    const subscriptions = subscriptionStore.getSubscriptionsByServer(serverId);
-    const activeSubscriptions = subscriptions.filter((sub) => sub.is_active);
-
-    // 自动订阅
-    for (const sub of activeSubscriptions) {
-      try {
-        await mqttStore.subscribe(serverId, sub.topic, sub.qos as 0 | 1 | 2);
-      } catch (e) {
-        console.error(`自动订阅失败: ${sub.topic}`, e);
-      }
-    }
-
-    if (activeSubscriptions.length > 0) {
-      // ElMessage.success(`已自动订阅 ${activeSubscriptions.length} 个主题`);
-    }
-  }
-});
+// 连接成功后的自动重订阅已迁移到 MQTT store 的连接状态事件监听中
+// （按事件的 server_id 处理任意 Server，避免非活跃 Server 重连后订阅丢失，
+//   也避免切换活跃 Server 造成的假状态转变触发重复订阅）
 
 const handleConnect = async () => {
   const server = activeServer.value;

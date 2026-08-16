@@ -2,7 +2,7 @@ use parking_lot::RwLock;
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS, Transport};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -43,8 +43,11 @@ pub struct ReceivedMessage {
 struct ClientHandle {
     client: AsyncClient,
     shutdown_tx: mpsc::Sender<()>,
-    /// 连接代数，用于防止旧 eventloop 退出时误删新连接的句柄
+    /// 连接代数，用于防止旧 eventloop 退出时误删新连接的句柄、误发状态事件
     generation: u64,
+    /// 真实连接状态：ConnAck 成功置 true，断开/出错/重连退避期间置 false。
+    /// 断线期间发布/订阅据此立即失败，而不是被 rumqttc 静默入队。
+    connected: Arc<AtomicBool>,
 }
 
 pub struct MqttManager {
@@ -68,16 +71,20 @@ impl MqttManager {
         // 如果已连接，先断开
         self.disconnect(server_id).await?;
 
-        // 发送连接中状态
-        self.emit_state(server_id, "connecting", None);
-
         // 构建 MQTT 配置
         let client_id = server.client_id.unwrap_or_else(|| {
             format!("mqtt_client_{}", uuid::Uuid::new_v4())
         });
 
-        let mut options = MqttOptions::new(client_id, &server.host, server.port as u16);
-        options.set_keep_alive(Duration::from_secs(server.keep_alive as u64));
+        // 防御性转换：正常路径上命令入口已校验，这里避免未来绕过校验时静默截断
+        // （负 keep_alive 符号扩展后会让 ping 定时器与 CONNECT 包不一致，导致 broker 周期性踢线）
+        let port = u16::try_from(server.port)
+            .map_err(|_| format!("端口号必须在 1 到 65535 之间，当前为 {}", server.port))?;
+        let keep_alive = u64::try_from(server.keep_alive)
+            .map_err(|_| format!("Keep Alive 不能为负数，当前为 {}", server.keep_alive))?;
+
+        let mut options = MqttOptions::new(client_id, &server.host, port);
+        options.set_keep_alive(Duration::from_secs(keep_alive));
         options.set_clean_session(server.clean_session);
         options.set_max_packet_size(MAX_PACKET_SIZE, MAX_PACKET_SIZE);
 
@@ -107,6 +114,7 @@ impl MqttManager {
 
         // 连接代数：旧 eventloop 退出清理时校验，避免误删新连接的句柄
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+        let connected_flag = Arc::new(AtomicBool::new(false));
 
         // 保存客户端句柄
         {
@@ -117,17 +125,31 @@ impl MqttManager {
                     client: client.clone(),
                     shutdown_tx,
                     generation,
+                    connected: Arc::clone(&connected_flag),
                 },
             );
         }
+
+        // 发送连接中状态：必须在句柄写入之后，
+        // 这样旧一代 eventloop 的 "disconnected" 要么先于本次 emit、要么被代数校验丢弃，
+        // 不会出现 "connecting" 之后又冒出旧连接的 "disconnected"
+        self.emit_state(server_id, "connecting", None);
 
         // 启动事件循环
         let app_handle = self.app_handle.clone();
         let clients = self.clients.clone();
 
         tokio::spawn(async move {
-            Self::run_eventloop(server_id, generation, eventloop, shutdown_rx, app_handle, clients)
-                .await;
+            Self::run_eventloop(
+                server_id,
+                generation,
+                connected_flag,
+                eventloop,
+                shutdown_rx,
+                app_handle,
+                clients,
+            )
+            .await;
         });
 
         Ok(())
@@ -136,6 +158,7 @@ impl MqttManager {
     async fn run_eventloop(
         server_id: i64,
         generation: u64,
+        connected_flag: Arc<AtomicBool>,
         mut eventloop: EventLoop,
         mut shutdown_rx: mpsc::Receiver<()>,
         app_handle: AppHandle,
@@ -165,7 +188,8 @@ impl MqttManager {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
                     Self::flush_batch(&app_handle, &mut batch);
-                    Self::emit_state_static(&app_handle, server_id, "disconnected", None);
+                    connected_flag.store(false, Ordering::Release);
+                    Self::emit_state_if_current(&app_handle, &clients, server_id, generation, "disconnected", None);
                     break;
                 }
                 _ = flush_timer.tick() => {
@@ -178,11 +202,15 @@ impl MqttManager {
                                 connected = true;
                                 ever_connected = true;
                                 reconnect_delay = INITIAL_RECONNECT_DELAY;
-                                Self::emit_state_static(&app_handle, server_id, "connected", None);
+                                connected_flag.store(true, Ordering::Release);
+                                Self::emit_state_if_current(&app_handle, &clients, server_id, generation, "connected", None);
                             } else {
-                                Self::emit_state_static(
+                                connected_flag.store(false, Ordering::Release);
+                                Self::emit_state_if_current(
                                     &app_handle,
+                                    &clients,
                                     server_id,
+                                    generation,
                                     "error",
                                     Some(format!("Connection refused: {:?}", ack.code)),
                                 );
@@ -219,12 +247,35 @@ impl MqttManager {
                         }
                         Err(e) => {
                             Self::flush_batch(&app_handle, &mut batch);
+                            // 出错即视为断线：断线期间的发布/订阅立即失败，不再静默入队
+                            connected_flag.store(false, Ordering::Release);
+
+                            // 包超过大小上限属于持久性错误：broker 会重发同一条 retained 大包，
+                            // 按瞬时错误退避重连会陷入"断连—重连—再断连"的无限循环
+                            if Self::is_packet_size_error(&e) {
+                                Self::emit_state_if_current(
+                                    &app_handle,
+                                    &clients,
+                                    server_id,
+                                    generation,
+                                    "error",
+                                    Some(format!(
+                                        "消息超过大小上限（{} MB），已停止重连：{}",
+                                        MAX_PACKET_SIZE / 1024 / 1024,
+                                        e
+                                    )),
+                                );
+                                break;
+                            }
+
                             match e {
                                 // 服务端明确拒绝（认证失败等）：致命错误，退出事件循环
                                 rumqttc::ConnectionError::ConnectionRefused(code) => {
-                                    Self::emit_state_static(
+                                    Self::emit_state_if_current(
                                         &app_handle,
+                                        &clients,
                                         server_id,
+                                        generation,
                                         "error",
                                         Some(format!("Connection refused: {:?}", code)),
                                     );
@@ -232,18 +283,20 @@ impl MqttManager {
                                 }
                                 // 客户端句柄已释放，无法继续
                                 rumqttc::ConnectionError::RequestsDone => {
-                                    Self::emit_state_static(&app_handle, server_id, "disconnected", None);
+                                    Self::emit_state_if_current(&app_handle, &clients, server_id, generation, "disconnected", None);
                                     break;
                                 }
-                                // 瞬时错误（网络抖动、超大包等）：退避后继续轮询，
+                                // 瞬时错误（网络抖动等）：退避后继续轮询，
                                 // rumqttc 的 poll 会自动重连，连上后前端按 connected 状态自动恢复订阅
                                 e => {
                                     if !ever_connected {
                                         initial_attempts += 1;
                                         if initial_attempts >= MAX_INITIAL_ATTEMPTS {
-                                            Self::emit_state_static(
+                                            Self::emit_state_if_current(
                                                 &app_handle,
+                                                &clients,
                                                 server_id,
+                                                generation,
                                                 "error",
                                                 Some(format!("Failed to connect: {}", e)),
                                             );
@@ -256,16 +309,18 @@ impl MqttManager {
                                         format!("Reconnecting: {}", e)
                                     };
                                     connected = false;
-                                    Self::emit_state_static(
+                                    Self::emit_state_if_current(
                                         &app_handle,
+                                        &clients,
                                         server_id,
+                                        generation,
                                         "connecting",
                                         Some(detail),
                                     );
                                     // 退避等待，期间允许被断开操作打断
                                     tokio::select! {
                                         _ = shutdown_rx.recv() => {
-                                            Self::emit_state_static(&app_handle, server_id, "disconnected", None);
+                                            Self::emit_state_if_current(&app_handle, &clients, server_id, generation, "disconnected", None);
                                             break;
                                         }
                                         _ = tokio::time::sleep(reconnect_delay) => {}
@@ -280,11 +335,60 @@ impl MqttManager {
             }
         }
 
+        connected_flag.store(false, Ordering::Release);
+
         // 清理客户端：仅当句柄仍是本代连接时才移除，防止删掉新连接
         let mut clients = clients.write();
         if clients.get(&server_id).map(|h| h.generation) == Some(generation) {
             clients.remove(&server_id);
         }
+    }
+
+    /// 判断是否为"包超过大小上限"的持久性错误
+    ///
+    /// rumqttc 0.24 (v4) 在读到超限包时返回
+    /// `ConnectionError::MqttState(StateError::Deserialization(Error::PayloadSizeLimitExceeded(_)))`；
+    /// 等待 ConnAck 阶段的同类失败会被 framed 层包装成 `io::ErrorKind::InvalidData`。
+    fn is_packet_size_error(e: &rumqttc::ConnectionError) -> bool {
+        use rumqttc::mqttbytes::Error as MqttBytesError;
+        use rumqttc::{ConnectionError, StateError};
+
+        match e {
+            ConnectionError::MqttState(StateError::Deserialization(
+                MqttBytesError::PayloadSizeLimitExceeded(_),
+            )) => true,
+            ConnectionError::MqttState(StateError::OutgoingPacketTooLarge { .. }) => true,
+            ConnectionError::Io(io_err) => {
+                io_err.kind() == std::io::ErrorKind::InvalidData
+                    && io_err
+                        .to_string()
+                        .to_lowercase()
+                        .contains("payload size limit exceeded")
+            }
+            _ => false,
+        }
+    }
+
+    /// 仅当自身仍是当前代连接时才 emit 状态事件
+    ///
+    /// 旧 eventloop 退出（shutdown / 出错）时无条件 emit "disconnected"，
+    /// 可能晚于新一代连接的 "connecting"/"connected" 到达，让 UI 永久停在错误状态。
+    fn emit_state_if_current(
+        app_handle: &AppHandle,
+        clients: &RwLock<HashMap<i64, ClientHandle>>,
+        server_id: i64,
+        generation: u64,
+        status: &str,
+        error: Option<String>,
+    ) {
+        let is_current = {
+            let clients = clients.read();
+            clients.get(&server_id).map(|h| h.generation) == Some(generation)
+        };
+        if !is_current {
+            return;
+        }
+        Self::emit_state_static(app_handle, server_id, status, error);
     }
 
     /// 将攒批的消息一次性 emit 给前端（emit_to 只发主窗口，避免多 webview 广播）
@@ -317,18 +421,13 @@ impl MqttManager {
         qos: u8,
         retain: bool,
     ) -> Result<(), String> {
-        let client = {
-            let clients = self.clients.read();
-            clients.get(&server_id).map(|h| h.client.clone())
-        };
-
-        let client = client.ok_or("Not connected")?;
+        let client = self.connected_client(server_id)?;
 
         let qos = match qos {
             0 => QoS::AtMostOnce,
             1 => QoS::AtLeastOnce,
             2 => QoS::ExactlyOnce,
-            _ => return Err("Invalid QoS".to_string()),
+            _ => return Err("QoS 必须为 0、1 或 2".to_string()),
         };
 
         client
@@ -338,18 +437,13 @@ impl MqttManager {
     }
 
     pub async fn subscribe(&self, server_id: i64, topic: String, qos: u8) -> Result<(), String> {
-        let client = {
-            let clients = self.clients.read();
-            clients.get(&server_id).map(|h| h.client.clone())
-        };
-
-        let client = client.ok_or("Not connected")?;
+        let client = self.connected_client(server_id)?;
 
         let qos = match qos {
             0 => QoS::AtMostOnce,
             1 => QoS::AtLeastOnce,
             2 => QoS::ExactlyOnce,
-            _ => return Err("Invalid QoS".to_string()),
+            _ => return Err("QoS 必须为 0、1 或 2".to_string()),
         };
 
         client
@@ -359,14 +453,28 @@ impl MqttManager {
     }
 
     pub async fn unsubscribe(&self, server_id: i64, topic: String) -> Result<(), String> {
-        let client = {
-            let clients = self.clients.read();
-            clients.get(&server_id).map(|h| h.client.clone())
-        };
-
-        let client = client.ok_or("Not connected")?;
+        let client = self.connected_client(server_id)?;
 
         client.unsubscribe(topic).await.map_err(|e| e.to_string())
+    }
+
+    /// 取出处于"已连接"状态的客户端句柄
+    ///
+    /// 断线重连退避期间 rumqttc 仍会接受 publish/subscribe 并入队，
+    /// 用户看到的是"发送成功"实则消息压在队列里，这里改为立即失败。
+    fn connected_client(&self, server_id: i64) -> Result<AsyncClient, String> {
+        let handle = {
+            let clients = self.clients.read();
+            clients
+                .get(&server_id)
+                .map(|h| (h.client.clone(), h.connected.load(Ordering::Acquire)))
+        };
+
+        match handle {
+            Some((client, true)) => Ok(client),
+            Some((_, false)) => Err("未连接：正在重连中，请稍后重试".to_string()),
+            None => Err("未连接到服务器".to_string()),
+        }
     }
 
     fn emit_state(&self, server_id: i64, status: &str, error: Option<String>) {
@@ -387,9 +495,13 @@ impl MqttManager {
         let _ = app_handle.emit("mqtt-connection-state", state);
     }
 
+    /// 是否真正处于已连接状态（重连退避期间为 false，调用方据此跳过订阅动作）
     pub fn is_connected(&self, server_id: i64) -> bool {
         let clients = self.clients.read();
-        clients.contains_key(&server_id)
+        clients
+            .get(&server_id)
+            .map(|h| h.connected.load(Ordering::Acquire))
+            .unwrap_or(false)
     }
 
     /// 构建 TLS 配置
@@ -492,5 +604,47 @@ impl MqttManager {
         }
 
         Err("No valid private key found in PEM. If the key is encrypted, please provide the password.".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rumqttc::mqttbytes::Error as MqttBytesError;
+    use rumqttc::{ConnectionError, StateError};
+
+    /// 包超限必须被识别为持久性错误，否则 broker 重发 retained 大包会导致无限重连
+    #[test]
+    fn packet_size_errors_are_classified_as_persistent() {
+        assert!(MqttManager::is_packet_size_error(&ConnectionError::MqttState(
+            StateError::Deserialization(MqttBytesError::PayloadSizeLimitExceeded(20 * 1024 * 1024))
+        )));
+        assert!(MqttManager::is_packet_size_error(&ConnectionError::MqttState(
+            StateError::OutgoingPacketTooLarge {
+                pkt_size: 20 * 1024 * 1024,
+                max: MAX_PACKET_SIZE,
+            }
+        )));
+        // 等待 ConnAck 阶段由 framed 层包装成的 InvalidData
+        assert!(MqttManager::is_packet_size_error(&ConnectionError::Io(
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                MqttBytesError::PayloadSizeLimitExceeded(20 * 1024 * 1024).to_string(),
+            )
+        )));
+    }
+
+    /// 瞬时错误必须继续走指数退避重连，不能被误判成持久性错误
+    #[test]
+    fn transient_errors_are_not_classified_as_packet_size_errors() {
+        assert!(!MqttManager::is_packet_size_error(&ConnectionError::NetworkTimeout));
+        assert!(!MqttManager::is_packet_size_error(&ConnectionError::FlushTimeout));
+        assert!(!MqttManager::is_packet_size_error(&ConnectionError::RequestsDone));
+        assert!(!MqttManager::is_packet_size_error(&ConnectionError::Io(
+            std::io::Error::new(std::io::ErrorKind::ConnectionReset, "connection reset by peer")
+        )));
+        assert!(!MqttManager::is_packet_size_error(&ConnectionError::MqttState(
+            StateError::AwaitPingResp
+        )));
     }
 }

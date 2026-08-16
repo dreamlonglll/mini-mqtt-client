@@ -296,6 +296,7 @@ errors:
   checkUpdateFailed: Failed to check for updates
   openBrowserFailed: Failed to open browser
   selectFile: Please select a file first
+  storageFailed: Failed to save configuration
 
 env:
   title: Environment

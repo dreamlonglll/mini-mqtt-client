@@ -1,3 +1,4 @@
+use crate::commands::validation::{validate_qos, validate_subscription, validate_topic};
 use crate::db::models::{Subscription, UpdateSubscriptionRequest};
 use crate::db::Storage;
 use crate::mqtt::MqttManager;
@@ -11,6 +12,9 @@ pub async fn add_subscription(
     topic: String,
     qos: i32,
 ) -> Result<Subscription, String> {
+    // 先校验再落库：qos / topic 非法时不留脏数据
+    validate_subscription(&topic, qos)?;
+
     // 创建订阅
     let sub = Subscription {
         id: None,
@@ -73,6 +77,9 @@ pub async fn toggle_subscription(
     qos: i32,
     is_active: bool,
 ) -> Result<(), String> {
+    // 先校验再落库
+    validate_subscription(&topic, qos)?;
+
     // 更新存储状态
     storage.update_subscription_status(subscription_id, is_active)?;
 
@@ -104,6 +111,14 @@ pub async fn update_subscription(
 ) -> Result<Subscription, String> {
     let new_topic = request.topic.clone();
     let new_qos = request.qos;
+
+    // 先校验再落库：只校验本次实际要改的字段
+    if let Some(ref topic) = new_topic {
+        validate_topic(topic)?;
+    }
+    if let Some(qos) = new_qos {
+        validate_qos(qos)?;
+    }
 
     // 更新存储
     let subscription = storage.update_subscription(request)?;
