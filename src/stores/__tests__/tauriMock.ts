@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { encodeMessageFrames, type ReceivedMessage } from "@/utils/messageFrame";
 
 type EventHandler = (event: { payload: any }) => void;
 
@@ -23,11 +24,47 @@ export const listenMock = vi.fn(async (name: string, handler: EventHandler) => {
   };
 });
 
+/**
+ * 替代 `@tauri-apps/api/core` 的 Channel：只保留 onmessage 与 IPC 序列化形态，
+ * 测试通过 `register_message_channel` 的调用参数拿到实例后直接调用 onmessage
+ */
+export class ChannelMock<T = unknown> {
+  onmessage: (data: T) => void;
+
+  constructor(onmessage?: (data: T) => void) {
+    this.onmessage = onmessage ?? (() => {});
+  }
+
+  toJSON() {
+    return "__CHANNEL__:mock";
+  }
+}
+
 /** 模拟后端 emit 一次事件 */
 export function emitTauriEvent(name: string, payload: any) {
   for (const handler of [...(eventHandlers.get(name) ?? [])]) {
     handler({ payload });
   }
+}
+
+/** 最近一次注册到后端的消息 Channel */
+export function latestMessageChannel(): ChannelMock<ArrayBuffer> | undefined {
+  const registrations = invokeArgsOf("register_message_channel");
+  return registrations.length > 0 ? registrations[registrations.length - 1].channel : undefined;
+}
+
+/** 模拟后端经 Channel 推送一帧原始字节 */
+export function emitRawMessageFrame(frame: ArrayBuffer) {
+  const channel = latestMessageChannel();
+  if (!channel) {
+    throw new Error("消息 Channel 尚未注册，请先调用 initListeners");
+  }
+  channel.onmessage(frame);
+}
+
+/** 模拟后端推送一批消息（按帧格式编码后经 Channel 送达） */
+export function emitMessageBatch(messages: ReceivedMessage[]) {
+  emitRawMessageFrame(encodeMessageFrames(messages));
 }
 
 /** 统计某个命令被 invoke 的次数 */

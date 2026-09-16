@@ -3,7 +3,6 @@ pub mod models;
 // 各实体的读写操作按实体拆分到子模块，均以 `impl Storage` 的形式挂在同一个类型上；
 // 本文件只保留数据结构、加载/落盘与 ID 计数器等所有实体共用的核心。
 mod env;
-mod message;
 mod script;
 mod server;
 mod subscription;
@@ -12,18 +11,16 @@ mod template;
 #[cfg(test)]
 mod tests;
 
-use models::{CommandTemplate, EnvVariable, MessageHistory, MqttServer, Script, Subscription};
-use parking_lot::RwLock;
-use std::collections::{HashMap, VecDeque};
+use models::{CommandTemplate, EnvVariable, MqttServer, Script, Subscription};
+use parking_lot::{Condvar, Mutex, RwLock};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
 use tauri::Manager;
 
-/// 后台防抖落盘的检查间隔
+/// 脏标记置位后到真正落盘的合并窗口：连续写操作只序列化一次
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(1000);
 
 /// 持久化失败的通知回调
@@ -61,17 +58,61 @@ pub struct AppConfig {
     pub data_path: Option<String>,
 }
 
+/// 脏标记 + 条件变量
+///
+/// 写操作置位并唤醒落盘线程；线程在没有写入时阻塞在条件变量上，
+/// 不再每秒醒来轮询一次（对空闲时的 CPU 与笔记本续航友好）。
+struct DirtySignal {
+    dirty: Mutex<bool>,
+    wakeup: Condvar,
+}
+
+impl DirtySignal {
+    fn new() -> Self {
+        Self {
+            dirty: Mutex::new(false),
+            wakeup: Condvar::new(),
+        }
+    }
+
+    /// 置脏并唤醒落盘线程
+    fn mark(&self) {
+        *self.dirty.lock() = true;
+        self.wakeup.notify_one();
+    }
+
+    /// 阻塞直到脏标记被置位（不消费标记）
+    fn wait_until_dirty(&self) {
+        let mut dirty = self.dirty.lock();
+        while !*dirty {
+            self.wakeup.wait(&mut dirty);
+        }
+    }
+
+    /// 取走脏标记（返回取走前的值）
+    fn take(&self) -> bool {
+        std::mem::replace(&mut *self.dirty.lock(), false)
+    }
+
+    #[cfg(test)]
+    fn is_dirty(&self) -> bool {
+        *self.dirty.lock()
+    }
+
+    #[cfg(test)]
+    fn clear(&self) {
+        *self.dirty.lock() = false;
+    }
+}
+
 pub struct Storage {
     data: Arc<RwLock<AppData>>,
     /// 数据文件路径（迁移数据目录后可在运行中更新）
     file_path: Arc<RwLock<PathBuf>>,
-    /// 脏标记：写操作只置位，由后台线程防抖落盘
-    dirty: Arc<AtomicBool>,
+    /// 脏标记：写操作只置位，由后台线程合并落盘
+    dirty: Arc<DirtySignal>,
     /// 串行化落盘：防止退出 flush 与后台线程并发写同一临时文件
-    save_lock: Arc<parking_lot::Mutex<()>>,
-    /// 消息历史仅保留在内存（按 server 分桶），不再写入 data.yaml
-    messages: RwLock<HashMap<i64, VecDeque<MessageHistory>>>,
-    next_message_id: AtomicI64,
+    save_lock: Arc<Mutex<()>>,
     /// 持久化失败时的通知回调（GUI 下 stderr 不可见，必须让用户看到）
     notify_error: StorageErrorNotifier,
 }
@@ -161,12 +202,12 @@ impl Storage {
         Self::normalize_id_counters(&mut data);
 
         let data = Arc::new(RwLock::new(data));
-        let dirty = Arc::new(AtomicBool::new(false));
+        let dirty = Arc::new(DirtySignal::new());
         let file_path = Arc::new(RwLock::new(file_path));
-        let save_lock = Arc::new(parking_lot::Mutex::new(()));
+        let save_lock = Arc::new(Mutex::new(()));
 
-        // 后台防抖落盘线程：脏标记置位后最多 SAVE_DEBOUNCE 内落盘一次，
-        // 避免每次写操作都全量序列化 + 写磁盘，也让 async 命令不再被同步 IO 阻塞
+        // 后台落盘线程：空闲时阻塞在条件变量上；被写操作唤醒后先等一个合并窗口，
+        // 把窗口内的连续写操作合并成一次全量序列化 + 写盘
         {
             let data = Arc::clone(&data);
             let dirty = Arc::clone(&dirty);
@@ -174,14 +215,15 @@ impl Storage {
             let save_lock = Arc::clone(&save_lock);
             let notify_error = Arc::clone(&notify_error);
             std::thread::spawn(move || loop {
+                dirty.wait_until_dirty();
                 std::thread::sleep(SAVE_DEBOUNCE);
-                if dirty.swap(false, Ordering::AcqRel) {
-                    let _guard = save_lock.lock();
-                    if let Err(e) = Self::save_to_disk(&data, &file_path) {
-                        notify_error(format!("配置保存失败：{}", e));
-                        // 落盘失败时重新置脏，下个周期重试
-                        dirty.store(true, Ordering::Release);
-                    }
+                // 先取走标记再落盘：落盘期间的新写入会重新置脏，下一轮再写
+                dirty.take();
+                let _guard = save_lock.lock();
+                if let Err(e) = Self::save_to_disk(&data, &file_path) {
+                    notify_error(format!("配置保存失败：{}", e));
+                    // 落盘失败时重新置脏，下个合并窗口后重试
+                    dirty.mark();
                 }
             });
         }
@@ -191,8 +233,6 @@ impl Storage {
             file_path,
             dirty,
             save_lock,
-            messages: RwLock::new(HashMap::new()),
-            next_message_id: AtomicI64::new(0),
             notify_error,
         })
     }
@@ -227,15 +267,15 @@ impl Storage {
         *self.file_path.write() = path;
     }
 
-    /// 标记数据已修改，等待后台线程防抖落盘
+    /// 标记数据已修改并唤醒后台落盘线程
     fn mark_dirty(&self) {
-        self.dirty.store(true, Ordering::Release);
+        self.dirty.mark();
     }
 
     /// 立即将内存数据写入磁盘（应用退出前调用）
     ///
-    /// 这里**不检查脏标记**：后台防抖线程是先 `dirty.swap(false)` 再写盘，
-    /// 若恰好在 swap 之后、写完之前退出，按脏标记判断会跳过落盘导致最后一次修改丢失。
+    /// 这里**不检查脏标记**：后台线程是先取走标记再写盘，
+    /// 若恰好在取走之后、写完之前退出，按脏标记判断会跳过落盘导致最后一次修改丢失。
     /// 退出场景多写一次的成本可忽略，故无条件落盘。
     pub fn flush(&self) {
         let _guard = self.save_lock.lock();

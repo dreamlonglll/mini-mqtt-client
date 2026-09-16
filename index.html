@@ -5,13 +5,26 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mini MQTT Client</title>
-    <!-- Google Fonts: Inter + Fira Code -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!--
+      字体由 @fontsource 打进构建产物（见 src/main.ts），不再从 Google Fonts 拉取：
+      外链样式表在 head 里会阻塞首绘，离线或网络受限时要等到连接超时才能画出界面。
+    -->
+    <script>
+      // 在 Vue 挂载前按本地设置先把 dark class 打上，避免暗色用户启动时先闪一下浅色。
+      // 这里只是首帧的猜测，随后 appStore.initTheme 会用 Tauri 查询到的系统主题校正。
+      (function () {
+        try {
+          var theme = localStorage.getItem("mqtt-client-theme");
+          var followsSystem = theme === null || theme === "auto";
+          var dark =
+            theme === "dark" ||
+            (followsSystem && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {
+          /* localStorage 不可用时保持默认浅色 */
+        }
+      })();
+    </script>
   </head>
 
   <body>

@@ -53,8 +53,6 @@ impl Storage {
         data.scripts.retain(|s| s.server_id != id);
         data.env_variables.retain(|e| e.server_id != id);
         drop(data);
-        // 内存中的消息历史一并清理
-        self.messages.write().remove(&id);
         self.mark_dirty();
         Ok(())
     }

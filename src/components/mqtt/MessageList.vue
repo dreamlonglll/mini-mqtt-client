@@ -4,8 +4,8 @@
       <span class="panel-title">
         <el-icon><ChatDotRound /></el-icon>
         {{ $t('messages.title') }}
-        <el-tag size="small" type="info" effect="plain" v-if="messages.length > 0">
-          {{ messages.length }}
+        <el-tag size="small" type="info" effect="plain" v-if="messageCount > 0">
+          {{ messageCount }}
         </el-tag>
       </span>
       <div class="header-actions">
@@ -34,95 +34,76 @@
         <el-tooltip :content="$t('messages.clear')" placement="top">
           <el-button text size="small" :icon="Delete" @click="handleClear" />
         </el-tooltip>
-        <!-- <el-tooltip content="导出消息" placement="top">
-          <el-button text size="small" :icon="Download" @click="handleExport" />
-        </el-tooltip> -->
       </div>
     </div>
 
-    <DynamicScroller
-      ref="scrollerRef"
+    <!--
+      固定行高的回收式虚拟滚动：行内容全部裁剪到固定尺寸，
+      因此不需要逐行测量、ResizeObserver 与行高缓存，每次 flush 的开销只与可见行数有关。
+      行内不使用组件库组件：每行十来个组件实例在高频刷新下是主要的 patch 成本。
+    -->
+    <RecycleScroller
       :items="filteredMessages"
-      :min-item-size="70"
-      class="message-container"
+      :item-size="ROW_HEIGHT"
       key-field="id"
+      class="message-container"
     >
+      <template #default="{ item: msg }">
+        <div class="message-item-wrapper">
+          <div
+            class="message-item"
+            :class="[msg.direction, { 'has-error': msg.scriptError }]"
+            @click="showDetail(msg)"
+          >
+            <div class="message-header">
+              <span class="msg-direction" :class="[msg.direction, { 'has-error': msg.scriptError }]">
+                <svg class="msg-icon" viewBox="0 0 1024 1024" aria-hidden="true">
+                  <path fill="currentColor" :d="msg.direction === 'publish' ? ICON_UP : ICON_DOWN" />
+                </svg>
+                {{ msg.direction === "publish" ? "PUB" : "RCV" }}
+              </span>
+              <span class="msg-topic" :style="topicStyle(msg)">
+                <span v-if="getTopicColor(msg)" class="topic-color-dot" :style="{ backgroundColor: getTopicColor(msg) }" />
+                <span class="topic-text text-ellipsis">{{ msg.topic }}</span>
+              </span>
+              <div class="msg-meta">
+                <span v-if="msg.scriptError" class="tag tag-danger">{{ $t('script.testError') }}</span>
+                <span class="tag" :class="FORMAT_TAG_CLASS[getDisplayFormat(msg)]">
+                  {{ FORMAT_LABEL[getDisplayFormat(msg)] }}
+                </span>
+                <span
+                  v-if="msg.truncated"
+                  class="tag tag-danger"
+                  :title="$t('messages.truncatedTip', { size: msg.originalLength })"
+                >
+                  {{ $t('messages.truncated') }}
+                </span>
+                <span class="tag">Q{{ msg.qos }}</span>
+                <span v-if="msg.retain" class="tag tag-warning">R</span>
+                <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
+              </div>
+            </div>
+            <div class="message-body">
+              <div v-if="msg.scriptError" class="message-error" :title="msg.scriptError">
+                <svg class="msg-icon" viewBox="0 0 1024 1024" aria-hidden="true">
+                  <path fill="currentColor" :d="ICON_WARNING" />
+                </svg>
+                <span class="text-ellipsis">{{ msg.scriptError }}</span>
+              </div>
+              <pre
+                class="message-preview"
+                :class="[`is-${getDisplayFormat(msg)}`, { 'with-error': msg.scriptError }]"
+              >{{ getPreviewText(msg) }}</pre>
+            </div>
+          </div>
+        </div>
+      </template>
       <template #empty>
         <div class="empty-state">
           <el-empty :description="$t('messages.noMessages')" :image-size="60" />
         </div>
       </template>
-      <template #default="{ item: msg, index, active }">
-        <DynamicScrollerItem
-          :item="msg"
-          :active="active"
-          :data-index="index"
-        >
-          <div class="message-item-wrapper">
-            <div
-              class="message-item"
-              :class="[msg.direction, { 'has-error': msg.scriptError }]"
-              @click="showDetail(msg)"
-            >
-            <div class="message-header">
-              <span class="msg-direction" :class="[msg.direction, { 'has-error': msg.scriptError }]">
-                <el-icon v-if="msg.direction === 'publish'"><Top /></el-icon>
-                <el-icon v-else><Bottom /></el-icon>
-                {{ msg.direction === "publish" ? "PUB" : "RCV" }}
-              </span>
-              <span
-                class="msg-topic text-ellipsis"
-                :style="getTopicColor(msg) ? { color: getTopicColor(msg) } : {}"
-              >
-                <span v-if="getTopicColor(msg)" class="topic-color-dot" :style="{ backgroundColor: getTopicColor(msg) }" />
-                {{ msg.topic }}
-              </span>
-              <div class="msg-meta">
-                <el-tag
-                  v-if="msg.scriptError"
-                  size="small"
-                  effect="plain"
-                  type="danger"
-                  class="error-tag"
-                >
-                  {{ $t('script.testError') }}
-                </el-tag>
-                <el-tag
-                  size="small"
-                  effect="plain"
-                  :type="getFormatTagType(getDisplayFormat(msg))"
-                  class="format-tag"
-                >
-                  {{ getFormatLabel(getDisplayFormat(msg)) }}
-                </el-tag>
-                <el-tooltip
-                  v-if="msg.truncated"
-                  :content="$t('messages.truncatedTip', { size: msg.originalLength })"
-                  placement="top"
-                >
-                  <el-tag size="small" type="danger" effect="plain">
-                    {{ $t('messages.truncated') }}
-                  </el-tag>
-                </el-tooltip>
-                <el-tag size="small" effect="plain">Q{{ msg.qos }}</el-tag>
-                <el-tag v-if="msg.retain" size="small" type="warning" effect="plain">
-                  R
-                </el-tag>
-                <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
-              </div>
-            </div>
-            <div v-if="msg.scriptError" class="message-error">
-              <el-icon><WarningFilled /></el-icon>
-              <span>{{ msg.scriptError }}</span>
-            </div>
-            <div class="message-body">
-              <MessagePayload :payload="msg.payload" :message="msg" :preview="true" :payload-type="msg.payload_type" />
-            </div>
-            </div>
-          </div>
-        </DynamicScrollerItem>
-      </template>
-    </DynamicScroller>
+    </RecycleScroller>
 
     <!-- 消息详情对话框 -->
     <el-dialog
@@ -147,9 +128,9 @@
           <el-descriptions-item :label="$t('publish.payloadType')">
             <el-tag
               size="small"
-              :type="getFormatTagType(getDisplayFormat(selectedMessage))"
+              :type="FORMAT_TAG_TYPE[getDisplayFormat(selectedMessage)]"
             >
-              {{ getFormatLabel(getDisplayFormat(selectedMessage)) }}
+              {{ FORMAT_LABEL[getDisplayFormat(selectedMessage)] }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="Time" :span="2">
@@ -177,7 +158,7 @@
               </el-button>
             </div>
           </div>
-          <MessagePayload :payload="selectedMessage.payload" :message="selectedMessage" :preview="false" :payload-type="selectedMessage.payload_type" />
+          <MessagePayload :message="selectedMessage" />
         </div>
       </div>
     </el-dialog>
@@ -190,16 +171,13 @@ import { useI18n } from "vue-i18n";
 import {
   ChatDotRound,
   Delete,
-  Top,
-  Bottom,
   ArrowDown,
   Search,
   CopyDocument,
   Promotion,
-  WarningFilled,
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { DynamicScroller, DynamicScrollerItem } from "vue-virtual-scroller";
+import { RecycleScroller } from "vue-virtual-scroller";
 import { useServerStore } from "@/stores/server";
 import { useMqttStore } from "@/stores/mqtt";
 import { useAppStore } from "@/stores/app";
@@ -207,10 +185,12 @@ import { useSubscriptionStore } from "@/stores/subscription";
 import MessagePayload from "./MessagePayload.vue";
 import type { MqttMessage } from "@/types/mqtt";
 import { debounce } from "@/utils/debounce";
+import { createIncrementalMessageFilter, type DirectionFilter } from "@/utils/messageFilter";
 import {
   getDecodedText,
   getHexText,
   getDisplayFormat,
+  getPreviewText,
   formatMsgTime,
   formatMsgFullTime,
   type PayloadDisplayFormat,
@@ -218,7 +198,36 @@ import {
 
 const { t } = useI18n();
 
-type DirectionFilter = "all" | "publish" | "receive";
+/**
+ * 行高（像素）：与下方样式里 wrapper / header / body 的固定尺寸严格对应
+ * 8 (wrapper 上下 padding) + 2 (边框) + 16 (item 上下 padding) + 20 (header) + 6 (间距) + 68 (body)
+ */
+const ROW_HEIGHT = 120;
+
+// 行内图标直接内联 SVG 路径（取自 Element Plus 的 Top / Bottom / WarningFilled），不走组件
+const ICON_UP =
+  "M572.235 205.282v600.365a30.118 30.118 0 1 1-60.235 0V205.282L292.382 438.633a28.913 28.913 0 0 1-42.646 0 33.43 33.43 0 0 1 0-45.236l271.058-288.045a28.913 28.913 0 0 1 42.647 0L834.5 393.397a33.43 33.43 0 0 1 0 45.176 28.913 28.913 0 0 1-42.647 0l-219.618-233.23z";
+const ICON_DOWN =
+  "M544 805.888V168a32 32 0 1 0-64 0v637.888L246.656 557.952a30.72 30.72 0 0 0-45.312 0 35.52 35.52 0 0 0 0 48.064l288 306.048a30.72 30.72 0 0 0 45.312 0l288-306.048a35.52 35.52 0 0 0 0-48 30.72 30.72 0 0 0-45.312 0L544 805.824z";
+const ICON_WARNING =
+  "M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m0 192a58.43 58.43 0 0 0-58.24 63.744l23.36 256.384a35.072 35.072 0 0 0 69.76 0l23.296-256.384A58.43 58.43 0 0 0 512 256m0 512a51.2 51.2 0 1 0 0-102.4 51.2 51.2 0 0 0 0 102.4";
+
+// 格式 → 标签样式 / 文案（binary 统一显示为 HEX）
+const FORMAT_TAG_CLASS: Record<PayloadDisplayFormat, string> = {
+  json: "tag-success",
+  binary: "tag-warning",
+  text: "tag-info",
+};
+const FORMAT_TAG_TYPE: Record<PayloadDisplayFormat, "info" | "success" | "warning"> = {
+  json: "success",
+  binary: "warning",
+  text: "info",
+};
+const FORMAT_LABEL: Record<PayloadDisplayFormat, string> = {
+  json: "JSON",
+  binary: "HEX",
+  text: "TEXT",
+};
 
 const serverStore = useServerStore();
 const mqttStore = useMqttStore();
@@ -253,6 +262,12 @@ function getTopicColor(msg: MqttMessage): string | undefined {
   cache.set(msg.topic, color);
   return color;
 }
+
+function topicStyle(msg: MqttMessage) {
+  const color = getTopicColor(msg);
+  return color ? { color } : undefined;
+}
+
 const searchKeyword = ref("");
 // 防抖后的搜索关键词（避免每个字符都触发全量过滤）
 const debouncedKeyword = ref("");
@@ -265,52 +280,24 @@ const directionFilter = ref<DirectionFilter>("all");
 const showDetailDialog = ref(false);
 const selectedMessage = ref<MqttMessage | null>(null);
 
-// 从 MQTT Store 获取消息
-const messages = computed(() => {
+// 当前 Server 的消息数组（store 就地更新同一实例，变化靠 messagesVersion 感知）
+function currentMessages(): MqttMessage[] {
   const serverId = serverStore.activeServerId;
-  if (!serverId) return [];
-  return mqttStore.getServerMessages(serverId);
+  return serverId ? mqttStore.getServerMessages(serverId) : [];
+}
+
+const messageCount = computed(() => {
+  void mqttStore.messagesVersion;
+  return currentMessages().length;
 });
 
-// 过滤后的消息
+// 增量过滤：每次 flush 只过滤新增的消息，旧结果复用（见 utils/messageFilter.ts）
+const filterMessages = createIncrementalMessageFilter();
+
 const filteredMessages = computed(() => {
-  let result = messages.value;
-
-  // 方向过滤
-  if (directionFilter.value !== "all") {
-    result = result.filter((m) => m.direction === directionFilter.value);
-  }
-
-  // 关键词搜索（读取消息上的派生缓存，不再即算即弃）
-  if (debouncedKeyword.value.trim()) {
-    const keyword = debouncedKeyword.value.toLowerCase();
-    result = result.filter((m) => {
-      return (
-        m.topic.toLowerCase().includes(keyword) ||
-        getDecodedText(m).toLowerCase().includes(keyword) ||
-        getHexText(m).toLowerCase().includes(keyword)
-      );
-    });
-  }
-
-  // store 侧 flush 采用就地修改，这里始终返回新数组标识，
-  // 让虚拟滚动能感知 items 变化
-  return result === messages.value ? result.slice() : result;
+  void mqttStore.messagesVersion;
+  return filterMessages(currentMessages(), directionFilter.value, debouncedKeyword.value);
 });
-
-// ===== 虚拟滚动行高缓存定期重置（防止被裁剪消息的 sizes 记录无限累积） =====
-const scrollerRef = ref<{ forceUpdate: (clearCache?: boolean) => void } | null>(null);
-let trimmedBaseline = 0;
-watch(
-  () => mqttStore.trimmedCount,
-  (count) => {
-    // 每裁剪约 2000 条重置一次行高缓存，可见行会自动重新测量
-    if (count - trimmedBaseline >= 2000) {
-      trimmedBaseline = count;
-      scrollerRef.value?.forceUpdate(true);
-    }
-  }
-);
 
 // 过滤标签
 const filterLabel = computed(() => {
@@ -325,29 +312,6 @@ const filterLabel = computed(() => {
       return t('template.allCategories');
   }
 });
-
-// 获取格式标签类型
-function getFormatTagType(
-  format: PayloadDisplayFormat
-): "info" | "success" | "warning" {
-  const types: Record<PayloadDisplayFormat, "info" | "success" | "warning"> = {
-    json: "success",
-    binary: "warning",
-    text: "info",
-  };
-  return types[format];
-}
-
-// 获取格式标签文本
-function getFormatLabel(format: PayloadDisplayFormat): string {
-  // binary 格式统一显示为 HEX
-  const labels: Record<PayloadDisplayFormat, string> = {
-    json: "JSON",
-    binary: "HEX",
-    text: "TEXT",
-  };
-  return labels[format];
-}
 
 const formatTime = (timestamp?: number) => {
   return formatMsgTime(timestamp, appStore.getDateLocale());
@@ -453,28 +417,27 @@ function copyToPublish() {
   min-height: 0;
 }
 
-.empty-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
+// ===== 固定行高布局：以下尺寸与 ROW_HEIGHT 严格对应，改任一处都要同步 =====
 .message-item-wrapper {
+  height: 120px;
   padding: 4px 8px;
 }
 
 .message-item {
-  padding: 10px 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
   border-radius: 8px;
   background-color: var(--sidebar-bg);
   border: 1px solid var(--app-border-color);
   cursor: pointer;
+  overflow: hidden;
   // 显式列出过渡属性，避免虚拟滚动复用 view 调整 transform 时意外触发过渡
   transition: background-color 0.2s ease, border-color 0.2s ease;
 
   &:hover {
     background-color: var(--sidebar-hover);
-    transform: translateX(2px);
   }
 
   &.publish {
@@ -487,25 +450,31 @@ function copyToPublish() {
 }
 
 .message-header {
+  height: 20px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.msg-icon {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
 }
 
 .msg-direction {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  height: 20px;
   font-size: 11px;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 0 8px;
   border-radius: 4px;
   flex-shrink: 0;
-
-  .el-icon {
-    font-size: 10px;
-  }
 
   &.publish {
     background-color: rgba(59, 130, 246, 0.15);
@@ -520,13 +489,17 @@ function copyToPublish() {
 
 .msg-topic {
   flex: 1;
-  font-size: 12px;
-  font-family: "Fira Code", "Consolas", monospace;
-  color: var(--app-text-color);
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
+  font-size: 12px;
+  font-family: "Fira Code", "Consolas", monospace;
+  color: var(--app-text-color);
+
+  .topic-text {
+    min-width: 0;
+  }
 }
 
 .topic-color-dot {
@@ -543,11 +516,43 @@ function copyToPublish() {
   flex-shrink: 0;
 }
 
-.format-tag {
-  font-size: 10px;
-  padding: 0 6px;
+// 轻量标签：样式对齐 el-tag 的 plain / small，但不是组件
+.tag {
+  display: inline-flex;
+  align-items: center;
   height: 18px;
-  line-height: 18px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 1;
+  border-radius: 4px;
+  white-space: nowrap;
+  color: var(--el-color-primary);
+  background-color: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
+
+  &.tag-info {
+    color: var(--el-color-info);
+    background-color: var(--el-color-info-light-9);
+    border-color: var(--el-color-info-light-5);
+  }
+
+  &.tag-success {
+    color: var(--el-color-success);
+    background-color: var(--el-color-success-light-9);
+    border-color: var(--el-color-success-light-5);
+  }
+
+  &.tag-warning {
+    color: var(--el-color-warning);
+    background-color: var(--el-color-warning-light-9);
+    border-color: var(--el-color-warning-light-5);
+  }
+
+  &.tag-danger {
+    color: var(--el-color-danger);
+    background-color: var(--el-color-danger-light-9);
+    border-color: var(--el-color-danger-light-5);
+  }
 }
 
 .msg-time {
@@ -557,29 +562,46 @@ function copyToPublish() {
 }
 
 .message-body {
-  margin-top: 6px;
+  height: 68px;
+  padding: 6px 10px;
+  overflow: hidden;
+  background-color: var(--sidebar-bg);
+  border: 1px solid var(--app-border-color);
+  border-radius: 6px;
+  font-family: "Fira Code", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .message-error {
+  height: 18px;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  margin-top: 6px;
-  margin-bottom: 6px;
-  background-color: var(--el-color-danger-light-9);
-  border-radius: 4px;
-  font-size: 12px;
   color: var(--el-color-danger);
-  
-  .el-icon {
-    flex-shrink: 0;
-  }
-  
+
   span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+  }
+}
+
+.message-preview {
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--app-text-color);
+
+  &.is-json,
+  &.is-binary {
+    color: var(--msg-publish);
+  }
+
+  &.with-error {
+    -webkit-line-clamp: 2;
   }
 }
 
@@ -590,10 +612,6 @@ function copyToPublish() {
 .msg-direction.has-error {
   background-color: var(--el-color-danger-light-9);
   color: var(--el-color-danger);
-}
-
-.error-tag {
-  margin-right: 4px;
 }
 
 .empty-state {

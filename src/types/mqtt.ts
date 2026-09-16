@@ -58,13 +58,17 @@ export interface MqttMessage {
   originalLength?: number;
   /** payload 是否被后端截断 */
   truncated?: boolean;
-  // ===== 入队时计算的派生数据缓存（渲染/搜索热路径直接读取） =====
+  // ===== 惰性计算并 memo 到对象上的派生数据（见 utils/messageDerived.ts） =====
   /** TextDecoder 解码后的文本 */
   decodedText?: string;
-  /** HEX 字符串（惰性计算 + memo） */
+  /** HEX 字符串（3 倍长度，只在详情与二进制消息搜索时物化） */
   hexText?: string;
   /** 展示格式（payload_type 映射或自动检测结果） */
   payloadFormat?: "json" | "binary" | "text";
+  /** 小写的搜索文本（topic + 文本，二进制再附 HEX） */
+  searchText?: string;
+  /** 列表行的截断预览 */
+  previewText?: string;
 }
 
 /**
@@ -89,21 +93,6 @@ export interface UpdateSubscriptionRequest {
   topic?: string;
   qos?: number;
   color?: string;
-}
-
-/**
- * 消息历史类型
- */
-export interface MessageHistory {
-  id?: number;
-  server_id: number;
-  topic: string;
-  payload?: string;
-  payload_format?: "text" | "json" | "hex";
-  direction: "publish" | "receive";
-  qos: number;
-  retain: boolean;
-  created_at?: string;
 }
 
 /**

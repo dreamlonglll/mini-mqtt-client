@@ -48,20 +48,6 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MessageHistory {
-    pub id: Option<i64>,
-    pub server_id: i64,
-    pub direction: String, // "publish" or "receive"
-    pub topic: String,
-    pub payload: Option<String>,
-    #[serde(default)]
-    pub payload_format: Option<String>, // "text", "json", "hex"
-    pub qos: i32,
-    pub retain: bool,
-    pub created_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublishPayload {
     pub topic: String,
     pub payload: String,

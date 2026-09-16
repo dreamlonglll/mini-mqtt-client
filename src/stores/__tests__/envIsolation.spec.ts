@@ -3,8 +3,8 @@ import { createPinia, setActivePinia } from "pinia";
 import { invokeMock, invokeArgsOf, resetTauriMock } from "./tauriMock";
 
 vi.mock("@tauri-apps/api/core", async () => {
-  const { invokeMock } = await import("./tauriMock");
-  return { invoke: invokeMock };
+  const { invokeMock, ChannelMock } = await import("./tauriMock");
+  return { invoke: invokeMock, Channel: ChannelMock };
 });
 vi.mock("@tauri-apps/api/event", async () => {
   const { listenMock } = await import("./tauriMock");

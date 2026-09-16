@@ -1,3 +1,4 @@
 pub mod client;
+pub mod frame;
 
-pub use client::MqttManager;
+pub use client::{MessageChannel, MqttManager};

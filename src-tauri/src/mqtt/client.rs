@@ -5,10 +5,12 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 use crate::db::models::MqttServer;
+use crate::mqtt::frame::{encode_batch, PendingMessage};
 
 /// 收发包大小上限（rumqttc 默认仅 10KB，超限会导致 poll 报错断连）
 const MAX_PACKET_SIZE: usize = 10 * 1024 * 1024;
@@ -17,27 +19,16 @@ const MAX_EMIT_PAYLOAD: usize = 64 * 1024;
 /// 系统根证书库缓存（Windows 上首次加载需读注册表解析上百张证书，50-200ms）
 static SYSTEM_ROOT_STORE: OnceLock<rumqttc::tokio_rustls::rustls::RootCertStore> = OnceLock::new();
 
+/// 向前端推送消息帧的 Channel（原始字节，见 `frame.rs`）
+pub type MessageChannel = Channel<InvokeResponseBody>;
+/// 所有连接共用的 Channel 槽位；前端注册前为 None，此时收到的消息直接丢弃
+type ChannelSlot = Arc<RwLock<Option<MessageChannel>>>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionState {
     pub server_id: i64,
     pub status: String, // "disconnected", "connecting", "connected", "error"
     pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReceivedMessage {
-    pub server_id: i64,
-    pub topic: String,
-    /// base64 编码的消息体（相比 JSON 数字数组体积仅膨胀 1.33x）
-    pub payload: String,
-    pub qos: u8,
-    pub retain: bool,
-    /// Unix 毫秒时间戳（数值型比 RFC3339 字符串轻量，由前端格式化）
-    pub timestamp: i64,
-    /// 原始 payload 字节数（截断时前端据此提示）
-    pub original_length: usize,
-    /// payload 是否被截断
-    pub truncated: bool,
 }
 
 struct ClientHandle {
@@ -54,6 +45,7 @@ pub struct MqttManager {
     clients: Arc<RwLock<HashMap<i64, ClientHandle>>>,
     app_handle: AppHandle,
     next_generation: AtomicU64,
+    message_channel: ChannelSlot,
 }
 
 impl MqttManager {
@@ -62,7 +54,16 @@ impl MqttManager {
             clients: Arc::new(RwLock::new(HashMap::new())),
             app_handle,
             next_generation: AtomicU64::new(0),
+            message_channel: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// 设置（或替换）向前端推送消息帧的 Channel
+    ///
+    /// 旧 Channel 被替换后随即 drop，Tauri 会向前端发送 end 标记，
+    /// 前端侧对应的回调随之注销，不会残留。
+    pub fn set_message_channel(&self, channel: MessageChannel) {
+        *self.message_channel.write() = Some(channel);
     }
 
     pub async fn connect(&self, server: MqttServer) -> Result<(), String> {
@@ -138,6 +139,7 @@ impl MqttManager {
         // 启动事件循环
         let app_handle = self.app_handle.clone();
         let clients = self.clients.clone();
+        let message_channel = self.message_channel.clone();
 
         tokio::spawn(async move {
             Self::run_eventloop(
@@ -148,6 +150,7 @@ impl MqttManager {
                 shutdown_rx,
                 app_handle,
                 clients,
+                message_channel,
             )
             .await;
         });
@@ -155,6 +158,7 @@ impl MqttManager {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_eventloop(
         server_id: i64,
         generation: u64,
@@ -163,12 +167,13 @@ impl MqttManager {
         mut shutdown_rx: mpsc::Receiver<()>,
         app_handle: AppHandle,
         clients: Arc<RwLock<HashMap<i64, ClientHandle>>>,
+        message_channel: ChannelSlot,
     ) {
-        use base64::Engine as _;
-
-        // 攒批 emit：累积 BATCH_MAX 条或到达 BATCH_INTERVAL 后一次性发给前端，
-        // 避免每条消息各付一次 serde 序列化 + WebView2 跨进程 marshal 的成本
+        // 攒批推送：累积 BATCH_MAX 条、累计 BATCH_MAX_BYTES 字节或到达 BATCH_INTERVAL 后
+        // 编成一帧经 Channel 发给前端。按字节封顶是为了让单帧体积可控：
+        // 50 条 64KB 的截断消息若只按条数攒批，一帧会超过 3MB
         const BATCH_MAX: usize = 50;
+        const BATCH_MAX_BYTES: usize = 256 * 1024;
         const BATCH_INTERVAL: Duration = Duration::from_millis(30);
         // 瞬时错误的重连退避区间
         const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(500);
@@ -180,7 +185,8 @@ impl MqttManager {
         let mut ever_connected = false;
         let mut initial_attempts: u32 = 0;
         let mut reconnect_delay = INITIAL_RECONNECT_DELAY;
-        let mut batch: Vec<ReceivedMessage> = Vec::new();
+        let mut batch: Vec<PendingMessage> = Vec::new();
+        let mut batch_bytes: usize = 0;
         // 攒批 flush 定时器：仅在批非空时参与 select，并在本批第一条消息到达时才 arm，
         // 消除空闲连接上每 30ms 一次的无谓唤醒（攒批语义仍是 50 条 / 30ms）
         let flush_timer = tokio::time::sleep(BATCH_INTERVAL);
@@ -189,13 +195,13 @@ impl MqttManager {
         loop {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
-                    Self::flush_batch(&app_handle, &mut batch);
+                    Self::flush_batch(&message_channel, &mut batch, &mut batch_bytes);
                     connected_flag.store(false, Ordering::Release);
                     Self::emit_state_if_current(&app_handle, &clients, server_id, generation, "disconnected", None);
                     break;
                 }
                 _ = &mut flush_timer, if !batch.is_empty() => {
-                    Self::flush_batch(&app_handle, &mut batch);
+                    Self::flush_batch(&message_channel, &mut batch, &mut batch_bytes);
                 }
                 event = eventloop.poll() => {
                     match event {
@@ -222,30 +228,33 @@ impl MqttManager {
                         Ok(Event::Incoming(Packet::Publish(publish))) => {
                             let original_length = publish.payload.len();
                             let truncated = original_length > MAX_EMIT_PAYLOAD;
-                            let raw = if truncated {
-                                &publish.payload[..MAX_EMIT_PAYLOAD]
+                            // Bytes 切片零拷贝，直到编帧时才真正复制一次
+                            let payload = if truncated {
+                                publish.payload.slice(..MAX_EMIT_PAYLOAD)
                             } else {
-                                &publish.payload[..]
+                                publish.payload
                             };
-                            let batch_was_empty = batch.is_empty();
-                            batch.push(ReceivedMessage {
+                            let message = PendingMessage {
                                 server_id,
                                 topic: publish.topic,
-                                payload: base64::engine::general_purpose::STANDARD.encode(raw),
+                                payload,
                                 qos: publish.qos as u8,
                                 retain: publish.retain,
                                 timestamp: chrono::Utc::now().timestamp_millis(),
                                 original_length,
                                 truncated,
-                            });
+                            };
+                            let batch_was_empty = batch.is_empty();
+                            batch_bytes += message.encoded_size();
+                            batch.push(message);
                             // 本批第一条消息到达时才重置定时器，保证等待上限为 BATCH_INTERVAL
                             if batch_was_empty {
                                 flush_timer
                                     .as_mut()
                                     .reset(tokio::time::Instant::now() + BATCH_INTERVAL);
                             }
-                            if batch.len() >= BATCH_MAX {
-                                Self::flush_batch(&app_handle, &mut batch);
+                            if batch.len() >= BATCH_MAX || batch_bytes >= BATCH_MAX_BYTES {
+                                Self::flush_batch(&message_channel, &mut batch, &mut batch_bytes);
                             }
                         }
                         Ok(Event::Incoming(Packet::SubAck(_))) => {
@@ -255,7 +264,7 @@ impl MqttManager {
                             // Ping 响应
                         }
                         Err(e) => {
-                            Self::flush_batch(&app_handle, &mut batch);
+                            Self::flush_batch(&message_channel, &mut batch, &mut batch_bytes);
                             // 出错即视为断线：断线期间的发布/订阅立即失败，不再静默入队
                             connected_flag.store(false, Ordering::Release);
 
@@ -400,13 +409,28 @@ impl MqttManager {
         Self::emit_state_static(app_handle, server_id, status, error);
     }
 
-    /// 将攒批的消息一次性 emit 给前端（emit_to 只发主窗口，避免多 webview 广播）
-    fn flush_batch(app_handle: &AppHandle, batch: &mut Vec<ReceivedMessage>) {
+    /// 将攒批的消息编成一帧经 Channel 推给前端
+    ///
+    /// 帧走原始字节：Tauri 对超过 1KB 的原始负载改用 fetch 通道投递，
+    /// 不再把数据拼进 JS 脚本求值，前端拿到的是 ArrayBuffer。
+    /// `batch` 只清空不释放，容量在批次间复用。
+    fn flush_batch(
+        channel: &ChannelSlot,
+        batch: &mut Vec<PendingMessage>,
+        batch_bytes: &mut usize,
+    ) {
         if batch.is_empty() {
             return;
         }
-        let messages = std::mem::take(batch);
-        let _ = app_handle.emit_to("main", "mqtt-messages", messages);
+        let frame = encode_batch(batch);
+        batch.clear();
+        *batch_bytes = 0;
+
+        // 先克隆出 Channel 再发送，不在持锁期间做 IPC
+        let channel = channel.read().clone();
+        if let Some(channel) = channel {
+            let _ = channel.send(InvokeResponseBody::Raw(frame));
+        }
     }
 
     pub async fn disconnect(&self, server_id: i64) -> Result<(), String> {

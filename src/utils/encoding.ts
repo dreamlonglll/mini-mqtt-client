@@ -6,6 +6,10 @@
  * 不再静默产生 NaN 字节导致"发出去的内容与看到的不一致"。
  */
 
+/** 全项目共用的 UTF-8 编解码器实例（热路径上不再逐条 new） */
+export const utf8Decoder = new TextDecoder();
+export const utf8Encoder = new TextEncoder();
+
 /** 一次 String.fromCharCode 的实参分块大小（大数组直接展开会抛 RangeError） */
 const BASE64_CHUNK_SIZE = 0x8000;
 

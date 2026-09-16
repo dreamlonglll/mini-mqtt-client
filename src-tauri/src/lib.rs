@@ -15,7 +15,15 @@ use commands::template::*;
 use db::Storage;
 use log::LogManager;
 use mqtt::MqttManager;
+use std::time::Duration;
 use tauri::Manager;
+
+/// 前端迟迟没有调用 show 时兜底显示主窗口的等待时长
+///
+/// 主窗口在 tauri.conf.json 里配置为初始隐藏，由前端在主题应用完毕后再显示，
+/// 避免启动时先闪一下空白页与浅色背景。若前端加载失败，超时后仍要把窗口显示出来，
+/// 否则用户会以为应用没有启动。
+const SHOW_WINDOW_FALLBACK: Duration = Duration::from_secs(3);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +46,16 @@ pub fn run() {
                 LogManager::new(&app.handle()).expect("Failed to initialize log manager");
             app.manage(log_manager);
 
+            // 主窗口显示兜底
+            if let Some(window) = app.get_webview_window("main") {
+                std::thread::spawn(move || {
+                    std::thread::sleep(SHOW_WINDOW_FALLBACK);
+                    if !window.is_visible().unwrap_or(true) {
+                        let _ = window.show();
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -47,6 +65,7 @@ pub fn run() {
             update_server,
             delete_server,
             // MQTT 命令
+            register_message_channel,
             mqtt_connect,
             mqtt_disconnect,
             mqtt_subscribe,
@@ -59,8 +78,6 @@ pub fn run() {
             update_subscription,
             // 消息命令
             publish_message,
-            get_message_history,
-            clear_message_history,
             // 模板命令
             create_template,
             list_templates,

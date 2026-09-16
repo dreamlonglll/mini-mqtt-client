@@ -3,16 +3,15 @@
 //! 统一通过公开方法 + 临时目录里的真实数据文件验证行为，
 //! 不断言内部字段与调用次数（唯一的例外是脏标记，它是"是否触发落盘"的可观察代理）。
 
-use super::message::MAX_HISTORY_PAYLOAD;
 use super::models::{
-    CreateTemplateRequest, MessageHistory, MqttServer, Subscription, UpdateEnvVariableRequest,
+    CreateTemplateRequest, MqttServer, Subscription, UpdateEnvVariableRequest,
     UpdateScriptRequest, UpdateSubscriptionRequest, UpdateTemplateRequest,
 };
 use super::Storage;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 /// 在临时目录里准备一个数据文件路径（TempDir 需由调用方持有，drop 后目录被清理）
@@ -371,16 +370,33 @@ fn update_of_missing_id_returns_error() {
 fn failed_update_does_not_mark_dirty() {
     let (_dir, path) = temp_data_path();
     let storage = open(path);
-    storage.dirty.store(false, Ordering::Release);
+    storage.dirty.clear();
 
     let mut ghost = sample_server("不存在的服务器");
     ghost.id = Some(999);
     let _ = storage.update_server(ghost);
 
-    assert!(
-        !storage.dirty.load(Ordering::Acquire),
-        "update 失败时不应置脏标记"
-    );
+    assert!(!storage.dirty.is_dirty(), "update 失败时不应置脏标记");
+}
+
+/// 写操作后后台线程应在合并窗口后自行落盘，无需调用 flush
+///
+/// 落盘线程改为条件变量唤醒后，这里保证"置脏 → 唤醒 → 落盘"这条链没有断。
+#[test]
+fn background_thread_persists_after_debounce_window() {
+    let (_dir, path) = temp_data_path();
+    let storage = open(path.clone());
+    storage.create_server(sample_server("由后台线程落盘")).unwrap();
+    assert!(!path.exists(), "合并窗口内不应立即落盘");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !path.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(path.exists(), "后台线程应在合并窗口后落盘");
+
+    let reloaded = open(path);
+    assert_eq!(reloaded.get_server(1).unwrap().name, "由后台线程落盘");
 }
 
 /// created_at 由服务端维护，客户端传来的值不得覆盖
@@ -423,75 +439,4 @@ fn persist_failure_is_reported_through_notifier() {
         "通知消息应为中文：{}",
         messages[0]
     );
-}
-
-fn sample_message(server_id: i64, payload: String) -> MessageHistory {
-    MessageHistory {
-        id: None,
-        server_id,
-        topic: "test/topic".to_string(),
-        payload: Some(payload),
-        payload_format: Some("text".to_string()),
-        direction: "publish".to_string(),
-        qos: 0,
-        retain: false,
-        created_at: None,
-    }
-}
-
-/// 超长发布 payload 写入后读回应为截断版并带中文标记
-#[test]
-fn oversized_publish_payload_is_truncated_with_marker() {
-    let (_dir, path) = temp_data_path();
-    let storage = open(path);
-
-    let original_len = MAX_HISTORY_PAYLOAD + 5000;
-    let payload = "a".repeat(original_len);
-    storage.create_message(sample_message(1, payload)).unwrap();
-
-    let stored = storage.get_messages(1, 10, 0);
-    assert_eq!(stored.len(), 1);
-    let content = stored[0].payload.clone().unwrap();
-
-    assert!(content.len() < original_len, "超长 payload 应被截断");
-    assert!(
-        content.starts_with(&"a".repeat(MAX_HISTORY_PAYLOAD)),
-        "截断应保留前 {} 字节原文",
-        MAX_HISTORY_PAYLOAD
-    );
-    assert!(
-        content.ends_with(&format!("...[已截断，原始 {} 字节]", original_len)),
-        "截断内容尾部应带中文标记：{}",
-        &content[content.len().saturating_sub(60)..]
-    );
-}
-
-/// 未超限的 payload 原样保留
-#[test]
-fn normal_publish_payload_is_kept_intact() {
-    let (_dir, path) = temp_data_path();
-    let storage = open(path);
-
-    storage
-        .create_message(sample_message(1, "{\"a\":1}".to_string()))
-        .unwrap();
-
-    let stored = storage.get_messages(1, 10, 0);
-    assert_eq!(stored[0].payload.as_deref(), Some("{\"a\":1}"));
-}
-
-/// 截断点落在多字节字符中间时不能切出非法 UTF-8
-#[test]
-fn truncation_respects_utf8_char_boundary() {
-    let (_dir, path) = temp_data_path();
-    let storage = open(path);
-
-    // 每个中文字符 3 字节，64KB 不是 3 的整数倍，截断点必然落在字符中间
-    let payload = "中".repeat(MAX_HISTORY_PAYLOAD);
-    storage.create_message(sample_message(1, payload)).unwrap();
-
-    let content = storage.get_messages(1, 10, 0)[0].payload.clone().unwrap();
-    assert!(content.contains("已截断"));
-    // 能取到内容本身即说明是合法 UTF-8（String 保证），再确认未出现替换字符
-    assert!(!content.contains('\u{FFFD}'));
 }

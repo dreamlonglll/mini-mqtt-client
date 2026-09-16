@@ -4,6 +4,14 @@ import pinia from "./stores";
 import i18n, { getActualLocale, type Locale } from "./i18n";
 import { setupGlobalErrorHandler } from "./utils/errorHandler";
 
+// 界面字体随应用打包（Inter 400-700、Fira Code 400/500），启动不再依赖网络
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/inter/700.css";
+import "@fontsource/fira-code/400.css";
+import "@fontsource/fira-code/500.css";
+
 // Element Plus 组件由 unplugin-vue-components 按需引入（见 vite.config.ts），
 // 这里只补上全量样式里必需的部分：暗黑主题变量与 API 式组件的样式
 

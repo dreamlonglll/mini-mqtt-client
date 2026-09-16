@@ -1,13 +1,14 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { MessageHistory, PublishPayload } from "@/types/mqtt";
+import type { PublishPayload } from "@/types/mqtt";
 
 export const useMessageStore = defineStore("message", () => {
   const loading = ref(false);
 
-  async function publishMessage(serverId: number, message: PublishPayload) {
-    return await invoke<MessageHistory>("publish_message", {
+  /** 交给后端发布；发布记录只保留在前端消息列表，后端不再留副本 */
+  async function publishMessage(serverId: number, message: PublishPayload): Promise<void> {
+    await invoke("publish_message", {
       serverId,
       message,
     });

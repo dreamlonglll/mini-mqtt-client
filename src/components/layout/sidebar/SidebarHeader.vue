@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -32,14 +32,27 @@ const appStore = useAppStore();
 
 const appVersion = ref("");
 
+/** 启动后延迟多久再去 GitHub 检查更新：让出首屏时间，网络请求不与初始化抢资源 */
+const UPDATE_CHECK_DELAY_MS = 5000;
+let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
+
 onMounted(async () => {
   try {
     appVersion.value = await getVersion();
   } catch {
     appVersion.value = "1.0.0";
   }
-  // 启动时检查更新
-  appStore.checkUpdate();
+  updateCheckTimer = setTimeout(() => {
+    updateCheckTimer = null;
+    appStore.checkUpdate();
+  }, UPDATE_CHECK_DELAY_MS);
+});
+
+onUnmounted(() => {
+  if (updateCheckTimer) {
+    clearTimeout(updateCheckTimer);
+    updateCheckTimer = null;
+  }
 });
 
 // 有新版本时点击版本号跳转到 release 页

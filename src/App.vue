@@ -74,6 +74,7 @@
 import { ref, computed, onMounted, defineAsyncComponent } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import MainContent from "@/components/mqtt/MainContent.vue";
 import { useLazyDialog } from "@/composables/useLazyDialog";
@@ -139,9 +140,7 @@ const {
   open: openScriptDialog,
 } = useLazyDialog();
 
-onMounted(() => {
-  // 初始化主题
-  appStore.initTheme();
+onMounted(async () => {
   // 初始化语言
   appStore.initLocale();
   // 初始化 MQTT 事件监听
@@ -153,6 +152,18 @@ onMounted(() => {
       duration: 8000,
     });
   });
+
+  // 主窗口在配置里是初始隐藏的：等主题真正应用完再显示，避免启动先闪空白页与浅色背景。
+  // 无论主题初始化成败都要显示窗口（Rust 侧另有 3 秒兜底）。
+  try {
+    await appStore.initTheme();
+  } finally {
+    getCurrentWindow()
+      .show()
+      .catch(() => {
+        // 纯浏览器开发模式下没有 Tauri 窗口
+      });
+  }
 });
 
 // 处理保存模板请求

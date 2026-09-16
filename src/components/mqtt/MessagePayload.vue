@@ -1,18 +1,13 @@
 <template>
-  <div class="message-payload" :class="{ preview, expanded: !preview }">
+  <div class="message-payload">
     <!-- JSON 格式 - 保持原样展示，不格式化 -->
-    <div v-if="effectiveFormat === 'json'" class="payload-content json-content">
-      <pre>{{ preview ? displayPayload : displayPayloadWithLineBreaks }}</pre>
+    <div v-if="format === 'json'" class="payload-content json-content">
+      <pre>{{ textWithLineBreaks }}</pre>
     </div>
 
-    <!-- 二进制/HEX 格式 -->
-    <div v-else-if="effectiveFormat === 'binary'" class="payload-content hex-content">
-      <!-- 预览模式：只显示简单的 HEX 字符串 -->
-      <div v-if="preview" class="hex-preview-simple">
-        <span>{{ simpleHexPreview }}</span>
-      </div>
-      <!-- 详情模式：显示完整的 HEX + ASCII 展示（按需增量渲染，避免大 payload 一次性生成数万 DOM 节点） -->
-      <div v-else class="hex-display">
+    <!-- 二进制/HEX 格式：完整的 HEX + ASCII 展示（按需增量渲染，避免大 payload 一次性生成数万 DOM 节点） -->
+    <div v-else-if="format === 'binary'" class="payload-content hex-content">
+      <div class="hex-display">
         <div class="hex-row" v-for="(row, index) in hexRows" :key="index">
           <span class="offset">{{ formatOffset(index * 16) }}</span>
           <span class="hex-bytes">
@@ -38,7 +33,7 @@
 
     <!-- 纯文本格式 -->
     <div v-else class="payload-content text-content">
-      <pre>{{ preview ? displayPayload : displayPayloadWithLineBreaks }}</pre>
+      <pre>{{ textWithLineBreaks }}</pre>
     </div>
   </div>
 </template>
@@ -48,124 +43,25 @@ import { computed, ref, watch } from "vue";
 import type { MqttMessage } from "@/types/mqtt";
 import { getDecodedText, getDisplayFormat } from "@/utils/messageDerived";
 
-type PayloadFormat = "json" | "binary" | "text";
-
-// 预览模式的截断上限：超长文本一行展开会触发最贵的文本布局，
-// 基本抵消虚拟滚动收益；完整内容在详情弹窗查看
-const PREVIEW_MAX_CHARS = 300;
-const PREVIEW_MAX_HEX_BYTES = 64;
 // 详情模式 HEX 视图每次渲染的字节数（1024 字节 = 64 行）
 const HEX_PAGE_BYTES = 1024;
 
+// 只服务于详情弹窗：列表行的预览由 MessageList 用原生元素直接渲染
 const props = defineProps<{
-  payload: string | Uint8Array | undefined;
-  preview?: boolean;
-  payloadType?: "json" | "hex" | "text";
-  /** 消息对象（提供时直接读取入队时计算的派生缓存） */
-  message?: MqttMessage;
+  message: MqttMessage;
 }>();
 
-// 将 payload 转换为字符串（优先读消息对象上的派生缓存）
-const payloadString = computed(() => {
-  if (props.message) return getDecodedText(props.message);
-  if (!props.payload) return "";
-  if (props.payload instanceof Uint8Array) {
-    return new TextDecoder().decode(props.payload);
-  }
-  return String(props.payload);
-});
+// 展示格式与文本全部读消息对象上的 memo
+const format = computed(() => getDisplayFormat(props.message));
 
-// 将 payload 转换为字节数组
-const payloadBytes = computed(() => {
-  if (!props.payload) return new Uint8Array();
-  if (props.payload instanceof Uint8Array) {
-    return props.payload;
-  }
-  return new TextEncoder().encode(props.payload);
-});
+const payloadBytes = computed(() => props.message.payload ?? new Uint8Array());
 
-// 自动检测格式（优先读消息对象上的缓存结果）
-const detectedFormat = computed<PayloadFormat>(() => {
-  if (props.message) return getDisplayFormat(props.message);
-  if (!props.payload) return "text";
+// 带换行符标记的文本：在换行符前添加 ↵ 符号标记原始换行位置
+const textWithLineBreaks = computed(() =>
+  getDecodedText(props.message).replace(/\r?\n/g, "↵$&")
+);
 
-  const str = payloadString.value;
-
-  // 尝试检测 JSON
-  if (str.trim()) {
-    const trimmed = str.trim();
-    if (
-      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-      (trimmed.startsWith("[") && trimmed.endsWith("]"))
-    ) {
-      try {
-        JSON.parse(trimmed);
-        return "json";
-      } catch {
-        // 不是有效的 JSON
-      }
-    }
-  }
-
-  // 检测二进制数据（包含不可打印字符）
-  const bytes = payloadBytes.value;
-  if (bytes.length > 0) {
-    let nonPrintableCount = 0;
-    for (const byte of bytes) {
-      // 检查是否为不可打印字符（排除常见的空白字符）
-      if ((byte < 32 || byte > 126) && byte !== 9 && byte !== 10 && byte !== 13) {
-        nonPrintableCount++;
-      }
-    }
-    // 如果超过 10% 的字符是不可打印的，则认为是二进制
-    if (nonPrintableCount / bytes.length > 0.1) {
-      return "binary";
-    }
-  }
-
-  return "text";
-});
-
-// 有效格式（优先使用指定的 payloadType，否则使用自动检测）
-const effectiveFormat = computed<PayloadFormat>(() => {
-  if (props.payloadType) {
-    // hex 类型映射为 binary 显示
-    if (props.payloadType === "hex") return "binary";
-    if (props.payloadType === "json") return "json";
-    return "text";
-  }
-  return detectedFormat.value;
-});
-
-// 简单的 HEX 预览（用于列表预览，截断至前 PREVIEW_MAX_HEX_BYTES 字节）
-const simpleHexPreview = computed(() => {
-  const bytes = payloadBytes.value;
-  const shown = bytes.subarray(0, PREVIEW_MAX_HEX_BYTES);
-  const parts: string[] = new Array(shown.length);
-  for (let i = 0; i < shown.length; i++) {
-    parts[i] = shown[i].toString(16).padStart(2, "0").toUpperCase();
-  }
-  const hex = parts.join(" ");
-  return bytes.length > PREVIEW_MAX_HEX_BYTES ? `${hex} …` : hex;
-});
-
-// 显示的 payload（预览模式截断，完整内容在详情弹窗查看）
-const displayPayload = computed(() => {
-  const str = payloadString.value;
-  if (str.length > PREVIEW_MAX_CHARS) {
-    return `${str.slice(0, PREVIEW_MAX_CHARS)} …`;
-  }
-  return str;
-});
-
-// 带换行符标记的 payload（用于详情展示）
-const displayPayloadWithLineBreaks = computed(() => {
-  const str = payloadString.value;
-  // 在换行符前添加 ↵ 符号标记原始换行位置
-  return str.replace(/\r?\n/g, '↵$&');
-});
-
-// 详情模式 HEX 视图当前已渲染的字节数（切换消息时重置）
+// HEX 视图当前已渲染的字节数（切换消息时重置）
 const hexVisibleBytes = ref(HEX_PAGE_BYTES);
 
 watch(
@@ -213,12 +109,6 @@ const hexRows = computed(() => {
 function formatOffset(offset: number) {
   return offset.toString(16).toUpperCase().padStart(8, "0");
 }
-
-// 暴露格式类型供外部使用
-defineExpose({
-  detectedFormat,
-  effectiveFormat,
-});
 </script>
 
 <style scoped lang="scss">
@@ -228,22 +118,9 @@ defineExpose({
   line-height: 1.5;
 }
 
-.message-payload.preview {
-  .payload-content {
-    // 移除高度限制，始终显示完整内容
-    max-height: none;
-    overflow: visible;
-  }
-}
-
-.message-payload.expanded {
-  .payload-content {
-    max-height: 400px;
-    overflow-y: auto;
-  }
-}
-
 .payload-content {
+  max-height: 400px;
+  overflow-y: auto;
   padding: 8px 10px;
   background-color: var(--sidebar-bg);
   border: 1px solid var(--app-border-color);
@@ -259,19 +136,6 @@ defineExpose({
 .json-content {
   pre {
     color: var(--msg-publish);
-  }
-}
-
-.hex-content {
-  .hex-preview {
-    color: var(--app-text-secondary);
-    font-size: 12px;
-  }
-  
-  .hex-preview-simple {
-    color: var(--msg-publish);
-    font-size: 12px;
-    word-break: break-all;
   }
 }
 
@@ -335,9 +199,5 @@ defineExpose({
   pre {
     color: var(--app-text-color);
   }
-}
-
-.raw-text {
-  color: var(--app-text-secondary);
 }
 </style>
