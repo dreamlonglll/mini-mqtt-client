@@ -1,5 +1,7 @@
 # Mini MQTT Client
 
+简体中文 | [English](README.en.md)
+
 一款轻量级、美观的 MQTT 调试客户端，基于 Tauri 2 + Vue 3 构建，支持 Windows、macOS 和 Linux。
 
 <!-- 主界面截图 -->
@@ -123,4 +125,4 @@ mini-mqtt-client/
 
 ## 许可证
 
-MIT License
+[MIT License](LICENSE)
