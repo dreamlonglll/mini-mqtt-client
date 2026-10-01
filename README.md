@@ -1,128 +1,130 @@
 # Mini MQTT Client
 
-简体中文 | [English](README.en.md)
+English | [简体中文](README.zh-CN.md)
 
-一款轻量级、美观的 MQTT 调试客户端，基于 Tauri 2 + Vue 3 构建，支持 Windows、macOS 和 Linux。
+A lightweight, good-looking MQTT debugging client built with Tauri 2 + Vue 3, available for Windows, macOS and Linux.
 
-<!-- 主界面截图 -->
-![主界面](docs/screenshots/main.png)
+The interface follows your system language (English or Simplified Chinese) and can be switched at any time in Settings.
 
-## 功能特性
+<!-- Main window screenshot -->
+![Main window](docs/screenshots/main.png)
 
-### MQTT 连接管理
-- 支持多服务器配置管理
-- 支持 MQTT 3.1.1 和 5.0 协议
-- 支持 TLS/SSL 安全连接 （自签CA + 客户端证书 + 客户端私钥）
+## Features
 
-<!-- 服务器配置截图 -->
-![服务器配置](docs/screenshots/server-config.png)
+### MQTT Connection Management
+- Manage multiple server configurations
+- MQTT 3.1.1 and 5.0 protocols
+- TLS/SSL connections (self-signed CA + client certificate + client private key)
 
-### 消息发布与订阅
-- 支持多 Topic 同时订阅
-- 支持通配符订阅 (`+` / `#`)
-- 支持 QoS 0/1/2 级别
-- 支持 Retain 消息
-- 消息格式切换：JSON / HEX / Text
+<!-- Server configuration screenshot -->
+![Server configuration](docs/screenshots/server-config.png)
 
-<!-- 消息列表截图 -->
-![消息列表](docs/screenshots/messages.png)
+### Publish & Subscribe
+- Subscribe to multiple topics at once
+- Wildcard subscriptions (`+` / `#`)
+- QoS 0/1/2
+- Retained messages
+- Switch message format: JSON / HEX / Text
 
-### 命令模板
-- 保存常用命令为模板
-- 支持模板分类管理
-- 一键快速发送
+<!-- Message list screenshot -->
+![Message list](docs/screenshots/messages.png)
 
-<!-- 命令模板截图 -->
-![命令模板](docs/screenshots/templates.png)
+### Command Templates
+- Save frequently used commands as templates
+- Organize templates into categories
+- Send with one click
 
-### 定时发布
-- 支持一次性定时发送
-- 支持周期性循环发送
-- 灵活的时间间隔设置
+<!-- Command templates screenshot -->
+![Command templates](docs/screenshots/templates.png)
 
-<!-- 定时发布截图 -->
-![定时发布](docs/screenshots/scheduled-publish.png)
+### Scheduled Publishing
+- One-off scheduled sending
+- Periodic, looped sending
+- Flexible interval settings
 
-### 预处理脚本
-- JavaScript 脚本引擎
-- 发送前预处理：消息加密、格式转换
-- 接收后处理：消息解密、数据解析
-- 内置加密工具库（AES、SHA、MD5、HMAC 等）
+<!-- Scheduled publishing screenshot -->
+![Scheduled publishing](docs/screenshots/scheduled-publish.png)
 
-<!-- 脚本管理截图 -->
-![预处理脚本](docs/screenshots/scripts.png)
+### Preprocessing Scripts
+- JavaScript script engine
+- Before sending: encrypt messages, convert formats
+- After receiving: decrypt messages, parse data
+- Built-in crypto utilities (AES, SHA, MD5, HMAC and more)
 
-### 其他特性
-- 深色/浅色主题切换
-- 自定义数据存储路径（搭配OneDrive可实现跨端同步）
-- 错误日志记录
+<!-- Script management screenshot -->
+![Preprocessing scripts](docs/screenshots/scripts.png)
 
-## 安装
+### More
+- Dark / light theme
+- Custom data storage path (pair it with OneDrive to sync across devices)
+- Error logging
 
-### 下载安装包
+## Installation
 
-前往 [Releases](../../releases) 页面下载对应平台的安装包：
+### Download
 
-| 平台 | 格式 |
-|------|------|
+Download the package for your platform from the [Releases](../../releases) page:
+
+| Platform | Format |
+|----------|--------|
 | Windows | `.msi` / `.exe` |
 | macOS | `.dmg` |
 | Linux | `.deb` / `.AppImage` |
 
-### 从源码构建
+### Build from Source
 
 ```bash
-# 克隆仓库
+# Clone the repository
 git clone https://github.com/dreamlonglll/mini-mqtt-client
 cd mini-mqtt-client
 
-# 安装依赖
+# Install dependencies
 npm install
 
-# 开发模式
+# Development mode
 npm run tauri dev
 
-# 构建发布版本
+# Release build
 npm run tauri build
 ```
 
-## 技术栈
+## Tech Stack
 
-| 层级 | 技术 |
-|------|------|
-| 前端框架 | Vue 3 + TypeScript |
-| UI 组件库 | Element Plus |
-| 状态管理 | Pinia |
-| 桌面框架 | Tauri 2 |
-| 后端语言 | Rust |
-| MQTT 库 | rumqttc |
+| Layer | Technology |
+|-------|------------|
+| Frontend framework | Vue 3 + TypeScript |
+| UI components | Element Plus |
+| State management | Pinia |
+| Desktop framework | Tauri 2 |
+| Backend language | Rust |
+| MQTT library | rumqttc |
 
-## 开发环境
+## Development Environment
 
 - Node.js 18+
 - Rust 1.70+
-- 推荐 IDE: VS Code
-  - 插件: Vue - Official, Tauri, rust-analyzer
+- Recommended IDE: VS Code
+  - Extensions: Vue - Official, Tauri, rust-analyzer
 
-## 目录结构
+## Project Structure
 
 ```
 mini-mqtt-client/
-├── src/                    # Vue 前端源码
-│   ├── components/         # Vue 组件
-│   ├── stores/            # Pinia 状态管理
-│   ├── utils/             # 工具函数
-│   └── types/             # TypeScript 类型
-├── src-tauri/             # Tauri Rust 后端
+├── src/                    # Vue frontend source
+│   ├── components/         # Vue components
+│   ├── stores/            # Pinia stores
+│   ├── utils/             # Utilities
+│   └── types/             # TypeScript types
+├── src-tauri/             # Tauri Rust backend
 │   └── src/
-│       ├── commands/      # Tauri 命令
-│       ├── db/           # 数据存储
-│       ├── mqtt/         # MQTT 客户端
-│       └── log/          # 日志管理
-├── docs/                  # 文档
-└── .github/workflows/     # CI/CD 配置
+│       ├── commands/      # Tauri commands
+│       ├── db/           # Data storage
+│       ├── mqtt/         # MQTT client
+│       └── log/          # Log management
+├── docs/                  # Documentation
+└── .github/workflows/     # CI/CD configuration
 ```
 
-## 许可证
+## License
 
 [MIT License](LICENSE)
