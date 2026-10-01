@@ -2,6 +2,7 @@
   "name": "mini-mqtt-client",
   "private": true,
   "version": "1.7.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,7 +27,7 @@
   },
   "devDependencies": {
     "@intlify/unplugin-vue-i18n": "^11.0.3",
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.12.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "happy-dom": "^20.11.2",
     "sass-embedded": "^1.97.2",
