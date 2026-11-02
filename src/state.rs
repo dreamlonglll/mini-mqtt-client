@@ -150,6 +150,9 @@ fn apply_brand_colors(cx: &mut App) {
         theme.tab_active_foreground = theme.foreground;
         theme.list_active = primary.opacity(0.1);
         theme.list_active_border = primary;
+        // Top-center like the previous version's messages, so toasts do not
+        // cover the search box and buttons in the top-right corner.
+        theme.notification.placement = Anchor::TopCenter;
     });
 }
 

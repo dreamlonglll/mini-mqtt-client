@@ -97,6 +97,10 @@ cargo test
 
 # 连接真实 Broker 的集成测试（需要本地 1883 TCP 与 8083 WebSocket 监听）
 cargo test -- --ignored
+
+# 端到端测试：在 Xvfb 中启动真实应用，通过无障碍树操作界面，
+# 同时核对 Broker 收到的消息与写入磁盘的数据（详见 e2e/README.md）
+./e2e/run.sh
 ```
 
 ## 数据兼容

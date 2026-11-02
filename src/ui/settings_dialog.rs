@@ -112,8 +112,11 @@ impl Render for SettingsView {
         let clear_state = self.state.clone();
         let copy_path = data_file.to_string_lossy().to_string();
 
-        let path_box = |path: String| {
+        let path_box = |id: &'static str, label: &'static str, path: String| {
             div()
+                .id(id)
+                .role(Role::Status)
+                .aria_label(format!("{label} {path}"))
                 .px_2()
                 .py_1p5()
                 .rounded(theme.radius)
@@ -146,7 +149,11 @@ impl Render for SettingsView {
                 v_flex()
                     .gap_2()
                     .child(section_label("数据存储", cx))
-                    .child(path_box(data_file.to_string_lossy().to_string()))
+                    .child(path_box(
+                        "data-path",
+                        "数据文件",
+                        data_file.to_string_lossy().to_string(),
+                    ))
                     .child(
                         h_flex()
                             .gap_2()
@@ -187,7 +194,11 @@ impl Render for SettingsView {
                                 .border_color(theme.warning.opacity(0.5))
                                 .bg(theme.warning.opacity(0.06))
                                 .child(div().text_sm().child("新的存储位置："))
-                                .child(path_box(path.to_string_lossy().to_string()))
+                                .child(path_box(
+                                    "pending-path",
+                                    "新的存储位置",
+                                    path.to_string_lossy().to_string(),
+                                ))
                                 .child(
                                     h_flex()
                                         .justify_between()
@@ -220,7 +231,7 @@ impl Render for SettingsView {
                 v_flex()
                     .gap_2()
                     .child(section_label("错误日志", cx))
-                    .child(path_box(log_dir.to_string_lossy().to_string()))
+                    .child(path_box("log-dir", "日志目录", log_dir.to_string_lossy().to_string()))
                     .child(
                         h_flex()
                             .gap_2()
@@ -272,7 +283,11 @@ impl Render for SettingsView {
                                     }),
                             ),
                     )
-                    .child(div().h(px(150.)).child(Editor::new(&self.logs).h_full().readonly(true))),
+                    .child(
+                        div()
+                            .h(px(150.))
+                            .child(Editor::new(&self.logs).aria_label("最近日志").h_full().readonly(true)),
+                    ),
             )
             .child(div().text_xs().text_color(theme.muted_foreground).child(format!(
                 "Mini MQTT Client v{} · Rust + GPUI Kit",

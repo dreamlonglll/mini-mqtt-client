@@ -197,6 +197,7 @@ impl Render for PublishPanel {
                     })
                     .child(segmented(
                         "payload-format",
+                        "发布格式",
                         &["JSON", "TEXT", "HEX"],
                         format_ix,
                         move |ix, window, cx| {
@@ -206,6 +207,9 @@ impl Render for PublishPanel {
                     .when(schedule_running, |this| {
                         this.child(
                             h_flex()
+                                .id("schedule-indicator")
+                                .role(Role::Status)
+                                .aria_label(format!("定时发布进度 {schedule_progress}"))
                                 .gap_1()
                                 .px_2()
                                 .rounded(theme.radius)
@@ -247,11 +251,13 @@ impl Render for PublishPanel {
                             .child(
                                 div().flex_1().child(
                                     Input::new(&self.topic)
+                                        .aria_label("发布 Topic")
                                         .prefix(Icon::new(Lucide::Send).small().text_color(theme.muted_foreground)),
                                 ),
                             )
                             .child(segmented(
                                 "publish-qos",
+                                "发布 QoS",
                                 &["QoS 0", "QoS 1", "QoS 2"],
                                 self.qos as usize,
                                 move |ix, _, cx| {
@@ -278,7 +284,12 @@ impl Render for PublishPanel {
                         h_flex()
                             .gap_3()
                             .items_end()
-                            .child(div().flex_1().min_w_0().child(Editor::new(&self.payload).h(px(104.))))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(Editor::new(&self.payload).aria_label("发布内容").h(px(104.))),
+                            )
                             .child(
                                 v_flex()
                                     .gap_2()
@@ -287,6 +298,7 @@ impl Render for PublishPanel {
                                             .gap_2()
                                             .child(
                                                 Button::new("open-templates")
+                                                    .accessibility_label("从模板加载")
                                                     .outline()
                                                     .icon(IconName::FolderOpen)
                                                     .tooltip("从模板加载")
@@ -298,6 +310,7 @@ impl Render for PublishPanel {
                                             )
                                             .child(
                                                 Button::new("save-template")
+                                                    .accessibility_label("保存为模板")
                                                     .outline()
                                                     .icon(IconName::Star)
                                                     .tooltip("保存为模板")

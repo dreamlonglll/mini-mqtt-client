@@ -153,6 +153,21 @@ impl MessageListView {
             .child(
                 v_flex()
                     .id(("message", message.id))
+                    .role(Role::ListItem)
+                    .aria_label(format!(
+                        "消息 {} {} {} Q{}{} {}{}",
+                        dir_label,
+                        message.topic,
+                        message.format.label(),
+                        message.qos,
+                        if message.retain { " R" } else { "" },
+                        payload::truncate(&preview, 300),
+                        message
+                            .script_error
+                            .as_ref()
+                            .map(|e| format!(" 脚本错误: {e}"))
+                            .unwrap_or_default()
+                    ))
                     .gap_1p5()
                     .p_2p5()
                     .pl_3()
@@ -281,19 +296,29 @@ impl Render for MessageListView {
             .size_full()
             .child(
                 card_header(Lucide::MessageSquare, "消息列表", cx)
-                    .child(chip(count_label, theme.muted_foreground, cx))
+                    .child(
+                        chip(count_label.clone(), theme.muted_foreground, cx)
+                            .id("message-count")
+                            .role(Role::Status)
+                            .aria_label(format!("消息数 {count_label}")),
+                    )
                     .child(div().flex_1())
                     .child(
                         div().w(px(220.)).child(
-                            Input::new(&self.search).small().cleanable(true).prefix(
-                                gpui_kit::component::Icon::new(IconName::Search)
-                                    .small()
-                                    .text_color(theme.muted_foreground),
-                            ),
+                            Input::new(&self.search)
+                                .aria_label("搜索消息")
+                                .small()
+                                .cleanable(true)
+                                .prefix(
+                                    gpui_kit::component::Icon::new(IconName::Search)
+                                        .small()
+                                        .text_color(theme.muted_foreground),
+                                ),
                         ),
                     )
                     .child(segmented(
                         "message-filter",
+                        "消息过滤",
                         &["全部", "接收", "发布"],
                         filter_ix,
                         move |ix, _, cx| {
@@ -309,6 +334,7 @@ impl Render for MessageListView {
                     ))
                     .child(
                         Button::new("clear-messages")
+                            .accessibility_label("清空消息")
                             .ghost()
                             .small()
                             .icon(Lucide::Trash)

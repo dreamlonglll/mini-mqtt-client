@@ -84,6 +84,15 @@ impl TemplateBrowser {
         let template = t.clone();
 
         v_flex()
+            .id(("tpl-card", id as u64))
+            .role(Role::ListItem)
+            .aria_label(format!(
+                "模板 {} {} {} 使用 {} 次",
+                t.name,
+                t.topic,
+                t.category.clone().unwrap_or_default(),
+                t.use_count
+            ))
             .p_3()
             .gap_2()
             .rounded(theme.radius_lg)
@@ -104,6 +113,7 @@ impl TemplateBrowser {
                     .when_some(t.category.clone(), |this, cat| this.child(chip(cat, theme.info, cx)))
                     .child(
                         Button::new(("tpl-menu", id as u64))
+                            .accessibility_label(format!("模板菜单 {}", t.name))
                             .ghost()
                             .xsmall()
                             .icon(IconName::Ellipsis)
@@ -195,6 +205,7 @@ impl TemplateBrowser {
                     )
                     .child(
                         Button::new(("tpl-use", id as u64))
+                            .accessibility_label(format!("使用模板 {}", t.name))
                             .primary()
                             .xsmall()
                             .icon(Lucide::Send)
@@ -255,6 +266,7 @@ impl Render for TemplateBrowser {
                     .child(
                         div().flex_1().child(
                             Input::new(&self.search)
+                                .aria_label("搜索模板")
                                 .cleanable(true)
                                 .prefix(Icon::new(IconName::Search).small().text_color(theme.muted_foreground)),
                         ),

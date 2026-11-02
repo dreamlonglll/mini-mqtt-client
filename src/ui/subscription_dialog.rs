@@ -38,12 +38,18 @@ impl Render for SubscriptionForm {
         let entity = cx.entity();
         v_flex()
             .gap_4()
-            .child(form_row("Topic", true, Input::new(&self.topic), cx))
+            .child(form_row(
+                "Topic",
+                true,
+                Input::new(&self.topic).aria_label("订阅 Topic"),
+                cx,
+            ))
             .child(form_row(
                 "QoS",
                 false,
                 segmented(
                     "sub-qos",
+                    "订阅 QoS",
                     &["QoS 0", "QoS 1", "QoS 2"],
                     self.qos as usize,
                     move |ix, _, cx| {

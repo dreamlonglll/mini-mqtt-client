@@ -106,6 +106,7 @@ impl Render for MessageDetail {
             })
             .child(segmented(
                 "detail-view",
+                "查看方式",
                 &["文本", "JSON", "HEX"],
                 view_ix,
                 move |ix, window, cx| {
@@ -120,9 +121,12 @@ impl Render for MessageDetail {
                 },
             ))
             .child(
-                div()
-                    .h(px(320.))
-                    .child(Editor::new(&self.content).h_full().readonly(true)),
+                div().h(px(320.)).child(
+                    Editor::new(&self.content)
+                        .aria_label("消息内容")
+                        .h_full()
+                        .readonly(true),
+                ),
             )
     }
 }

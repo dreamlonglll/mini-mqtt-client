@@ -6,7 +6,7 @@ use gpui_kit::component::StyledExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::dialog::{DialogClose, DialogFooter};
 use gpui_kit::component::input::InputState;
-use gpui_kit::component::notification::Notification;
+use gpui_kit::component::notification::{Notification, NotificationType};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{prelude::*, *};
 
@@ -106,6 +106,7 @@ pub fn section_label(text: impl Into<SharedString>, cx: &App) -> Div {
 /// A row of toggle buttons where exactly one is selected.
 pub fn segmented(
     id: &'static str,
+    group: &str,
     labels: &[&str],
     selected: usize,
     on_select: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -115,7 +116,11 @@ pub fn segmented(
         .gap_0p5()
         .children(labels.iter().enumerate().map(|(ix, label)| {
             let on_select = on_select.clone();
-            let button = Button::new((id, ix)).small().label(label.to_string());
+            let button = Button::new((id, ix))
+                .small()
+                .label(label.to_string())
+                .accessibility_label(format!("{group} {label}"))
+                .toggled(ix == selected);
             let button = if ix == selected {
                 button.primary()
             } else {
@@ -123,6 +128,59 @@ pub fn segmented(
             };
             button.on_click(move |_, window, cx| on_select(ix, window, cx))
         }))
+}
+
+/// Digit-only state for [`number_field`].
+pub fn number_state(window: &mut Window, cx: &mut App, value: i64) -> Entity<InputState> {
+    cx.new(|cx| {
+        InputState::new(window, cx)
+            .validate(|s, _| s.chars().all(|c| c.is_ascii_digit()))
+            .default_value(value.to_string())
+    })
+}
+
+fn step_number(state: &Entity<InputState>, delta: i64, min: i64, max: i64, window: &mut Window, cx: &mut App) {
+    let current: i64 = state.read(cx).value().trim().parse().unwrap_or(min);
+    let next = current.saturating_add(delta).clamp(min, max);
+    state.update(cx, |s, cx| s.set_value(next.to_string(), window, cx));
+}
+
+/// Numeric field with −/+ buttons.
+///
+/// Used instead of GPUI Kit's `NumberInput`, whose wrapper and inner text
+/// element both claim accessibility focus while focused (a debug assertion in
+/// GPUI and a per-frame warning in release builds once a screen reader is on).
+pub fn number_field(
+    id: &'static str,
+    label: &'static str,
+    state: &Entity<InputState>,
+    step: i64,
+    min: i64,
+    max: i64,
+) -> impl IntoElement {
+    let (dec, inc) = (state.clone(), state.clone());
+    h_flex()
+        .gap_1()
+        .child(
+            Button::new((id, 0usize))
+                .outline()
+                .icon(IconName::Minus)
+                .accessibility_label(format!("减少 {label}"))
+                .on_click(move |_, window, cx| step_number(&dec, -step, min, max, window, cx)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(56.))
+                .child(gpui_kit::component::input::Input::new(state).aria_label(label)),
+        )
+        .child(
+            Button::new((id, 1usize))
+                .outline()
+                .icon(IconName::Plus)
+                .accessibility_label(format!("增加 {label}"))
+                .on_click(move |_, window, cx| step_number(&inc, step, min, max, window, cx)),
+        )
 }
 
 pub fn input_value(state: &Entity<InputState>, cx: &App) -> String {
@@ -137,12 +195,23 @@ pub fn opt_value(state: &Entity<InputState>, cx: &App) -> Option<String> {
 
 pub fn notify(window: &mut Window, cx: &mut App, kind: ToastKind, message: impl Into<SharedString>) {
     let message = message.into();
-    let note = match kind {
-        ToastKind::Info => Notification::info(message),
-        ToastKind::Success => Notification::success(message),
-        ToastKind::Warning => Notification::warning(message),
-        ToastKind::Error => Notification::error(message),
+    let type_ = match kind {
+        ToastKind::Info => NotificationType::Info,
+        ToastKind::Success => NotificationType::Success,
+        ToastKind::Warning => NotificationType::Warning,
+        ToastKind::Error => NotificationType::Error,
     };
+    // Render the message ourselves so it carries an accessible name: screen
+    // readers announce it with the alert (the stock message text has none).
+    let note = Notification::new().with_type(type_).content(move |_, _, _| {
+        div()
+            .id("toast-message")
+            .role(Role::Status)
+            .aria_label(message.clone())
+            .text_sm()
+            .child(message.clone())
+            .into_any_element()
+    });
     window.push_notification(note, cx);
 }
 

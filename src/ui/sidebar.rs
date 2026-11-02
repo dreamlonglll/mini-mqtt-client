@@ -49,6 +49,11 @@ impl SidebarView {
             )
             .child(
                 Button::new(id)
+                    .accessibility_label(if id == "add-server" {
+                        "新增服务器"
+                    } else {
+                        "新增订阅"
+                    })
                     .primary()
                     .xsmall()
                     .rounded(px(999.))
@@ -73,6 +78,14 @@ impl SidebarView {
 
         h_flex()
             .id(("server", id as u64))
+            .role(Role::ListItem)
+            .aria_label(format!(
+                "服务器 {} {} {}{}",
+                server.name,
+                server.address(),
+                status.label(),
+                if active { " 当前" } else { "" }
+            ))
             .mx_2()
             .px_3()
             .py_2()
@@ -109,6 +122,7 @@ impl SidebarView {
             )
             .child(
                 Button::new(("server-menu", id as u64))
+                    .accessibility_label(format!("服务器菜单 {}", server.name))
                     .ghost()
                     .xsmall()
                     .icon(IconName::EllipsisVertical)
@@ -177,6 +191,13 @@ impl SidebarView {
 
         h_flex()
             .id(("sub", id))
+            .role(Role::ListItem)
+            .aria_label(format!(
+                "订阅 {} Q{} {}",
+                sub.topic,
+                sub.qos,
+                if sub.is_active { "已启用" } else { "已停用" }
+            ))
             .group("sub-item")
             .mx_2()
             .px_2()
@@ -186,6 +207,7 @@ impl SidebarView {
             .hover(|s| s.bg(theme.sidebar_accent.opacity(0.5)))
             .child(
                 Switch::new(("sub-switch", id))
+                    .accessibility_label(format!("启用订阅 {}", sub.topic))
                     .checked(sub.is_active)
                     .xsmall()
                     .on_click(move |checked, _, cx| {
@@ -211,6 +233,7 @@ impl SidebarView {
             .child(
                 div().invisible().group_hover("sub-item", |s| s.visible()).child(
                     Button::new(("sub-delete", id))
+                        .accessibility_label(format!("删除订阅 {}", sub.topic))
                         .ghost()
                         .xsmall()
                         .icon(Lucide::Trash)
@@ -323,6 +346,7 @@ impl Render for SidebarView {
                     )
                     .child(
                         Button::new("open-settings")
+                            .accessibility_label("系统设置")
                             .ghost()
                             .small()
                             .icon(IconName::Settings)

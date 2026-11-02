@@ -3,13 +3,15 @@
 //! [`Scheduler`] owns the running job so it continues when the dialog is
 //! closed; the publish panel shows its progress and a stop button.
 
-use super::common::{IconName, Lucide, card, chip, empty_state, form_row, input_value, notify};
+use super::common::{
+    IconName, Lucide, card, chip, empty_state, form_row, input_value, notify, number_field, number_state,
+};
 use crate::backend::models::{CommandTemplate, PayloadFormat};
 use crate::backend::payload;
 use crate::state::{AppState, PublishDraft, ToastKind};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::{InputState, NumberInput};
+use gpui_kit::component::input::InputState;
 use gpui_kit::component::radio::{Radio, RadioGroup};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
@@ -222,17 +224,6 @@ struct ScheduleDialog {
     _subscriptions: Vec<Subscription>,
 }
 
-fn number(window: &mut Window, cx: &mut App, value: u64, min: f64, step: f64) -> Entity<InputState> {
-    cx.new(|cx| {
-        InputState::new(window, cx)
-            .step(step)
-            .min(min)
-            .max(86_400_000.)
-            .validate(|s, _| s.chars().all(|c| c.is_ascii_digit()))
-            .default_value(value.to_string())
-    })
-}
-
 impl ScheduleDialog {
     fn templates(&self, cx: &App) -> Vec<CommandTemplate> {
         self.state.read(cx).templates(self.server_id)
@@ -345,6 +336,11 @@ impl ScheduleDialog {
                                 };
                                 h_flex()
                                     .id(("schedule-tpl", id as u64))
+                                    .role(Role::ListItem)
+                                    .aria_label(match order {
+                                        Some(ix) => format!("命令 {} 已选 #{}", t.name, ix + 1),
+                                        None => format!("命令 {}", t.name),
+                                    })
                                     .px_4()
                                     .py_2()
                                     .gap_3()
@@ -411,7 +407,14 @@ impl ScheduleDialog {
                                         false,
                                         h_flex()
                                             .gap_2()
-                                            .child(div().w(px(150.)).child(NumberInput::new(&self.interval)))
+                                            .child(div().w(px(150.)).child(number_field(
+                                                "interval",
+                                                "发送间隔",
+                                                &self.interval,
+                                                100,
+                                                10,
+                                                86_400_000,
+                                            )))
                                             .child("ms"),
                                         cx,
                                     ))
@@ -420,7 +423,14 @@ impl ScheduleDialog {
                                         false,
                                         h_flex()
                                             .gap_2()
-                                            .child(div().w(px(150.)).child(NumberInput::new(&self.round_interval)))
+                                            .child(div().w(px(150.)).child(number_field(
+                                                "round-interval",
+                                                "每轮间隔",
+                                                &self.round_interval,
+                                                100,
+                                                0,
+                                                86_400_000,
+                                            )))
                                             .child("ms"),
                                         cx,
                                     )),
@@ -465,7 +475,14 @@ impl ScheduleDialog {
                                         this.child(
                                             h_flex()
                                                 .gap_2()
-                                                .child(div().w(px(130.)).child(NumberInput::new(&self.loop_count)))
+                                                .child(div().w(px(130.)).child(number_field(
+                                                    "loop-count",
+                                                    "循环次数",
+                                                    &self.loop_count,
+                                                    1,
+                                                    1,
+                                                    1_000_000,
+                                                )))
                                                 .child("轮"),
                                         )
                                     }),
@@ -511,6 +528,16 @@ impl ScheduleDialog {
         let back = self.scheduler.clone();
 
         v_flex()
+            .id("schedule-progress")
+            .role(Role::Status)
+            .aria_label(format!(
+                "定时发布 {} 轮次 {} 已发送 {} 成功 {} 失败 {}",
+                if running { "运行中" } else { "已结束" },
+                s.round,
+                s.sent,
+                s.success,
+                s.failed
+            ))
             .gap_4()
             .child(
                 h_flex()
@@ -638,9 +665,9 @@ pub fn open(scheduler: Entity<Scheduler>, state: Entity<AppState>, server_id: i6
             cx.observe(&state, |_, _, cx| cx.notify()),
         ];
         ScheduleDialog {
-            interval: number(window, cx, 1000, 10., 100.),
-            round_interval: number(window, cx, 0, 0., 100.),
-            loop_count: number(window, cx, 10, 1., 1.),
+            interval: number_state(window, cx, 1000),
+            round_interval: number_state(window, cx, 0),
+            loop_count: number_state(window, cx, 10),
             state,
             scheduler,
             server_id,

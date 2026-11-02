@@ -149,13 +149,18 @@ impl Render for TemplateForm {
         v_flex()
             .gap_3()
             .child(section_label("基本信息", cx))
-            .child(form_row("模板名称", true, Input::new(&self.name), cx))
+            .child(form_row(
+                "模板名称",
+                true,
+                Input::new(&self.name).aria_label("模板名称"),
+                cx,
+            ))
             .child(form_row(
                 "分类",
                 false,
                 v_flex()
                     .gap_1p5()
-                    .child(Input::new(&self.category))
+                    .child(Input::new(&self.category).aria_label("模板分类"))
                     .when(!self.categories.is_empty(), |this| {
                         this.child(
                             h_flex()
@@ -174,12 +179,17 @@ impl Render for TemplateForm {
                     }),
                 cx,
             ))
-            .child(form_row("描述", false, Input::new(&self.description), cx))
+            .child(form_row(
+                "描述",
+                false,
+                Input::new(&self.description).aria_label("模板描述"),
+                cx,
+            ))
             .child(section_label("MQTT 配置", cx))
             .child(form_row(
                 "主题",
                 true,
-                Input::new(&self.topic).prefix(
+                Input::new(&self.topic).aria_label("模板主题").prefix(
                     gpui_kit::component::Icon::new(Lucide::Send)
                         .small()
                         .text_color(theme.muted_foreground),
@@ -193,6 +203,7 @@ impl Render for TemplateForm {
                     .gap_6()
                     .child(segmented(
                         "tpl-qos",
+                        "模板 QoS",
                         &["QoS 0", "QoS 1", "QoS 2"],
                         self.qos as usize,
                         move |ix, _, cx| {
@@ -250,6 +261,7 @@ impl Render for TemplateForm {
                             })
                             .child(segmented(
                                 "tpl-format",
+                                "模板格式",
                                 &["JSON", "TEXT", "HEX"],
                                 format_ix,
                                 move |ix, _, cx| {
@@ -261,7 +273,11 @@ impl Render for TemplateForm {
                             )),
                     ),
             )
-            .child(div().h(px(200.)).child(Editor::new(&self.payload).h_full()))
+            .child(
+                div()
+                    .h(px(200.))
+                    .child(Editor::new(&self.payload).aria_label("模板内容").h_full()),
+            )
     }
 }
 

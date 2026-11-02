@@ -1,10 +1,12 @@
 //! Create / edit server dialog (tabs: 基本配置 / 认证 / 高级).
 
-use super::common::{IconName, dialog_footer, form_row, input_value, notify, opt_value, segmented};
+use super::common::{
+    IconName, dialog_footer, form_row, input_value, notify, number_field, number_state, opt_value, segmented,
+};
 use crate::backend::models::{MqttServer, Transport};
 use crate::state::{AppState, ToastKind};
 use gpui_kit::component::button::Button;
-use gpui_kit::component::input::{Input, InputState, NumberInput, Textarea, TextareaState};
+use gpui_kit::component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_kit::component::radio::{Radio, RadioGroup};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::tab::{Tab, TabBar};
@@ -14,17 +16,6 @@ use gpui_kit::{prelude::*, *};
 pub fn generate_client_id() -> String {
     let random = uuid::Uuid::new_v4().simple().to_string();
     format!("mqtt_{}_{}", chrono::Local::now().timestamp_millis(), &random[..8])
-}
-
-fn number_state(window: &mut Window, cx: &mut App, value: i64, min: f64, max: f64) -> Entity<InputState> {
-    cx.new(|cx| {
-        InputState::new(window, cx)
-            .step(1.)
-            .min(min)
-            .max(max)
-            .validate(|s, _| s.chars().all(|c| c.is_ascii_digit()))
-            .default_value(value.to_string())
-    })
 }
 
 fn pem_state(window: &mut Window, cx: &mut App, value: &Option<String>, placeholder: &str) -> Entity<TextareaState> {
@@ -78,8 +69,8 @@ impl ServerForm {
                 .masked(true)
                 .default_value(server.password.clone().unwrap_or_default())
         });
-        let port = number_state(window, cx, server.port as i64, 1., 65535.);
-        let keep_alive = number_state(window, cx, server.keep_alive as i64, 0., 65535.);
+        let port = number_state(window, cx, server.port as i64);
+        let keep_alive = number_state(window, cx, server.keep_alive as i64);
         let ca_cert = pem_state(
             window,
             cx,
@@ -213,7 +204,12 @@ impl ServerForm {
         let regen_id = self.client_id.clone();
         v_flex()
             .gap_4()
-            .child(form_row("名称", true, Input::new(&self.name), cx))
+            .child(form_row(
+                "名称",
+                true,
+                Input::new(&self.name).aria_label("服务器名称"),
+                cx,
+            ))
             .child(form_row(
                 "服务器地址",
                 true,
@@ -221,6 +217,7 @@ impl ServerForm {
                     .gap_2()
                     .child(segmented(
                         "transport",
+                        "传输协议",
                         &["mqtt://", "mqtts://", "ws://", "wss://"],
                         transport_ix,
                         move |ix, window, cx| {
@@ -230,9 +227,13 @@ impl ServerForm {
                     .child(
                         h_flex()
                             .gap_2()
-                            .child(div().flex_1().child(Input::new(&self.host)))
+                            .child(div().flex_1().child(Input::new(&self.host).aria_label("主机地址")))
                             .child(":")
-                            .child(div().w(px(130.)).child(NumberInput::new(&self.port))),
+                            .child(
+                                div()
+                                    .w(px(130.))
+                                    .child(number_field("port", "端口", &self.port, 1, 1, 65535)),
+                            ),
                     )
                     .when(matches!(self.transport, Transport::Ws | Transport::Wss), |this| {
                         this.child(
@@ -267,9 +268,14 @@ impl ServerForm {
                 false,
                 h_flex()
                     .gap_2()
-                    .child(div().flex_1().child(Input::new(&self.client_id)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(Input::new(&self.client_id).aria_label("Client ID")),
+                    )
                     .child(
                         Button::new("regen-client-id")
+                            .accessibility_label("随机生成 Client ID")
                             .outline()
                             .icon(IconName::RefreshCw)
                             .tooltip("随机生成")
@@ -284,8 +290,18 @@ impl ServerForm {
     fn render_auth(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .gap_4()
-            .child(form_row("用户名", false, Input::new(&self.username), cx))
-            .child(form_row("密码", false, Input::new(&self.password).mask_toggle(), cx))
+            .child(form_row(
+                "用户名",
+                false,
+                Input::new(&self.username).aria_label("用户名"),
+                cx,
+            ))
+            .child(form_row(
+                "密码",
+                false,
+                Input::new(&self.password).aria_label("密码").mask_toggle(),
+                cx,
+            ))
     }
 
     fn render_advanced(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -298,26 +314,32 @@ impl ServerForm {
                 false,
                 h_flex()
                     .gap_2()
-                    .child(div().w(px(160.)).child(NumberInput::new(&self.keep_alive)))
+                    .child(div().w(px(160.)).child(number_field(
+                        "keep-alive",
+                        "Keep Alive",
+                        &self.keep_alive,
+                        10,
+                        0,
+                        65535,
+                    )))
                     .child(div().text_sm().text_color(cx.theme().muted_foreground).child("秒")),
                 cx,
             ))
             .child(form_row(
                 if self.v5 { "Clean Start" } else { "Clean Session" },
                 false,
-                div()
-                    .pt_1p5()
-                    .child(
-                        Switch::new("clean-session")
-                            .checked(self.clean_session)
-                            .on_click(move |checked, _, cx| {
-                                let checked = *checked;
-                                entity.update(cx, |this, cx| {
-                                    this.clean_session = checked;
-                                    cx.notify();
-                                })
-                            }),
-                    ),
+                div().pt_1p5().child(
+                    Switch::new("clean-session")
+                        .accessibility_label("Clean Session")
+                        .checked(self.clean_session)
+                        .on_click(move |checked, _, cx| {
+                            let checked = *checked;
+                            entity.update(cx, |this, cx| {
+                                this.clean_session = checked;
+                                cx.notify();
+                            })
+                        }),
+                ),
                 cx,
             ))
             .when(!tls, |this| {
@@ -330,9 +352,24 @@ impl ServerForm {
                 )
             })
             .when(tls, |this| {
-                this.child(form_row("CA 证书", false, Textarea::new(&self.ca_cert), cx))
-                    .child(form_row("客户端证书", false, Textarea::new(&self.client_cert), cx))
-                    .child(form_row("客户端私钥", false, Textarea::new(&self.client_key), cx))
+                this.child(form_row(
+                    "CA 证书",
+                    false,
+                    Textarea::new(&self.ca_cert).aria_label("CA 证书"),
+                    cx,
+                ))
+                .child(form_row(
+                    "客户端证书",
+                    false,
+                    Textarea::new(&self.client_cert).aria_label("客户端证书"),
+                    cx,
+                ))
+                .child(form_row(
+                    "客户端私钥",
+                    false,
+                    Textarea::new(&self.client_key).aria_label("客户端私钥"),
+                    cx,
+                ))
             })
     }
 }

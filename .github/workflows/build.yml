@@ -58,6 +58,46 @@ jobs:
       - name: Run tests (including live broker integration test)
         run: cargo test --locked -- --include-ignored
 
+  e2e:
+    name: E2E (real app on Xvfb)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $LINUX_DEPS \
+            xvfb mosquitto mosquitto-clients xdotool xclip x11-apps imagemagick openssl \
+            dbus at-spi2-core python3-pyatspi python3-yaml mesa-vulkan-drivers fonts-noto-cjk
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --locked
+
+      - name: Run end-to-end tests
+        run: ./e2e/run.sh
+
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            target/e2e/report.md
+            target/e2e/report.json
+            target/e2e/*.txt
+            target/e2e/*.log
+            target/e2e/shots/
+          if-no-files-found: ignore
+          retention-days: 7
+
   build:
     name: Build ${{ matrix.name }}
     needs: test

@@ -88,7 +88,17 @@ impl Render for HeaderView {
                             .child(server.address()),
                     ),
             )
-            .child(chip(status.label(), color, cx).text_sm().px_2())
+            .child(
+                chip(status.label(), color, cx)
+                    .text_sm()
+                    .px_2()
+                    .id("connection-status")
+                    .role(Role::Status)
+                    .aria_label(match &status {
+                        ConnectionStatus::Error(err) => format!("连接状态 {} {}", status.label(), err),
+                        _ => format!("连接状态 {}", status.label()),
+                    }),
+            )
             .when_some(error, |this, error| {
                 this.child(
                     div()
@@ -118,6 +128,7 @@ impl Render for HeaderView {
             .child(connect_button)
             .child(
                 Button::new("edit-server")
+                    .accessibility_label("编辑服务器")
                     .ghost()
                     .small()
                     .icon(Lucide::SquarePen)

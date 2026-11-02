@@ -226,6 +226,13 @@ impl ScriptManager {
                         };
                         h_flex()
                             .id(("script", id as u64))
+                            .role(Role::ListItem)
+                            .aria_label(format!(
+                                "脚本 {} {} {}",
+                                s.name,
+                                s.kind().label(),
+                                if s.enabled { "已启用" } else { "已停用" }
+                            ))
                             .px_3()
                             .py_2()
                             .gap_2()
@@ -246,6 +253,7 @@ impl ScriptManager {
                             )
                             .child(
                                 Switch::new(("script-enabled", id as u64))
+                                    .accessibility_label(format!("启用脚本 {}", s.name))
                                     .small()
                                     .checked(s.enabled)
                                     .on_click(move |checked, _, cx| {
@@ -267,6 +275,8 @@ impl ScriptManager {
         Some(
             v_flex()
                 .id("script-output")
+                .role(Role::Status)
+                .aria_label(format!("测试结果 {title}{body}"))
                 .max_h(px(96.))
                 .overflow_y_scrollbar()
                 .p_2()
@@ -347,7 +357,7 @@ impl Render for ScriptManager {
                                 true,
                                 h_flex()
                                     .gap_4()
-                                    .child(div().flex_1().child(Input::new(&self.name)))
+                                    .child(div().flex_1().child(Input::new(&self.name).aria_label("脚本名称")))
                                     .child(
                                         RadioGroup::horizontal("script-kind")
                                             .disabled(editing)
@@ -368,7 +378,12 @@ impl Render for ScriptManager {
                                     ),
                                 cx,
                             ))
-                            .child(form_row("描述", false, Input::new(&self.description), cx))
+                            .child(form_row(
+                                "描述",
+                                false,
+                                Input::new(&self.description).aria_label("脚本描述"),
+                                cx,
+                            ))
                             .child(
                                 div()
                                     .px_3()
@@ -380,11 +395,20 @@ impl Render for ScriptManager {
                                     .text_color(theme.muted_foreground)
                                     .child(hint),
                             )
-                            .child(div().flex_1().min_h(px(130.)).child(Editor::new(&self.code).h_full()))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_h(px(130.))
+                                    .child(Editor::new(&self.code).aria_label("脚本代码").h_full()),
+                            )
                             .child(
                                 h_flex()
                                     .gap_2()
-                                    .child(div().flex_1().child(Input::new(&self.sample).small()))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .child(Input::new(&self.sample).aria_label("测试 payload").small()),
+                                    )
                                     .child(
                                         Button::new("script-test")
                                             .outline()
