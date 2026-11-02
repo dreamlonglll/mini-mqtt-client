@@ -1,3 +1,5 @@
+> **说明**：本文档记录的是 v1（Tauri 2 + Vue 3）版本的开发计划。项目已于 v2.0 使用 Rust + GPUI Kit 完整重写，当前架构请参考根目录的 `README.md` 与 `CLAUDE.md`。
+
 # Mini MQTT Client 开发计划
 
 ## 项目概述
