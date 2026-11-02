@@ -1,0 +1,29 @@
+[package]
+name = "scriptbench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Compiles the application's script module (src/backend/script) unchanged and
+# times run_script / run_chain the way process_incoming calls them.
+[workspace]
+
+[dependencies]
+boa_engine = "0.21"
+aes = "0.8"
+aes-gcm = "0.10"
+cbc = { version = "0.1", features = ["alloc"] }
+sha1 = "0.10"
+sha2 = "0.10"
+md-5 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+crc32fast = "1"
+rand = "0.8"
+hex = "0.4"
+log = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
