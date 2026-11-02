@@ -533,7 +533,8 @@ def t10():
     check(all(m.payload == b"\x01\x02\x03\xff" for m in seen if m.topic == "e2e/heartbeat"), "HEX template sent as bytes")
     check(all(m.qos == 1 for m in seen if m.topic == "e2e/light"), "template QoS honoured")
     gaps = [b.at - a.at for a, b in zip(seen, seen[1:])]
-    check(all(g > 0.15 for g in gaps) and time.time() - started < 10, f"interval respected: {gaps}")
+    # The interval is a minimum spacing between consecutive sends (no catch-up bursts).
+    check(all(g > 0.2 for g in gaps) and time.time() - started < 10, f"interval respected: {gaps}")
 
     click("返回配置", role="push button")
     click("无限循环", role="radio button")

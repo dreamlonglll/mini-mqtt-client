@@ -308,6 +308,63 @@ def exp2b():
     save("exp2b", res)
 
 
+def drop_check(env: Env, step: dict, t_from: float) -> dict:
+    """Compare drop log lines (count, spacing, N) with the drop toasts seen during the step."""
+    lines = [(t, n) for t, n in P.drop_lines(env.data_dir) if t >= t_from - 1]
+    gaps = [round(b[0] - a[0], 2) for a, b in zip(lines, lines[1:])]
+    toast_ns = sorted({int(m.group(1)) for x in env.lag.toasts if x["t"] >= t_from - 1
+                       for m in [P.DROP_RX.search(x["name"])] if m})
+    log_ns = [n for _, n in lines]
+    return dict(log_lines=len(lines), log_sum=sum(log_ns), log_ns=log_ns, log_gaps_s=gaps,
+                log_line_times_rel_s=[round(t - t_from, 2) for t, _ in lines],
+                toast_ns=toast_ns, toast_names=sorted({x["name"] for x in env.lag.toasts if x["t"] >= t_from - 1}),
+                toasts_match_log=set(toast_ns) <= set(log_ns),
+                missing_toasts=sorted(set(log_ns) - set(toast_ns)),
+                sent=step.get("sent"), last_seq_sent=step.get("last_seq_sent"),
+                last_seq_shown=step.get("last_seq_shown"), last_reached=step.get("last_reached"))
+
+
+def exp1m():
+    """1,000,000-message burst only (oldest-eviction / drop notice check)."""
+    env = Env("exp1m", **single_server())
+    res = dict(startup=env.startup)
+    try:
+        env.app.connect_and_wait()
+        res["idle"] = idle_probe(env, seconds=3, n=2)
+        t0 = time.time()
+        step = run_step(env, "max", rate=0, count=1_000_000, probe_every=2, probe_timeout=180, drain_timeout=120)
+        time.sleep(7)  # deferred remainder notice
+        res["max"] = step
+        res["drops"] = drop_check(env, step, t0)
+        res["top_rows"] = [n.name[:60] for n in env.app.nodes() if n.role == "list item" and n.name.startswith("消息 ")][:5]
+        log("drops", json.dumps(res["drops"], ensure_ascii=False))
+    except Exception:
+        res["error"] = traceback.format_exc()
+        log(res["error"])
+    res.update(env.close())
+    save("exp1m", res)
+
+
+def exp2c():
+    """After-receive script at 20,000 msg/s for 10 s (overload with eviction)."""
+    scr = [script(1, 1, "接收标记", TAG_SCRIPT)]
+    env = Env("exp2c", **single_server(scripts=scr))
+    res = {}
+    try:
+        env.app.connect_and_wait()
+        t0 = time.time()
+        step = run_step(env, "r20000", rate=20000, duration=10, probe_every=3, drain_timeout=180)
+        time.sleep(7)
+        res["r20000"] = step
+        res["drops"] = drop_check(env, step, t0)
+        log("drops", json.dumps(res["drops"], ensure_ascii=False))
+    except Exception:
+        res["error"] = traceback.format_exc()
+        log(res["error"])
+    res.update(env.close())
+    save("exp2c", res)
+
+
 # ---------------------------------------------------------------------------
 # 3. large payloads
 

@@ -21,9 +21,6 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 const MAX_LOGS: usize = 200;
-/// After a short stall the scheduler may send up to this many intervals'
-/// worth of messages back to back to keep the configured average rate.
-const MAX_CATCH_UP: u32 = 5;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ScheduleConfig {
@@ -110,7 +107,7 @@ impl Scheduler {
         self.task = Some(cx.spawn(async move |this, cx| {
             let mut round: u32 = 1;
             // Deadline-based pacing: time spent publishing counts towards the
-            // interval, so the configured rate is kept (as far as possible).
+            // interval, while consecutive sends stay at least `interval` apart.
             let mut next_at = std::time::Instant::now();
             'run: loop {
                 for (ix, command) in commands.iter().enumerate() {
@@ -141,9 +138,9 @@ impl Scheduler {
                     let now = std::time::Instant::now();
                     if next_at > now {
                         cx.background_executor().timer(next_at - now).await;
-                    } else if now - next_at > wait * MAX_CATCH_UP {
-                        // Far behind (e.g. the machine was busy): resume from
-                        // now instead of bursting through the backlog.
+                    } else {
+                        // Late: send now, but never catch up with a burst —
+                        // the interval is a minimum spacing devices may rely on.
                         next_at = now;
                     }
                 }

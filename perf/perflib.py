@@ -583,6 +583,20 @@ def wait_seq_stable(app: PerfApp, seq: int, timeout: float, stable_s: float = 4.
 DROP_RX = re.compile(r"已丢弃(?:最早的)? (\d+) 条")
 
 
+DROP_LINE_RX = re.compile(r"^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+)\].*?已丢弃(?:最早的)? (\d+) 条", re.M)
+
+
+def drop_lines(data_dir: Path) -> list[tuple[float, int]]:
+    """[(epoch seconds, N)] for every drop line in the app's error logs."""
+    import datetime as _dt
+    out = []
+    for p in sorted((data_dir / "logs").glob("*.log")):
+        for m in DROP_LINE_RX.finditer(p.read_text(errors="replace")):
+            t = _dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S.%f").timestamp()
+            out.append((t, int(m.group(2))))
+    return out
+
+
 def drop_log(data_dir: Path) -> tuple[int, int]:
     """(total dropped, number of drop log lines) from the app's error logs."""
     total = lines = 0
