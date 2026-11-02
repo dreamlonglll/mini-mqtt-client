@@ -514,6 +514,8 @@ class LagWatcher(threading.Thread):
         self.samples: list[dict] = []
         self._halt = threading.Event()
         self.phase = "start"
+        self.watch_toasts = True
+        self.toasts: list[dict] = []
 
     def run(self):
         while not self._halt.wait(self.interval):
@@ -523,6 +525,12 @@ class LagWatcher(threading.Thread):
             except Exception:
                 name = None
             dt_probe = time.time() - t
+            if self.watch_toasts:
+                try:
+                    for n in self.app.find_all(role="status bar", contains="已丢弃"):
+                        self.toasts.append(dict(t=round(time.time(), 3), phase=self.phase, name=n.name))
+                except Exception:
+                    pass
             parsed = parse_seq(name)
             if parsed:
                 seq, ts = parsed
@@ -551,6 +559,38 @@ def wait_seq(app: PerfApp, seq: int, timeout: float) -> float | None:
             return time.time()
         time.sleep(0.1)
     return None
+
+
+def wait_seq_stable(app: PerfApp, seq: int, timeout: float, stable_s: float = 4.0):
+    """Wait until the top row shows `seq` (or later), or stops changing for `stable_s`
+    (messages may have been dropped). Returns (t_done, last_seq, reached)."""
+    deadline = time.time() + timeout
+    last, t_change = None, time.time()
+    while time.time() < deadline:
+        p = parse_seq(app.top_message())
+        cur = p[0] if p else None
+        now = time.time()
+        if cur is not None and cur >= seq:
+            return now, cur, True
+        if cur != last:
+            last, t_change = cur, now
+        elif now - t_change >= stable_s:
+            return t_change, last, False
+        time.sleep(0.1)
+    return None, last, False
+
+
+DROP_RX = re.compile(r"已丢弃(?:最早的)? (\d+) 条")
+
+
+def drop_log(data_dir: Path) -> tuple[int, int]:
+    """(total dropped, number of drop log lines) from the app's error logs."""
+    total = lines = 0
+    for p in sorted((data_dir / "logs").glob("*.log")):
+        for m in DROP_RX.finditer(p.read_text(errors="replace")):
+            total += int(m.group(1))
+            lines += 1
+    return total, lines
 
 
 def save(name: str, obj):

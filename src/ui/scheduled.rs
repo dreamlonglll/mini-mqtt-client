@@ -21,6 +21,9 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 const MAX_LOGS: usize = 200;
+/// After a short stall the scheduler may send up to this many intervals'
+/// worth of messages back to back to keep the configured average rate.
+const MAX_CATCH_UP: u32 = 5;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ScheduleConfig {
@@ -138,8 +141,9 @@ impl Scheduler {
                     let now = std::time::Instant::now();
                     if next_at > now {
                         cx.background_executor().timer(next_at - now).await;
-                    } else {
-                        // Running late: do not burst to catch up.
+                    } else if now - next_at > wait * MAX_CATCH_UP {
+                        // Far behind (e.g. the machine was busy): resume from
+                        // now instead of bursting through the backlog.
                         next_at = now;
                     }
                 }

@@ -12,18 +12,18 @@ use chrono::{DateTime, Local};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use parking_lot::Mutex;
 use rumqttc::{TlsConfiguration, Transport as RumqttTransport};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio_rustls::rustls;
 
 const REQUEST_CHANNEL_CAPACITY: usize = 256;
 const CONNECTION_TIMEOUT_SECS: u64 = 10;
-/// Received messages not yet consumed by the UI. Beyond these limits new
-/// messages are dropped (and counted) instead of growing memory without bound
-/// when the UI cannot keep up.
+/// Received messages not yet taken by the UI. Beyond these limits the OLDEST
+/// queued messages are dropped (and counted) instead of growing memory without
+/// bound, so after an overload the UI still converges to the newest data.
 const MAX_PENDING_MESSAGES: usize = 50_000;
 const MAX_PENDING_BYTES: usize = 256 * 1024 * 1024;
 /// rumqttc's v5 client preallocates its inflight table from this limit
@@ -74,7 +74,9 @@ pub enum MqttEvent {
         server_id: i64,
         status: ConnectionStatus,
     },
-    Message(IncomingMessage),
+    /// Received messages are waiting; fetch them with [`MqttManager::take_messages`].
+    /// Sent when the message queue goes from empty to non-empty.
+    MessagesReady,
     /// Non-fatal problem worth telling the user about (e.g. rejected subscription).
     Warning {
         server_id: i64,
@@ -133,9 +135,14 @@ struct Inner {
     clients: Mutex<HashMap<i64, Handle>>,
     events: UnboundedSender<MqttEvent>,
     next_generation: AtomicU64,
-    pending_messages: AtomicUsize,
-    pending_bytes: AtomicUsize,
+    queue: Mutex<MessageQueue>,
     dropped: AtomicU64,
+}
+
+#[derive(Default)]
+struct MessageQueue {
+    messages: VecDeque<IncomingMessage>,
+    bytes: usize,
 }
 
 impl Inner {
@@ -154,23 +161,29 @@ impl Inner {
         }
     }
 
-    /// Queue a received message for the UI, unless the backlog is full.
+    /// Queue a received message for the UI, evicting the oldest queued
+    /// messages when the backlog is full.
     fn emit_message(&self, server_id: i64, generation: u64, message: IncomingMessage) {
         if !self.is_current(server_id, generation) {
             return;
         }
-        let size = message.payload.len();
-        let count = self.pending_messages.load(Ordering::Relaxed);
-        let bytes = self.pending_bytes.load(Ordering::Relaxed);
-        if count >= MAX_PENDING_MESSAGES || bytes.saturating_add(size) > MAX_PENDING_BYTES {
-            self.dropped.fetch_add(1, Ordering::Relaxed);
-            return;
-        }
-        self.pending_messages.fetch_add(1, Ordering::Relaxed);
-        self.pending_bytes.fetch_add(size, Ordering::Relaxed);
-        if self.events.unbounded_send(MqttEvent::Message(message)).is_err() {
-            self.pending_messages.fetch_sub(1, Ordering::Relaxed);
-            self.pending_bytes.fetch_sub(size, Ordering::Relaxed);
+        let was_empty = {
+            let mut queue = self.queue.lock();
+            let was_empty = queue.messages.is_empty();
+            queue.bytes += message.payload.len();
+            queue.messages.push_back(message);
+            while queue.messages.len() > 1
+                && (queue.messages.len() > MAX_PENDING_MESSAGES || queue.bytes > MAX_PENDING_BYTES)
+            {
+                if let Some(old) = queue.messages.pop_front() {
+                    queue.bytes -= old.payload.len();
+                    self.dropped.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            was_empty
+        };
+        if was_empty {
+            let _ = self.events.unbounded_send(MqttEvent::MessagesReady);
         }
     }
 
@@ -208,8 +221,7 @@ impl MqttManager {
                     clients: Mutex::new(HashMap::new()),
                     events: tx,
                     next_generation: AtomicU64::new(1),
-                    pending_messages: AtomicUsize::new(0),
-                    pending_bytes: AtomicUsize::new(0),
+                    queue: Mutex::new(MessageQueue::default()),
                     dropped: AtomicU64::new(0),
                 }),
             },
@@ -330,10 +342,18 @@ impl MqttManager {
         }
     }
 
-    /// The UI took `count` messages totalling `bytes` off the event channel.
-    pub fn messages_consumed(&self, count: usize, bytes: usize) {
-        self.inner.pending_messages.fetch_sub(count, Ordering::Relaxed);
-        self.inner.pending_bytes.fetch_sub(bytes, Ordering::Relaxed);
+    /// Take up to `max` queued received messages, oldest first.
+    pub fn take_messages(&self, max: usize) -> Vec<IncomingMessage> {
+        let mut queue = self.inner.queue.lock();
+        let n = max.min(queue.messages.len());
+        let taken: Vec<IncomingMessage> = queue.messages.drain(..n).collect();
+        queue.bytes -= taken.iter().map(|m| m.payload.len()).sum::<usize>();
+        taken
+    }
+
+    /// Number of received messages waiting for the UI.
+    pub fn queued_messages(&self) -> usize {
+        self.inner.queue.lock().messages.len()
     }
 
     /// Number of messages dropped because the UI backlog was full, since the
@@ -596,6 +616,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn full_queue_evicts_oldest_and_counts_drops() {
+        let (manager, mut events) = MqttManager::new();
+        manager.inner.clients.lock().insert(
+            7,
+            Handle {
+                client: Client::V4(rumqttc::AsyncClient::new(rumqttc::MqttOptions::new("t", "localhost", 1), 1).0),
+                generation: 1,
+                connected: Arc::new(AtomicBool::new(true)),
+                shutdown: None,
+            },
+        );
+        for i in 0..(MAX_PENDING_MESSAGES + 10) {
+            manager
+                .inner
+                .emit_message(7, 1, incoming(7, format!("t/{i}"), b"x", 0, false));
+        }
+        // Only the first push (empty -> non-empty) wakes the UI.
+        assert!(matches!(events.try_recv(), Ok(MqttEvent::MessagesReady)));
+        assert!(events.try_recv().is_err());
+        assert_eq!(manager.queued_messages(), MAX_PENDING_MESSAGES);
+        assert_eq!(manager.take_dropped(), 10);
+        assert_eq!(manager.take_dropped(), 0);
+        let first = manager.take_messages(2);
+        assert_eq!(first[0].topic, "t/10", "oldest messages were evicted");
+        // Stale generations are ignored.
+        manager
+            .inner
+            .emit_message(7, 0, incoming(7, "stale".into(), b"x", 0, false));
+        assert_eq!(manager.queued_messages(), MAX_PENDING_MESSAGES - 2);
+        let rest = manager.take_messages(usize::MAX);
+        assert_eq!(rest.last().unwrap().topic, format!("t/{}", MAX_PENDING_MESSAGES + 9));
+        // Draining re-arms the wake-up.
+        manager
+            .inner
+            .emit_message(7, 1, incoming(7, "again".into(), b"x", 0, false));
+        assert!(matches!(events.try_recv(), Ok(MqttEvent::MessagesReady)));
+    }
+
+    #[test]
     fn keep_alive_respects_protocol_limits() {
         let mut server = MqttServer {
             keep_alive: 0,
@@ -694,7 +753,10 @@ mod tests {
             std::thread::sleep(Duration::from_millis(200));
             manager.publish(id, &topic, b"hello".to_vec(), 1, false).unwrap();
             match next() {
-                MqttEvent::Message(m) => {
+                MqttEvent::MessagesReady => {
+                    let taken = manager.take_messages(10);
+                    assert_eq!(taken.len(), 1);
+                    let m = &taken[0];
                     assert_eq!(m.topic, topic);
                     assert_eq!(m.payload, b"hello");
                     assert_eq!(m.qos, 1);

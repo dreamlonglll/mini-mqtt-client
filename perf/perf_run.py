@@ -18,7 +18,8 @@ import traceback
 
 import perflib as P
 from perflib import (LagWatcher, LoadGen, PerfApp, Query, QuietBroker, Sampler, log, parse_seq, save, server, sub,
-                     template, script, wait_seq, wait_until, write_data, OUT, WORK, TAG_SCRIPT)
+                     template, script, wait_seq, wait_seq_stable, drop_log, wait_until, write_data, OUT, WORK,
+                     TAG_SCRIPT)
 
 EXPS = [e.strip() for e in os.environ.get("PERF_EXP", "1").split(",") if e.strip()]
 broker = QuietBroker()
@@ -93,9 +94,11 @@ def lag_stats(env: Env, phase: str, seq_min: int = 0) -> dict:
 
 def run_step(env: Env, phase: str, *, rate: float, duration: float = 0, count: int = 0, seq_start: int = 0,
              size: int = 64, kind: str = "json", topic: str = "perf/a", probe_every: float = 6.0,
-             probe_timeout: float = 60.0, drain_timeout: float = 180.0, **extra) -> dict:
+             probe_timeout: float = 60.0, drain_timeout: float = 180.0, rss_abort_mb: float = 6000, **extra) -> dict:
     env.phase(phase)
     rss0 = env.rss()
+    drops0, drop_lines0 = drop_log(env.data_dir)
+    rss_peak, aborted = rss0, False
     lg = LoadGen(topic=topic, rate=rate, duration=duration, count=count, seq_start=seq_start, size=size, kind=kind,
                  log_name=f"loadgen-{env.tag}-{phase}.jsonl", **extra)
     t_start = time.time()
@@ -103,6 +106,11 @@ def run_step(env: Env, phase: str, *, rate: float, duration: float = 0, count: i
     next_probe = t_start + min(probe_every, max(duration / 2, 1) if duration else probe_every)
     while lg.proc.poll() is None:
         time.sleep(0.2)
+        rss_peak = max(rss_peak, env.rss())
+        if rss_peak > rss_abort_mb and not aborted:
+            log(phase, f"RSS {rss_peak} MB > {rss_abort_mb} MB: aborting the load")
+            aborted = True
+            lg.stop()
         if time.time() >= next_probe and lg.proc.poll() is None:
             p = env.app.filter_probe(timeout=probe_timeout)
             p["at_s"] = round(time.time() - t_start, 1)
@@ -115,13 +123,21 @@ def run_step(env: Env, phase: str, *, rate: float, duration: float = 0, count: i
     last = fin.get("seq_last", seq_start)
     # UI responsiveness right when the load stops (while a backlog, if any, drains)
     probe_end = env.app.filter_probe(timeout=drain_timeout)
-    t_seen = wait_seq(env.app, last, drain_timeout)
+    t_seen, seq_seen, reached = wait_seq_stable(env.app, last, drain_timeout)
     post_probe = env.app.filter_probe(timeout=probe_timeout)
+    time.sleep(0.5)
+    drops1, drop_lines1 = drop_log(env.data_dir)
+    dropped = drops1 - drops0
+    sent = fin.get("sent") or 0
+    toasts = [t["name"] for t in env.lag.toasts if t["phase"] in (phase, phase + "-drain")]
     res = dict(
-        phase=phase, offered_rate=rate, size=size, kind=kind, sent=fin.get("sent"), send_rate=fin.get("rate"),
-        send_s=fin.get("elapsed"),
+        phase=phase, offered_rate=rate, size=size, kind=kind, sent=sent, send_rate=fin.get("rate"),
+        send_s=fin.get("elapsed"), aborted_for_rss=aborted, rss_peak_load=rss_peak,
+        dropped=dropped, drop_log_lines=drop_lines1 - drop_lines0, processed=sent - dropped,
+        last_seq_shown=seq_seen, last_seq_sent=last, last_reached=reached,
+        drop_toasts_seen=sorted(set(toasts))[:6], drop_toast_samples=len(toasts),
         drain_s=round(t_seen - t_end, 2) if t_seen else f">{drain_timeout}",
-        app_throughput=round(fin["sent"] / (t_seen - t_start), 1) if t_seen and fin.get("sent") else None,
+        app_throughput=round((sent - dropped) / (t_seen - t_start), 1) if t_seen and sent else None,
         rss_before=rss0, rss_end_load=rss_end_load, rss_after_drain=env.rss(),
         probes_during=probes, probe_at_load_end=probe_end, probe_after=post_probe,
         **lag_stats(env, phase, seq_start),
@@ -173,7 +189,7 @@ def exp1():
         res["idle"] = idle_probe(env)
         steps = []
         base = 0
-        for rate, dur in [(100, 20), (1000, 20), (5000, 20), (10000, 20), (20000, 20)]:
+        for rate, dur in [(100, 20), (1000, 20), (5000, 20), (10000, 20), (20000, 20), (40000, 20)]:
             steps.append(run_step(env, f"r{rate}", rate=rate, duration=dur, seq_start=base))
             base += 10_000_000
         # Same load with a search keyword active ("seq" matches every payload).
@@ -262,6 +278,34 @@ def exp2():
         step["close"] = env.close()
         res["steps"].append(step)
     save("exp2", res)
+
+
+def exp2b():
+    """Script path with the batched pump: same ramp, measured with run_step (drop-aware)."""
+    res = dict(steps=[])
+    scr = [script(1, 1, "接收标记", TAG_SCRIPT)]
+    env = Env("exp2b-cap", **single_server(scripts=scr))
+    try:
+        env.app.connect_and_wait()
+        res["idle"] = idle_probe(env, seconds=3, n=2)
+        res["capacity"] = run_step(env, "burst", rate=0, count=20000, drain_timeout=300, probe_every=3)
+    except Exception:
+        res["error_cap"] = traceback.format_exc()
+        log(res["error_cap"])
+    close = env.close()
+    res.setdefault("capacity", {})["close"] = close
+    for rate, dur in [(100, 20), (1000, 15), (5000, 15), (20000, 10)]:
+        env = Env(f"exp2b-r{rate}", **single_server(scripts=scr))
+        step = {}
+        try:
+            env.app.connect_and_wait()
+            step = run_step(env, f"r{rate}", rate=rate, duration=dur, probe_every=4, drain_timeout=180)
+        except Exception:
+            step["error"] = traceback.format_exc()
+            log(step["error"])
+        step["close"] = env.close()
+        res["steps"].append(step)
+    save("exp2b", res)
 
 
 # ---------------------------------------------------------------------------

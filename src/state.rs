@@ -32,6 +32,8 @@ const PUMP_BATCH: usize = 5_000;
 const PUMP_FRAME: std::time::Duration = std::time::Duration::from_millis(16);
 /// Messages per background task when running "after receive" scripts.
 const SCRIPT_CHUNK: usize = 256;
+/// Minimum time between two "messages dropped" notices.
+const DROP_NOTICE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 /// Script errors written to the log per batch (the rest are counted).
 const MAX_LOGGED_SCRIPT_ERRORS: usize = 5;
 
@@ -225,6 +227,8 @@ pub struct AppState {
     statuses: HashMap<i64, ConnectionStatus>,
     messages: HashMap<i64, ServerMessages>,
     last_drop_notice: Option<std::time::Instant>,
+    unreported_drops: u64,
+    drop_report_scheduled: bool,
     next_message_id: u64,
     _pump: Task<()>,
 }
@@ -254,15 +258,22 @@ impl AppState {
         let active_server_id = servers.first().and_then(|s| s.id);
 
         let pump = cx.spawn(async move |this, cx| {
-            // Drain the channel in batches: one UI update per batch, then a
-            // frame for rendering, so a message flood cannot starve the UI.
-            while let Some(first) = events.next().await {
-                let mut batch = vec![first];
-                while batch.len() < PUMP_BATCH {
-                    match events.try_recv() {
-                        Ok(event) => batch.push(event),
-                        Err(_) => break,
+            // Handle status events and up to PUMP_BATCH queued messages per
+            // UI update, then give rendering a frame, so a message flood
+            // cannot starve the UI thread.
+            loop {
+                let Ok(backlog) = this.read_with(cx, |state, _| state.mqtt.queued_messages() > 0) else {
+                    break;
+                };
+                let mut batch = Vec::new();
+                if !backlog {
+                    match events.next().await {
+                        Some(event) => batch.push(event),
+                        None => break,
                     }
+                }
+                while let Ok(event) = events.try_recv() {
+                    batch.push(event);
                 }
                 if Self::process_batch(&this, batch, cx).await.is_err() {
                     break;
@@ -282,6 +293,8 @@ impl AppState {
             statuses: HashMap::new(),
             messages: HashMap::new(),
             last_drop_notice: None,
+            unreported_drops: 0,
+            drop_report_scheduled: false,
             next_message_id: 1,
             _pump: pump,
         };
@@ -289,32 +302,26 @@ impl AppState {
         state
     }
 
-    /// Handle a batch of events in arrival order: runs of received messages
-    /// are processed together, status changes in between are applied as they come.
+    /// Apply status events in arrival order, then process the next chunk of
+    /// queued received messages.
     async fn process_batch(this: &WeakEntity<Self>, batch: Vec<MqttEvent>, cx: &mut AsyncApp) -> anyhow::Result<()> {
-        let mut run = Vec::new();
         for event in batch {
             match event {
-                MqttEvent::Message(msg) => run.push(msg),
-                other => {
-                    if !run.is_empty() {
-                        Self::process_messages(this, std::mem::take(&mut run), cx).await?;
-                    }
-                    this.update(cx, |state, cx| match other {
-                        MqttEvent::Status { server_id, status } => state.on_status(server_id, status, cx),
-                        MqttEvent::Warning { server_id, message } => {
-                            state
-                                .logs
-                                .write(LogKind::Mqtt, &message, Some(&format!("server_id={server_id}")));
-                            state.toast(ToastKind::Warning, message, cx);
-                        }
-                        MqttEvent::Message(_) => unreachable!(),
-                    })?;
+                MqttEvent::MessagesReady => {}
+                MqttEvent::Status { server_id, status } => {
+                    this.update(cx, |state, cx| state.on_status(server_id, status, cx))?
                 }
+                MqttEvent::Warning { server_id, message } => this.update(cx, |state, cx| {
+                    state
+                        .logs
+                        .write(LogKind::Mqtt, &message, Some(&format!("server_id={server_id}")));
+                    state.toast(ToastKind::Warning, message, cx);
+                })?,
             }
         }
-        if !run.is_empty() {
-            Self::process_messages(this, run, cx).await?;
+        let messages = this.read_with(cx, |state, _| state.mqtt.take_messages(PUMP_BATCH))?;
+        if !messages.is_empty() {
+            Self::process_messages(this, messages, cx).await?;
         }
         Ok(())
     }
@@ -402,9 +409,6 @@ impl AppState {
     }
 
     fn push_received(&mut self, processed: Vec<ProcessedMessage>, cx: &mut Context<Self>) {
-        let consumed_bytes: usize = processed.iter().map(|p| p.incoming.payload.len()).sum();
-        self.mqtt.messages_consumed(processed.len(), consumed_bytes);
-
         let mut changed: Vec<i64> = Vec::new();
         let mut script_errors = 0usize;
         for ProcessedMessage {
@@ -413,6 +417,9 @@ impl AppState {
             error,
         } in processed
         {
+            if self.server(incoming.server_id).is_none() {
+                continue; // queued before its server was deleted
+            }
             if let Some(error) = &error {
                 script_errors += 1;
                 if script_errors <= MAX_LOGGED_SCRIPT_ERRORS {
@@ -448,22 +455,38 @@ impl AppState {
             cx.emit(AppEvent::MessagesChanged(server_id));
         }
 
-        let dropped = self.mqtt.take_dropped();
-        if dropped > 0 {
-            self.logs
-                .write(LogKind::Mqtt, &format!("消息过多，处理不及，已丢弃 {dropped} 条"), None);
-            let now = std::time::Instant::now();
-            if self
-                .last_drop_notice
-                .is_none_or(|t| now.duration_since(t) > std::time::Duration::from_secs(5))
-            {
-                self.last_drop_notice = Some(now);
-                self.toast(
-                    ToastKind::Warning,
-                    format!("消息过多，处理不及，已丢弃 {dropped} 条"),
-                    cx,
-                );
-            }
+        self.unreported_drops += self.mqtt.take_dropped();
+        self.report_drops(cx);
+    }
+
+    /// Tell the user about messages dropped under overload: one toast and
+    /// one log line at most every few seconds, with the total since the last one.
+    fn report_drops(&mut self, cx: &mut Context<Self>) {
+        if self.unreported_drops == 0 {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let wait = self
+            .last_drop_notice
+            .map(|t| (t + DROP_NOTICE_INTERVAL).saturating_duration_since(now))
+            .unwrap_or_default();
+        if wait.is_zero() {
+            let dropped = std::mem::take(&mut self.unreported_drops);
+            self.last_drop_notice = Some(now);
+            let message = format!("消息过多，处理不及，已丢弃最早的 {dropped} 条");
+            self.logs.write(LogKind::Mqtt, &message, None);
+            self.toast(ToastKind::Warning, message, cx);
+        } else if !self.drop_report_scheduled {
+            // Report the remainder even if no further messages arrive.
+            self.drop_report_scheduled = true;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(wait).await;
+                let _ = this.update(cx, |state, cx| {
+                    state.drop_report_scheduled = false;
+                    state.report_drops(cx);
+                });
+            })
+            .detach();
         }
     }
 
