@@ -29,40 +29,78 @@ impl DetectedFormat {
     }
 }
 
+/// Payloads above this size are classified from a sample instead of being
+/// fully parsed, so a multi-megabyte message does not stall the UI thread.
+const FULL_DETECTION_LIMIT: usize = 1024 * 1024;
+const SAMPLE_SIZE: usize = 64 * 1024;
+
 /// Same heuristic as the Vue version: valid JSON object/array => JSON,
 /// more than 10% non-printable bytes => binary, else text.
 pub fn detect_format(bytes: &[u8]) -> DetectedFormat {
-    if let Ok(s) = std::str::from_utf8(bytes) {
-        let trimmed = s.trim();
-        if ((trimmed.starts_with('{') && trimmed.ends_with('}'))
-            || (trimmed.starts_with('[') && trimmed.ends_with(']')))
-            && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
-        {
-            return DetectedFormat::Json;
+    let large = bytes.len() > FULL_DETECTION_LIMIT;
+    let sample = if large { &bytes[..SAMPLE_SIZE] } else { bytes };
+    // A cut-off sample may end inside a multi-byte character.
+    let utf8 = match std::str::from_utf8(sample) {
+        Ok(s) => Some(s),
+        Err(e) if large && e.error_len().is_none() => std::str::from_utf8(&sample[..e.valid_up_to()]).ok(),
+        Err(_) => None,
+    };
+    if let Some(s) = utf8 {
+        let trimmed = s.trim_start();
+        let looks_json = trimmed.starts_with('{') || trimmed.starts_with('[');
+        if looks_json {
+            if large {
+                // Too big to validate cheaply: trust the delimiters.
+                let end = bytes.iter().rev().find(|b| !b.is_ascii_whitespace());
+                if matches!((trimmed.as_bytes()[0], end), (b'{', Some(b'}')) | (b'[', Some(b']'))) {
+                    return DetectedFormat::Json;
+                }
+            } else {
+                let trimmed = s.trim();
+                if ((trimmed.starts_with('{') && trimmed.ends_with('}'))
+                    || (trimmed.starts_with('[') && trimmed.ends_with(']')))
+                    && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+                {
+                    return DetectedFormat::Json;
+                }
+            }
         }
     }
-    if !bytes.is_empty() {
-        let non_printable = bytes
+    if !sample.is_empty() {
+        let control = sample
             .iter()
-            .filter(|&&b| !(32..=126).contains(&b) && b != 9 && b != 10 && b != 13)
+            .filter(|&&b| b < 32 && b != 9 && b != 10 && b != 13)
             .count();
-        // Multi-byte UTF-8 text (e.g. Chinese) is not binary.
-        let is_utf8 = std::str::from_utf8(bytes).is_ok();
-        if !is_utf8 && non_printable * 10 > bytes.len() {
-            return DetectedFormat::Binary;
-        }
-        if is_utf8
-            && bytes
+        if utf8.is_some() {
+            // Multi-byte UTF-8 text (e.g. Chinese) is not binary.
+            if control * 10 > sample.len() {
+                return DetectedFormat::Binary;
+            }
+        } else {
+            let non_printable = sample
                 .iter()
-                .filter(|&&b| b < 32 && b != 9 && b != 10 && b != 13)
-                .count()
-                * 10
-                > bytes.len()
-        {
-            return DetectedFormat::Binary;
+                .filter(|&&b| !(32..=126).contains(&b) && b != 9 && b != 10 && b != 13)
+                .count();
+            if non_printable * 10 > sample.len() {
+                return DetectedFormat::Binary;
+            }
         }
     }
     DetectedFormat::Text
+}
+
+/// Lossy UTF-8 text of at most `max_bytes` bytes of the payload (cut on a
+/// character boundary), plus whether it was cut.
+pub fn text_prefix(bytes: &[u8], max_bytes: usize) -> (String, bool) {
+    if bytes.len() <= max_bytes {
+        return (bytes_to_text(bytes), false);
+    }
+    let mut end = max_bytes;
+    // Do not split a UTF-8 sequence: back off over continuation bytes.
+    while end > 0 && (bytes[end] & 0b1100_0000) == 0b1000_0000 {
+        end -= 1;
+    }
+    (bytes_to_text(&bytes[..end]), true)
 }
 
 pub fn bytes_to_text(bytes: &[u8]) -> String {
@@ -168,6 +206,22 @@ mod tests {
         assert_eq!(detect_format(b"{not json}"), DetectedFormat::Text);
         assert_eq!(detect_format("你好，世界".as_bytes()), DetectedFormat::Text);
         assert_eq!(detect_format(&[0, 1, 2, 3, 0xff, 0xfe]), DetectedFormat::Binary);
+    }
+
+    #[test]
+    fn large_payloads_are_classified_from_a_sample() {
+        let mut json = b"{\"data\":\"".to_vec();
+        json.extend(std::iter::repeat_n(b'x', 3 * 1024 * 1024));
+        json.extend(b"\"}");
+        assert_eq!(detect_format(&json), DetectedFormat::Json);
+        let text = "汉".repeat(1024 * 1024); // 3 MiB, sample cut mid-character
+        assert_eq!(detect_format(text.as_bytes()), DetectedFormat::Text);
+        let binary: Vec<u8> = (0..2 * 1024 * 1024).map(|i| (i % 256) as u8).collect();
+        assert_eq!(detect_format(&binary), DetectedFormat::Binary);
+        let (prefix, cut) = text_prefix(text.as_bytes(), 10);
+        assert!(cut);
+        assert_eq!(prefix, "汉汉汉");
+        assert_eq!(text_prefix(b"short", 10), ("short".to_string(), false));
     }
 
     #[test]

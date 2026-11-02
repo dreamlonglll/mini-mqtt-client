@@ -19,8 +19,21 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// Live messages kept per server (same limit as before).
+/// Live messages kept per server (same limit as before)...
 pub const MAX_MESSAGES: usize = 1000;
+/// ...and at most this many payload bytes per server, so large payloads
+/// cannot exhaust memory (the newest message is always kept).
+pub const MAX_MESSAGE_BYTES: usize = 128 * 1024 * 1024;
+/// Text kept for the list preview and search; the detail view decodes the
+/// full payload on demand.
+const PREVIEW_BYTES: usize = 4 * 1024;
+/// Events handled per UI update; the pump then yields a frame to rendering.
+const PUMP_BATCH: usize = 5_000;
+const PUMP_FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+/// Messages per background task when running "after receive" scripts.
+const SCRIPT_CHUNK: usize = 256;
+/// Script errors written to the log per batch (the rest are counted).
+const MAX_LOGGED_SCRIPT_ERRORS: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -34,8 +47,10 @@ pub struct Message {
     pub direction: Direction,
     pub topic: SharedString,
     pub payload: Arc<[u8]>,
-    /// Lossy UTF-8 rendering of the payload, computed once.
-    pub text: SharedString,
+    /// Lossy UTF-8 text of the first few KB of the payload (list preview).
+    pub preview: SharedString,
+    /// Lower-cased topic + preview, for search.
+    pub search_text: SharedString,
     pub format: DetectedFormat,
     pub qos: u8,
     pub retain: bool,
@@ -56,12 +71,16 @@ impl Message {
         script_error: Option<String>,
     ) -> Self {
         let format = payload::detect_format(&payload);
-        let text = payload::bytes_to_text(&payload);
+        let topic: SharedString = topic.into();
+        let (preview, cut) = payload::text_prefix(&payload, PREVIEW_BYTES);
+        let search_text = format!("{}\n{}", topic, preview).to_lowercase();
+        let preview = if cut { format!("{preview}…") } else { preview };
         Self {
             id,
             direction,
-            topic: topic.into(),
-            text: text.into(),
+            topic,
+            preview: preview.into(),
+            search_text: search_text.into(),
             payload: payload.into(),
             format,
             qos,
@@ -74,6 +93,45 @@ impl Message {
     pub fn time_label(&self) -> String {
         self.timestamp.format("%H:%M:%S%.3f").to_string()
     }
+
+    /// Lossy UTF-8 text of the whole payload.
+    pub fn full_text(&self) -> String {
+        payload::bytes_to_text(&self.payload)
+    }
+}
+
+/// Live message list of one server, newest first.
+#[derive(Default)]
+pub struct ServerMessages {
+    list: VecDeque<Message>,
+    bytes: usize,
+}
+
+impl ServerMessages {
+    pub fn iter(&self) -> impl Iterator<Item = &Message> {
+        self.list.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.list.len()
+    }
+
+    fn push_front(&mut self, message: Message) {
+        self.bytes += message.payload.len();
+        self.list.push_front(message);
+        while self.list.len() > MAX_MESSAGES || (self.bytes > MAX_MESSAGE_BYTES && self.list.len() > 1) {
+            if let Some(old) = self.list.pop_back() {
+                self.bytes -= old.payload.len();
+            }
+        }
+    }
+}
+
+/// A received message after "after receive" scripts ran.
+struct ProcessedMessage {
+    incoming: IncomingMessage,
+    payload: Option<Vec<u8>>,
+    error: Option<String>,
 }
 
 /// Everything needed to publish one message.
@@ -165,7 +223,8 @@ pub struct AppState {
     pub servers: Vec<MqttServer>,
     pub active_server_id: Option<i64>,
     statuses: HashMap<i64, ConnectionStatus>,
-    messages: HashMap<i64, VecDeque<Message>>,
+    messages: HashMap<i64, ServerMessages>,
+    last_drop_notice: Option<std::time::Instant>,
     next_message_id: u64,
     _pump: Task<()>,
 }
@@ -195,22 +254,20 @@ impl AppState {
         let active_server_id = servers.first().and_then(|s| s.id);
 
         let pump = cx.spawn(async move |this, cx| {
-            while let Some(event) = events.next().await {
-                let result = match event {
-                    MqttEvent::Message(msg) => Self::process_incoming(&this, msg, cx).await,
-                    MqttEvent::Status { server_id, status } => {
-                        this.update(cx, |state, cx| state.on_status(server_id, status, cx))
+            // Drain the channel in batches: one UI update per batch, then a
+            // frame for rendering, so a message flood cannot starve the UI.
+            while let Some(first) = events.next().await {
+                let mut batch = vec![first];
+                while batch.len() < PUMP_BATCH {
+                    match events.try_recv() {
+                        Ok(event) => batch.push(event),
+                        Err(_) => break,
                     }
-                    MqttEvent::Warning { server_id, message } => this.update(cx, |state, cx| {
-                        state
-                            .logs
-                            .write(LogKind::Mqtt, &message, Some(&format!("server_id={server_id}")));
-                        state.toast(ToastKind::Warning, message, cx);
-                    }),
-                };
-                if result.is_err() {
+                }
+                if Self::process_batch(&this, batch, cx).await.is_err() {
                     break;
                 }
+                cx.background_executor().timer(PUMP_FRAME).await;
             }
         });
 
@@ -224,6 +281,7 @@ impl AppState {
             active_server_id,
             statuses: HashMap::new(),
             messages: HashMap::new(),
+            last_drop_notice: None,
             next_message_id: 1,
             _pump: pump,
         };
@@ -231,46 +289,182 @@ impl AppState {
         state
     }
 
-    /// Run "after receive" scripts off the UI thread, preserving arrival order.
-    async fn process_incoming(this: &WeakEntity<Self>, msg: IncomingMessage, cx: &mut AsyncApp) -> anyhow::Result<()> {
-        let scripts = this.read_with(cx, |state, _| {
-            state.script_chain(msg.server_id, ScriptType::AfterReceive)
-        })?;
-        let (payload, error) = if scripts.is_empty() {
-            (msg.payload, None)
+    /// Handle a batch of events in arrival order: runs of received messages
+    /// are processed together, status changes in between are applied as they come.
+    async fn process_batch(this: &WeakEntity<Self>, batch: Vec<MqttEvent>, cx: &mut AsyncApp) -> anyhow::Result<()> {
+        let mut run = Vec::new();
+        for event in batch {
+            match event {
+                MqttEvent::Message(msg) => run.push(msg),
+                other => {
+                    if !run.is_empty() {
+                        Self::process_messages(this, std::mem::take(&mut run), cx).await?;
+                    }
+                    this.update(cx, |state, cx| match other {
+                        MqttEvent::Status { server_id, status } => state.on_status(server_id, status, cx),
+                        MqttEvent::Warning { server_id, message } => {
+                            state
+                                .logs
+                                .write(LogKind::Mqtt, &message, Some(&format!("server_id={server_id}")));
+                            state.toast(ToastKind::Warning, message, cx);
+                        }
+                        MqttEvent::Message(_) => unreachable!(),
+                    })?;
+                }
+            }
+        }
+        if !run.is_empty() {
+            Self::process_messages(this, run, cx).await?;
+        }
+        Ok(())
+    }
+
+    /// Run "after receive" scripts off the UI thread (in parallel chunks,
+    /// order preserved), then add the messages to the lists in one update.
+    async fn process_messages(
+        this: &WeakEntity<Self>,
+        messages: Vec<IncomingMessage>,
+        cx: &mut AsyncApp,
+    ) -> anyhow::Result<()> {
+        let mut server_ids: Vec<i64> = messages.iter().map(|m| m.server_id).collect();
+        server_ids.sort_unstable();
+        server_ids.dedup();
+        let chains: Arc<HashMap<i64, Vec<(String, String)>>> = Arc::new(this.read_with(cx, |state, _| {
+            server_ids
+                .iter()
+                .map(|id| (*id, state.script_chain(*id, ScriptType::AfterReceive)))
+                .filter(|(_, chain)| !chain.is_empty())
+                .collect()
+        })?);
+
+        let processed: Vec<ProcessedMessage> = if chains.is_empty() {
+            messages
+                .into_iter()
+                .map(|incoming| ProcessedMessage {
+                    incoming,
+                    payload: None,
+                    error: None,
+                })
+                .collect()
         } else {
-            let text = payload::bytes_to_text(&msg.payload);
-            let topic = msg.topic.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move { script::run_chain(&scripts, &text, &topic) })
-                .await;
-            match result {
-                // Unchanged output: keep the original bytes, so binary
-                // payloads are not mangled by the lossy UTF-8 round trip.
-                Ok(processed) if processed == payload::bytes_to_text(&msg.payload) => (msg.payload, None),
-                Ok(processed) => (processed.into_bytes(), None),
-                Err(err) => (msg.payload, Some(err.to_string())),
+            let mut tasks = Vec::new();
+            let mut messages = messages.into_iter().peekable();
+            while messages.peek().is_some() {
+                let chunk: Vec<IncomingMessage> = messages.by_ref().take(SCRIPT_CHUNK).collect();
+                let chains = chains.clone();
+                tasks.push(cx.background_executor().spawn(async move {
+                    chunk
+                        .into_iter()
+                        .map(|incoming| Self::run_receive_scripts(&chains, incoming))
+                        .collect::<Vec<_>>()
+                }));
             }
+            let mut out = Vec::new();
+            for task in tasks {
+                out.extend(task.await);
+            }
+            out
         };
-        this.update(cx, |state, cx| {
+        this.update(cx, |state, cx| state.push_received(processed, cx))
+    }
+
+    fn run_receive_scripts(
+        chains: &HashMap<i64, Vec<(String, String)>>,
+        incoming: IncomingMessage,
+    ) -> ProcessedMessage {
+        let Some(chain) = chains.get(&incoming.server_id) else {
+            return ProcessedMessage {
+                incoming,
+                payload: None,
+                error: None,
+            };
+        };
+        let text = payload::bytes_to_text(&incoming.payload);
+        match script::run_chain(chain, &text, &incoming.topic) {
+            // Unchanged output: keep the original bytes, so binary payloads
+            // are not mangled by the lossy UTF-8 round trip.
+            Ok(processed) if processed == text => ProcessedMessage {
+                incoming,
+                payload: None,
+                error: None,
+            },
+            Ok(processed) => ProcessedMessage {
+                incoming,
+                payload: Some(processed.into_bytes()),
+                error: None,
+            },
+            Err(err) => ProcessedMessage {
+                incoming,
+                payload: None,
+                error: Some(err.to_string()),
+            },
+        }
+    }
+
+    fn push_received(&mut self, processed: Vec<ProcessedMessage>, cx: &mut Context<Self>) {
+        let consumed_bytes: usize = processed.iter().map(|p| p.incoming.payload.len()).sum();
+        self.mqtt.messages_consumed(processed.len(), consumed_bytes);
+
+        let mut changed: Vec<i64> = Vec::new();
+        let mut script_errors = 0usize;
+        for ProcessedMessage {
+            incoming,
+            payload,
+            error,
+        } in processed
+        {
             if let Some(error) = &error {
-                state
-                    .logs
-                    .write(LogKind::Script, error, Some(&format!("topic={}", msg.topic)));
+                script_errors += 1;
+                if script_errors <= MAX_LOGGED_SCRIPT_ERRORS {
+                    self.logs
+                        .write(LogKind::Script, error, Some(&format!("topic={}", incoming.topic)));
+                }
             }
-            state.push_message(
-                msg.server_id,
+            if !changed.contains(&incoming.server_id) {
+                changed.push(incoming.server_id);
+            }
+            self.insert_message(
+                incoming.server_id,
                 Direction::Receive,
-                msg.topic,
-                payload,
-                msg.qos,
-                msg.retain,
-                msg.timestamp,
+                incoming.topic,
+                payload.unwrap_or(incoming.payload),
+                incoming.qos,
+                incoming.retain,
+                incoming.timestamp,
                 error,
-                cx,
             );
-        })
+        }
+        if script_errors > MAX_LOGGED_SCRIPT_ERRORS {
+            self.logs.write(
+                LogKind::Script,
+                &format!(
+                    "另有 {} 条消息的接收后脚本执行失败",
+                    script_errors - MAX_LOGGED_SCRIPT_ERRORS
+                ),
+                None,
+            );
+        }
+        for server_id in changed {
+            cx.emit(AppEvent::MessagesChanged(server_id));
+        }
+
+        let dropped = self.mqtt.take_dropped();
+        if dropped > 0 {
+            self.logs
+                .write(LogKind::Mqtt, &format!("消息过多，处理不及，已丢弃 {dropped} 条"), None);
+            let now = std::time::Instant::now();
+            if self
+                .last_drop_notice
+                .is_none_or(|t| now.duration_since(t) > std::time::Duration::from_secs(5))
+            {
+                self.last_drop_notice = Some(now);
+                self.toast(
+                    ToastKind::Warning,
+                    format!("消息过多，处理不及，已丢弃 {dropped} 条"),
+                    cx,
+                );
+            }
+        }
     }
 
     // ----------------------------------------------------------------------
@@ -293,7 +487,7 @@ impl AppState {
         self.statuses.get(&server_id).cloned().unwrap_or_default()
     }
 
-    pub fn messages(&self, server_id: i64) -> Option<&VecDeque<Message>> {
+    pub fn messages(&self, server_id: i64) -> Option<&ServerMessages> {
         self.messages.get(&server_id)
     }
 
@@ -303,6 +497,24 @@ impl AppState {
             .into_iter()
             .map(|s| (s.name, s.code))
             .collect()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_message(
+        &mut self,
+        server_id: i64,
+        direction: Direction,
+        topic: impl Into<SharedString>,
+        payload: Vec<u8>,
+        qos: u8,
+        retain: bool,
+        timestamp: DateTime<Local>,
+        script_error: Option<String>,
+    ) {
+        let id = self.next_message_id;
+        self.next_message_id += 1;
+        let message = Message::new(id, direction, topic, payload, qos, retain, timestamp, script_error);
+        self.messages.entry(server_id).or_default().push_front(message);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -318,12 +530,16 @@ impl AppState {
         script_error: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        let id = self.next_message_id;
-        self.next_message_id += 1;
-        let message = Message::new(id, direction, topic, payload, qos, retain, timestamp, script_error);
-        let list = self.messages.entry(server_id).or_default();
-        list.push_front(message);
-        list.truncate(MAX_MESSAGES);
+        self.insert_message(
+            server_id,
+            direction,
+            topic,
+            payload,
+            qos,
+            retain,
+            timestamp,
+            script_error,
+        );
         cx.emit(AppEvent::MessagesChanged(server_id));
     }
 
@@ -489,6 +705,11 @@ impl AppState {
             return Task::ready(Err("未连接到服务器，请先连接".into()));
         }
         let scripts = self.script_chain(server_id, ScriptType::BeforePublish);
+        if scripts.is_empty() {
+            // No scripts: publish right away, without an executor round trip.
+            let payload = draft.payload.clone();
+            return Task::ready(self.finish_publish(server_id, draft, Ok(payload), cx));
+        }
         cx.spawn(async move |this, cx| {
             let processed = if scripts.is_empty() {
                 Ok(draft.payload.clone())

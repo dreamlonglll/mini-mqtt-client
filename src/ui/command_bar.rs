@@ -2,6 +2,7 @@
 
 use super::common::Lucide;
 use super::{script_dialog, template_drawer};
+use crate::backend::models::CommandTemplate;
 use crate::state::AppState;
 use gpui_kit::component::StyledExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -12,25 +13,34 @@ const QUICK_COMMANDS: usize = 8;
 
 pub struct CommandBar {
     state: Entity<AppState>,
+    /// Recomputed when the state changes, not on every frame.
+    templates: Vec<CommandTemplate>,
     _subscription: Subscription,
 }
 
 impl CommandBar {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
-        let subscription = cx.observe(&state, |_, _, cx| cx.notify());
+        let subscription = cx.observe(&state, |this, state, cx| {
+            this.templates = Self::load(&state, cx);
+            cx.notify();
+        });
         Self {
+            templates: Self::load(&state, cx),
             state,
             _subscription: subscription,
         }
+    }
+
+    fn load(state: &Entity<AppState>, cx: &App) -> Vec<CommandTemplate> {
+        let state = state.read(cx);
+        state.quick_templates(state.active_server_id.unwrap_or_default(), QUICK_COMMANDS)
     }
 }
 
 impl Render for CommandBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
-        let state = self.state.read(cx);
-        let server_id = state.active_server_id.unwrap_or_default();
-        let templates = state.quick_templates(server_id, QUICK_COMMANDS);
+        let templates = self.templates.clone();
         let templates_state = self.state.clone();
         let scripts_state = self.state.clone();
 

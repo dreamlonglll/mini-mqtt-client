@@ -68,10 +68,7 @@ impl MessageListView {
             Filter::Receive => message.direction == Direction::Receive,
             Filter::Publish => message.direction == Direction::Publish,
         };
-        direction_ok
-            && (keyword.is_empty()
-                || message.topic.to_lowercase().contains(keyword)
-                || message.text.to_lowercase().contains(keyword))
+        direction_ok && (keyword.is_empty() || message.search_text.contains(keyword))
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
@@ -142,7 +139,7 @@ impl MessageListView {
                 }
                 hex.into()
             }
-            _ => payload::truncate(&message.text, 600).into(),
+            _ => payload::truncate(&message.preview, 600).into(),
         };
         let state = self.state.clone();
         let detail = message.clone();

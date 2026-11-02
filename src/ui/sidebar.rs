@@ -14,16 +14,30 @@ use gpui_kit::{prelude::*, *};
 
 pub struct SidebarView {
     state: Entity<AppState>,
+    /// Subscriptions of the active server, reloaded when the state changes.
+    subscriptions: Vec<TopicSubscription>,
     _subscription: Subscription,
 }
 
 impl SidebarView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
-        let subscription = cx.observe(&state, |_, _, cx| cx.notify());
+        let subscription = cx.observe(&state, |this, state, cx| {
+            this.subscriptions = Self::load(&state, cx);
+            cx.notify();
+        });
         Self {
+            subscriptions: Self::load(&state, cx),
             state,
             _subscription: subscription,
         }
+    }
+
+    fn load(state: &Entity<AppState>, cx: &App) -> Vec<TopicSubscription> {
+        let state = state.read(cx);
+        state
+            .active_server_id
+            .map(|id| state.subscriptions(id))
+            .unwrap_or_default()
     }
 
     fn section_header(
@@ -251,7 +265,7 @@ impl Render for SidebarView {
         let state = self.state.read(cx);
         let active_id = state.active_server_id;
         let servers = state.servers.clone();
-        let subscriptions = active_id.map(|id| state.subscriptions(id)).unwrap_or_default();
+        let subscriptions = self.subscriptions.clone();
         let is_dark = state.is_dark(cx);
         let theme = cx.theme().clone();
 

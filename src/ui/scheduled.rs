@@ -106,18 +106,20 @@ impl Scheduler {
         let round_interval = Duration::from_millis(config.round_interval_ms);
         self.task = Some(cx.spawn(async move |this, cx| {
             let mut round: u32 = 1;
+            // Deadline-based pacing: time spent publishing counts towards the
+            // interval, so the configured rate is kept (as far as possible).
+            let mut next_at = std::time::Instant::now();
             'run: loop {
                 for (ix, command) in commands.iter().enumerate() {
+                    let draft = PublishDraft::from(command);
+                    let publish = state.update(cx, |state, cx| state.publish(server_id, draft, cx));
+                    let result = publish.await;
                     this.update(cx, |s, cx| {
                         s.index = ix;
                         s.round = round;
                         s.current = Some(command.name.clone());
-                        cx.notify();
+                        s.record(command, result, cx);
                     })?;
-                    let draft = PublishDraft::from(command);
-                    let publish = state.update(cx, |state, cx| state.publish(server_id, draft, cx));
-                    let result = publish.await;
-                    this.update(cx, |s, cx| s.record(command, result, cx))?;
 
                     let wait = if ix + 1 == commands.len() {
                         if !config.infinite && round >= config.loop_count {
@@ -132,7 +134,14 @@ impl Scheduler {
                     } else {
                         interval
                     };
-                    cx.background_executor().timer(wait).await;
+                    next_at += wait;
+                    let now = std::time::Instant::now();
+                    if next_at > now {
+                        cx.background_executor().timer(next_at - now).await;
+                    } else {
+                        // Running late: do not burst to catch up.
+                        next_at = now;
+                    }
                 }
             }
             this.update(cx, |s, cx| {

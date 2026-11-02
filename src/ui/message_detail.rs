@@ -9,6 +9,11 @@ use gpui_kit::component::input::{Editor, EditorState};
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{prelude::*, *};
 
+/// Rendering limits of the detail view.
+const TEXT_LIMIT: usize = 256 * 1024;
+const JSON_LIMIT: usize = 1024 * 1024;
+const HEX_LIMIT: usize = 64 * 1024;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
     Text,
@@ -35,15 +40,49 @@ impl MessageDetail {
         this
     }
 
+    /// What the dialog shows. Large payloads are cut so the editor stays
+    /// responsive; copying still yields the complete text (see [`Self::copy_content`]).
     fn render_content(&self) -> String {
+        let m = &self.message;
+        let total = m.payload.len();
         match self.view {
-            View::Text => self.message.text.to_string(),
-            View::Json => payload::pretty_json(&self.message.text).unwrap_or_else(|| self.message.text.to_string()),
-            View::Hex => payload::hex_dump(&self.message.payload)
-                .into_iter()
-                .map(|row| format!("{}  {}  {}", row.offset, row.hex, row.ascii))
-                .collect::<Vec<_>>()
-                .join("\n"),
+            View::Json if total <= JSON_LIMIT => {
+                let text = m.full_text();
+                payload::pretty_json(&text).unwrap_or(text)
+            }
+            View::Text | View::Json => {
+                let (text, cut) = payload::text_prefix(&m.payload, TEXT_LIMIT);
+                if cut {
+                    format!(
+                        "{text}\n\n…（仅显示前 {} KB，共 {total} 字节；「复制内容」可获取全部）",
+                        TEXT_LIMIT / 1024
+                    )
+                } else {
+                    text
+                }
+            }
+            View::Hex => {
+                let mut dump = payload::hex_dump(&m.payload[..total.min(HEX_LIMIT)])
+                    .into_iter()
+                    .map(|row| format!("{}  {}  {}", row.offset, row.hex, row.ascii))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if total > HEX_LIMIT {
+                    dump.push_str(&format!("\n…（仅显示前 {} KB，共 {total} 字节）", HEX_LIMIT / 1024));
+                }
+                dump
+            }
+        }
+    }
+
+    /// Clipboard content: the complete payload text (pretty-printed JSON when
+    /// small enough); the HEX view copies what it shows.
+    fn copy_content(&self) -> String {
+        let m = &self.message;
+        match self.view {
+            View::Hex => self.render_content(),
+            View::Json if m.payload.len() <= JSON_LIMIT => self.render_content(),
+            _ => m.full_text(),
         }
     }
 
@@ -145,7 +184,7 @@ pub fn open(state: Entity<AppState>, message: Message, window: &mut Window, cx: 
                         .label("复制内容")
                         .icon(gpui_kit::component::IconName::Copy)
                         .on_click(move |_, window, cx| {
-                            let text = copy_detail.read(cx).render_content();
+                            let text = copy_detail.read(cx).copy_content();
                             cx.write_to_clipboard(ClipboardItem::new_string(text));
                             notify(window, cx, ToastKind::Success, "已复制到剪贴板");
                         }),
@@ -160,7 +199,7 @@ pub fn open(state: Entity<AppState>, message: Message, window: &mut Window, cx: 
                                 topic: m.topic.to_string(),
                                 payload: match m.format {
                                     DetectedFormat::Binary => payload::to_hex_spaced(&m.payload),
-                                    _ => m.text.to_string(),
+                                    _ => m.full_text(),
                                 },
                                 format: m.format.as_publish_format(),
                                 qos: m.qos,

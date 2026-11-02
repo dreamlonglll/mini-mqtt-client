@@ -14,13 +14,21 @@ use parking_lot::Mutex;
 use rumqttc::{TlsConfiguration, Transport as RumqttTransport};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio_rustls::rustls;
 
 const REQUEST_CHANNEL_CAPACITY: usize = 256;
 const CONNECTION_TIMEOUT_SECS: u64 = 10;
+/// Received messages not yet consumed by the UI. Beyond these limits new
+/// messages are dropped (and counted) instead of growing memory without bound
+/// when the UI cannot keep up.
+const MAX_PENDING_MESSAGES: usize = 50_000;
+const MAX_PENDING_BYTES: usize = 256 * 1024 * 1024;
+/// rumqttc's v5 client preallocates its inflight table from this limit
+/// (u16::MAX when unset, ~13 MB per connection).
+const MAX_OUTGOING_INFLIGHT: u16 = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ConnectionStatus {
@@ -125,6 +133,9 @@ struct Inner {
     clients: Mutex<HashMap<i64, Handle>>,
     events: UnboundedSender<MqttEvent>,
     next_generation: AtomicU64,
+    pending_messages: AtomicUsize,
+    pending_bytes: AtomicUsize,
+    dropped: AtomicU64,
 }
 
 impl Inner {
@@ -140,6 +151,26 @@ impl Inner {
     fn emit(&self, server_id: i64, generation: u64, event: MqttEvent) {
         if self.is_current(server_id, generation) {
             let _ = self.events.unbounded_send(event);
+        }
+    }
+
+    /// Queue a received message for the UI, unless the backlog is full.
+    fn emit_message(&self, server_id: i64, generation: u64, message: IncomingMessage) {
+        if !self.is_current(server_id, generation) {
+            return;
+        }
+        let size = message.payload.len();
+        let count = self.pending_messages.load(Ordering::Relaxed);
+        let bytes = self.pending_bytes.load(Ordering::Relaxed);
+        if count >= MAX_PENDING_MESSAGES || bytes.saturating_add(size) > MAX_PENDING_BYTES {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+        self.pending_messages.fetch_add(1, Ordering::Relaxed);
+        self.pending_bytes.fetch_add(size, Ordering::Relaxed);
+        if self.events.unbounded_send(MqttEvent::Message(message)).is_err() {
+            self.pending_messages.fetch_sub(1, Ordering::Relaxed);
+            self.pending_bytes.fetch_sub(size, Ordering::Relaxed);
         }
     }
 
@@ -177,6 +208,9 @@ impl MqttManager {
                     clients: Mutex::new(HashMap::new()),
                     events: tx,
                     next_generation: AtomicU64::new(1),
+                    pending_messages: AtomicUsize::new(0),
+                    pending_bytes: AtomicUsize::new(0),
+                    dropped: AtomicU64::new(0),
                 }),
             },
             rx,
@@ -219,7 +253,8 @@ impl MqttManager {
                 .set_clean_start(server.clean_session)
                 .set_transport(transport)
                 .set_connection_timeout(CONNECTION_TIMEOUT_SECS)
-                .set_max_packet_size(Some(64 * 1024 * 1024));
+                .set_max_packet_size(Some(64 * 1024 * 1024))
+                .set_outgoing_inflight_upper_limit(MAX_OUTGOING_INFLIGHT);
             if let Some((user, pass)) = credentials {
                 options.set_credentials(user, pass);
             }
@@ -293,6 +328,18 @@ impl MqttManager {
         for id in ids {
             self.shutdown(id);
         }
+    }
+
+    /// The UI took `count` messages totalling `bytes` off the event channel.
+    pub fn messages_consumed(&self, count: usize, bytes: usize) {
+        self.inner.pending_messages.fetch_sub(count, Ordering::Relaxed);
+        self.inner.pending_bytes.fetch_sub(bytes, Ordering::Relaxed);
+    }
+
+    /// Number of messages dropped because the UI backlog was full, since the
+    /// last call.
+    pub fn take_dropped(&self) -> u64 {
+        self.inner.dropped.swap(0, Ordering::Relaxed)
     }
 
     pub fn is_connected(&self, server_id: i64) -> bool {
@@ -412,15 +459,15 @@ fn build_tls(server: &MqttServer) -> Result<TlsConfiguration, String> {
     Ok(TlsConfiguration::Rustls(Arc::new(config)))
 }
 
-fn incoming(server_id: i64, topic: String, payload: &[u8], qos: u8, retain: bool) -> MqttEvent {
-    MqttEvent::Message(IncomingMessage {
+fn incoming(server_id: i64, topic: String, payload: &[u8], qos: u8, retain: bool) -> IncomingMessage {
+    IncomingMessage {
         server_id,
         topic,
         payload: payload.to_vec(),
         qos,
         retain,
         timestamp: Local::now(),
-    })
+    }
 }
 
 async fn run_v4(
@@ -460,7 +507,7 @@ async fn run_v4(
                     }
                 }
                 Ok(Event::Incoming(Packet::Publish(p))) => {
-                    inner.emit(server_id, generation, incoming(server_id, p.topic.clone(), &p.payload, p.qos as u8, p.retain));
+                    inner.emit_message(server_id, generation, incoming(server_id, p.topic.clone(), &p.payload, p.qos as u8, p.retain));
                 }
                 Ok(Event::Incoming(Packet::SubAck(ack))) => {
                     if ack.return_codes.iter().any(|c| matches!(c, SubscribeReasonCode::Failure)) {
@@ -520,7 +567,7 @@ async fn run_v5(
                 }
                 Ok(Event::Incoming(Packet::Publish(p))) => {
                     let topic = String::from_utf8_lossy(&p.topic).into_owned();
-                    inner.emit(server_id, generation, incoming(server_id, topic, &p.payload, p.qos as u8, p.retain));
+                    inner.emit_message(server_id, generation, incoming(server_id, topic, &p.payload, p.qos as u8, p.retain));
                 }
                 Ok(Event::Incoming(Packet::SubAck(ack))) => {
                     if let Some(code) = ack.return_codes.iter().find(|c| !matches!(c, SubscribeReasonCode::Success(_))) {
