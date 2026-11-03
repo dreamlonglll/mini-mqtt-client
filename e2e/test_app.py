@@ -48,15 +48,15 @@ def scenario(test_id: str, title: str):
 def seed():
     now = "2025-01-01T00:00:00Z"
     server = dict(username="", password="", client_id="", keep_alive=60, clean_session=True, use_tls=False,
-                  ca_cert="", client_cert="", client_key="", created_at=now, updated_at=now)
+                  ca_cert="", client_cert="", client_key="", client_key_password=None, created_at=now, updated_at=now)
     data = {
         "servers": [
             dict(server, id=1, name="本地 TCP", host="127.0.0.1", port=TCP, protocol_version="5.0"),
             dict(server, id=2, name="不可达", host="127.0.0.1", port=1, protocol_version="3.1.1"),
         ],
         "subscriptions": [
-            dict(id=1, server_id=1, topic="e2e/#", qos=0, is_active=True, created_at=now),
-            dict(id=2, server_id=1, topic="sensor/+/temp", qos=1, is_active=False, created_at=now),
+            dict(id=1, server_id=1, topic="e2e/#", qos=0, is_active=True, color=None, created_at=now),
+            dict(id=2, server_id=1, topic="sensor/+/temp", qos=1, is_active=False, color="#F56C6C", created_at=now),
         ],
         "messages": [],
         "templates": [
@@ -74,11 +74,16 @@ def seed():
                       '  catch (e) { return payload; }\n}',
                  created_at=now, updated_at=now),
         ],
+        "env_variables": [
+            dict(id=1, server_id=1, name="DEVICE_ID", value="dev-e2e", description="设备编号",
+                 created_at=now, updated_at=now),
+        ],
         "next_server_id": 2,
         "next_subscription_id": 2,
         "next_message_id": 0,
         "next_template_id": 2,
         "next_script_id": 1,
+        "next_env_variable_id": 1,
     }
     (DATA / "data.yaml").write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
@@ -155,9 +160,10 @@ def confirm(button: str):
 
 
 def close_dialogs():
-    """Close dialogs and the template drawer (a sheet without a dialog role)."""
+    """Close dialogs and the template / environment drawers (sheets without a dialog role)."""
     for attempt in range(6):
-        dialogs, drawer = app.find_all(role="dialog"), app.find_all(name="搜索模板")
+        dialogs = app.find_all(role="dialog")
+        drawer = app.find_all(name="搜索模板") or app.find_all(name="搜索环境变量")
         if not dialogs and not drawer:
             break
         if drawer and not dialogs and attempt >= 1:
@@ -671,6 +677,93 @@ def t13():
     close_dialogs()
 
 
+@scenario("T16", "环境变量：旧数据保留、变量管理、订阅 / 发布替换与脚本 env")
+def t16():
+    # Fields the previous version wrote survived every save so far.
+    d = data()
+    var = find_one(d.get("env_variables") or [], name="DEVICE_ID")
+    check(var and var["value"] == "dev-e2e" and var["description"] == "设备编号", f"legacy env variable: {var}")
+    sub = find_one(d["subscriptions"], topic="sensor/+/temp")
+    check(sub and sub.get("color") == "#F56C6C", f"legacy subscription colour: {sub}")
+
+    select_server("本地 TCP")
+    if not app.exists(role="status bar", pattern=r"^连接状态 已连接"):
+        click("连接")
+    status("已连接")
+
+    click("环境变量", role="push button")
+    app.find(role="list item", name="环境变量 DEVICE_ID dev-e2e")
+    click("新增变量", role="push button")
+    app.fill(Query(name="变量名"), "1bad")
+    app.fill(Query(name="变量值"), "x")
+    click("保存", role="push button")
+    toast("变量名格式不正确")
+    check(app.find_all(role="dialog"), "dialog must stay open on an invalid name")
+    app.fill(Query(name="变量名"), "SUFFIX")
+    app.fill(Query(name="变量值"), "tail")
+    click("保存", role="push button")
+    toast("变量已保存")
+    app.find(role="list item", name="环境变量 SUFFIX tail")
+    check(find_one(data()["env_variables"], name="SUFFIX", server_id=1, value="tail"), "variable persisted")
+    close_dialogs()
+
+    click("新增订阅")
+    app.fill(Query(name="订阅 Topic"), "env/{{DEVICE_ID}}/#")
+    click("订阅", role="push button")
+    toast("订阅已添加")
+    app.find(role="list item", name="订阅 env/dev-e2e/# Q0 已启用")
+    check(find_one(data()["subscriptions"], topic="env/dev-e2e/#"), "subscription stored with the variable substituted")
+    time.sleep(0.4)
+
+    mark = spy.mark()
+    publish("env/{{DEVICE_ID}}/cmd", '{"id":"{{DEVICE_ID}}-{{SUFFIX}}"}', "JSON")
+    seen = spy.wait(mark, "env/dev-e2e/cmd")[0]
+    check(seen.payload == b'{"id":"dev-e2e-tail"}', f"payload with variables: {seen.payload!r}")
+    wait_message(r'^消息 RCV env/dev-e2e/cmd JSON Q0 \{"id":"dev-e2e-tail","handled_by":"script"\}$')
+
+    open_scripts()
+    new_script("e2e-env", 'function process(p) {\n  return env.replace("{{DEVICE_ID}}") + ":" + env.get("SUFFIX") + ":" + p;\n}')
+    toast("脚本已保存")
+    close_dialogs()
+    mark = spy.mark()
+    publish("env/plain", "x", "TEXT")
+    seen = spy.wait(mark, "env/plain")[0]
+    check(seen.payload == b"dev-e2e:tail:x", f"script reads the variables: {seen.payload!r}")
+    open_scripts()
+    app.click(Query(role="list item", name="脚本 e2e-env 发送前 已启用"), dx=0.3)
+    click("删除", role="push button")
+    confirm("删除")
+    app.wait_gone(role="list item", pattern=r"^脚本 e2e-env ")
+    close_dialogs()
+
+
+@scenario("T17", "订阅编辑与颜色标记、界面语言切换")
+def t17():
+    row = app.find(role="list item", name="订阅 env/dev-e2e/# Q0 已启用")
+    app.click(row, dx=0.5)  # hover reveals the edit / delete buttons
+    click("编辑订阅 env/dev-e2e/#")
+    check(app.read(Query(name="订阅 Topic")) == "env/dev-e2e/#", "edit dialog prefilled with the topic")
+    click("订阅 QoS QoS 1")
+    click("颜色 #409EFF")
+    click("保存", role="push button")
+    toast("订阅已更新")
+    app.find(role="list item", name="订阅 env/dev-e2e/# Q1 已启用")
+    sub = find_one(data()["subscriptions"], topic="env/dev-e2e/#")
+    check(sub and sub["qos"] == 1 and sub.get("color") == "#409EFF", f"edited subscription {sub}")
+    time.sleep(0.4)
+    broker.pub("env/dev-e2e/q1", "after-edit", qos=1)
+    wait_message(r"^消息 RCV env/dev-e2e/q1 TEXT Q1 after-edit$")
+
+    click("系统设置")
+    click("English", role="radio button")
+    app.find(role="push button", name="Settings")
+    wait_until(lambda: config().get("language") == "en-US", 4, desc="language en-US persisted")
+    click("简体中文", role="radio button")
+    app.find(role="push button", name="系统设置")
+    wait_until(lambda: config().get("language") == "zh-CN", 4, desc="language zh-CN persisted")
+    close_dialogs()
+
+
 @scenario("T14", "重启应用：数据、主题与脚本持久化")
 def t14():
     app.stop()
@@ -694,14 +787,14 @@ def t14():
     wait_message(r"^消息 RCV e2e/after-restart TEXT Q0 ok$")
 
 
-@scenario("T15", "删除服务器：级联删除订阅、模板与脚本")
+@scenario("T15", "删除服务器：级联删除订阅、模板、脚本与环境变量")
 def t15():
     click("服务器菜单 本地 TCP")
     click("删除", role="menu item")
     confirm("删除")
     app.wait_gone(role="list item", pattern=r"^服务器 本地 TCP ")
     d = data()
-    for key in ("subscriptions", "templates", "scripts"):
+    for key in ("subscriptions", "templates", "scripts", "env_variables"):
         leftovers = [i for i in d.get(key) or [] if i["server_id"] == 1]
         check(not leftovers, f"{key} of the deleted server remain: {leftovers}")
     app.find(role="list item", pattern=r"^服务器 .* 当前$")  # another server became active
