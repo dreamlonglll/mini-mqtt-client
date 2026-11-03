@@ -29,6 +29,8 @@ pub const MAX_MESSAGE_BYTES: usize = 128 * 1024 * 1024;
 /// Text kept for the list preview and search; the detail view decodes the
 /// full payload on demand.
 const PREVIEW_BYTES: usize = 4 * 1024;
+/// Bytes of a binary payload added to the search text as HEX (`01 02 FF`).
+const SEARCH_HEX_BYTES: usize = 1024;
 /// Events handled per UI update; the pump then yields a frame to rendering.
 const PUMP_BATCH: usize = 5_000;
 const PUMP_FRAME: std::time::Duration = std::time::Duration::from_millis(16);
@@ -84,11 +86,18 @@ impl Message {
         retain: bool,
         timestamp: DateTime<Local>,
         script_error: Option<String>,
+        format: Option<DetectedFormat>,
     ) -> Self {
-        let format = payload::detect_format(&payload);
+        let format = format.unwrap_or_else(|| payload::detect_format(&payload));
         let topic: SharedString = topic.into();
         let (preview, cut) = payload::text_prefix(&payload, PREVIEW_BYTES);
-        let search_text = format!("{}\n{}", topic, preview).to_lowercase();
+        let mut search_text = format!("{}\n{}", topic, preview);
+        if format == DetectedFormat::Binary {
+            // Binary payloads are shown as HEX, so they are found as HEX too.
+            search_text.push('\n');
+            search_text.push_str(&payload::to_hex_spaced(&payload[..payload.len().min(SEARCH_HEX_BYTES)]));
+        }
+        let search_text = search_text.to_lowercase();
         let preview = if cut { format!("{preview}…") } else { preview };
         Self {
             id,
@@ -183,6 +192,16 @@ pub enum ToastKind {
     Success,
     Warning,
     Error,
+}
+
+/// How a published message is shown: in the format it was sent as (a HEX
+/// payload stays binary even if its bytes happen to be printable).
+fn published_format(format: PayloadFormat, bytes: &[u8]) -> DetectedFormat {
+    match format {
+        PayloadFormat::Hex => DetectedFormat::Binary,
+        PayloadFormat::Text => DetectedFormat::Text,
+        PayloadFormat::Json => payload::detect_format(bytes),
+    }
 }
 
 #[derive(Clone)]
@@ -487,6 +506,7 @@ impl AppState {
                 incoming.retain,
                 incoming.timestamp,
                 error,
+                None,
             );
         }
         if script_errors > MAX_LOGGED_SCRIPT_ERRORS {
@@ -581,10 +601,21 @@ impl AppState {
         retain: bool,
         timestamp: DateTime<Local>,
         script_error: Option<String>,
+        format: Option<DetectedFormat>,
     ) {
         let id = self.next_message_id;
         self.next_message_id += 1;
-        let message = Message::new(id, direction, topic, payload, qos, retain, timestamp, script_error);
+        let message = Message::new(
+            id,
+            direction,
+            topic,
+            payload,
+            qos,
+            retain,
+            timestamp,
+            script_error,
+            format,
+        );
         self.messages.entry(server_id).or_default().push_front(message);
     }
 
@@ -599,6 +630,7 @@ impl AppState {
         retain: bool,
         timestamp: DateTime<Local>,
         script_error: Option<String>,
+        format: Option<DetectedFormat>,
         cx: &mut Context<Self>,
     ) {
         self.insert_message(
@@ -610,6 +642,7 @@ impl AppState {
             retain,
             timestamp,
             script_error,
+            format,
         );
         cx.emit(AppEvent::MessagesChanged(server_id));
     }
@@ -904,15 +937,28 @@ impl AppState {
                 // Keep a record of what was attempted, flagged with the error.
                 self.logs
                     .write(LogKind::Script, &err, Some(&format!("topic={}", draft.topic)));
+                // A HEX payload is recorded as the bytes it stands for.
+                let (bytes, format) = match draft.format {
+                    PayloadFormat::Hex => match payload::parse_hex(&raw_payload) {
+                        Ok(bytes) => (bytes, DetectedFormat::Binary),
+                        Err(_) => (raw_payload.into_bytes(), DetectedFormat::Text),
+                    },
+                    _ => {
+                        let bytes = raw_payload.into_bytes();
+                        let format = published_format(draft.format, &bytes);
+                        (bytes, format)
+                    }
+                };
                 self.push_message(
                     server_id,
                     Direction::Publish,
                     draft.topic.clone(),
-                    raw_payload.into_bytes(),
+                    bytes,
                     draft.qos,
                     draft.retain,
                     Local::now(),
                     Some(err.clone()),
+                    Some(format),
                     cx,
                 );
                 return Err(err);
@@ -928,6 +974,7 @@ impl AppState {
                 .write(LogKind::Mqtt, &tr!("publish.failed", error = err), Some(&draft.topic));
             return Err(friendly_mqtt_error(&err));
         }
+        let format = published_format(draft.format, &bytes);
         self.push_message(
             server_id,
             Direction::Publish,
@@ -937,6 +984,7 @@ impl AppState {
             draft.retain,
             Local::now(),
             None,
+            Some(format),
             cx,
         );
         Ok(())
@@ -1257,5 +1305,50 @@ impl AppState {
         }
         cx.notify();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `super::*`: that would bring GPUI's `test` attribute into scope.
+    use super::{DetectedFormat, Direction, Message, PayloadFormat, published_format};
+
+    fn message(payload: &[u8], format: Option<DetectedFormat>) -> Message {
+        Message::new(
+            1,
+            Direction::Receive,
+            "dev/1",
+            payload.to_vec(),
+            0,
+            false,
+            chrono::Local::now(),
+            None,
+            format,
+        )
+    }
+
+    #[test]
+    fn binary_messages_are_searchable_as_hex() {
+        let m = message(&[0x00, 0x01, 0xAB, 0xFF], None);
+        assert_eq!(m.format, DetectedFormat::Binary);
+        assert!(m.search_text.contains("00 01 ab ff"), "{}", m.search_text);
+        let text = message(b"Hello", None);
+        assert!(text.search_text.contains("hello") && !text.search_text.contains("48 65"));
+    }
+
+    #[test]
+    fn published_messages_keep_their_format() {
+        assert_eq!(published_format(PayloadFormat::Hex, b"Hello"), DetectedFormat::Binary);
+        assert_eq!(
+            published_format(PayloadFormat::Text, b"{\"a\":1}"),
+            DetectedFormat::Text
+        );
+        assert_eq!(
+            published_format(PayloadFormat::Json, b"{\"a\":1}"),
+            DetectedFormat::Json
+        );
+        let m = message(b"Hello", Some(DetectedFormat::Binary));
+        assert_eq!(m.format, DetectedFormat::Binary);
+        assert!(m.search_text.contains("48 65 6c 6c 6f"));
     }
 }

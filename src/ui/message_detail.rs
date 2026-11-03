@@ -52,6 +52,13 @@ impl MessageDetail {
             }
             View::Text | View::Json => {
                 let (text, cut) = payload::text_prefix(&m.payload, TEXT_LIMIT);
+                // The text view marks line breaks, so CR LF and trailing
+                // newlines are visible.
+                let text = if self.view == View::Text {
+                    payload::mark_line_breaks(&text)
+                } else {
+                    text
+                };
                 if cut {
                     format!(
                         "{text}\n\n{}",
@@ -79,11 +86,12 @@ impl MessageDetail {
     }
 
     /// Clipboard content: the complete payload text (pretty-printed JSON when
-    /// small enough); the HEX view copies what it shows.
+    /// small enough, without line-break marks); the HEX view copies the whole
+    /// payload as plain HEX (`01 02 FF`).
     fn copy_content(&self) -> String {
         let m = &self.message;
         match self.view {
-            View::Hex => self.render_content(),
+            View::Hex => payload::to_hex_spaced(&m.payload),
             View::Json if m.payload.len() <= JSON_LIMIT => self.render_content(),
             _ => m.full_text(),
         }

@@ -127,6 +127,29 @@ pub fn parse_hex(input: &str) -> Result<Vec<u8>, String> {
     hex::decode(&cleaned).map_err(|e| tr!("payload.hex_decode_failed", error = e).to_string())
 }
 
+/// Put a `↵` before every line break (`\n` or `\r\n`), as the previous
+/// version's detail view did.
+pub fn mark_line_breaks(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + text.len() / 16);
+    let mut rest = text;
+    while let Some(ix) = rest.find('\n') {
+        let line = &rest[..ix];
+        match line.strip_suffix('\r') {
+            Some(line) => {
+                out.push_str(line);
+                out.push_str("↵\r\n");
+            }
+            None => {
+                out.push_str(line);
+                out.push_str("↵\n");
+            }
+        }
+        rest = &rest[ix + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// One row of a classic hex dump.
 pub struct HexRow {
     pub offset: String,
@@ -234,6 +257,13 @@ mod tests {
         let rows = hex_dump(b"Hello, world! 123456");
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[1].offset, "00000010");
+    }
+
+    #[test]
+    fn marks_line_breaks() {
+        assert_eq!(mark_line_breaks("a\nb\r\nc"), "a↵\nb↵\r\nc");
+        assert_eq!(mark_line_breaks("end\n"), "end↵\n");
+        assert_eq!(mark_line_breaks("none"), "none");
     }
 
     #[test]
