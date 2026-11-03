@@ -1,16 +1,10 @@
+# Rust
+/target
+**/*.rs.bk
+
 # Logs
 logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
 
 # Editor directories and files
 .vscode/*
@@ -18,25 +12,12 @@ dist-ssr
 .idea
 .DS_Store
 *.suo
-*.ntvs*
-*.njsproj
-*.sln
 *.sw?
 
 # Python cache
 __pycache__/
 *.py[cod]
 
-# Lock files
-Cargo.lock
-
-# Auto-generated TypeScript declaration files
-src/auto-imports.d.ts
-src/components.d.ts
-
-# Mobile icons (not used for Windows desktop app)
-src-tauri/icons/android/
-src-tauri/icons/ios/
 # mini-term SSH skill（本机相关生成物，勿提交）
 .claude/skills/mini-term-ssh/
 .codex/skills/mini-term-ssh/

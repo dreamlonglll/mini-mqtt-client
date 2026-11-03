@@ -1,113 +1,226 @@
-name: Build Tauri App
+name: Build
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
 
+env:
+  CARGO_TERM_COLOR: always
+  LINUX_DEPS: >-
+    libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev
+    libx11-xcb-dev libxcb1-dev libfontconfig1-dev libfreetype6-dev
+
 jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $LINUX_DEPS mosquitto
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Start local MQTT broker (TCP 1883 + WebSocket 8083)
+        run: |
+          sudo systemctl stop mosquitto || true
+          cat > "$RUNNER_TEMP/mosquitto.conf" <<'EOF'
+          listener 1883 127.0.0.1
+          protocol mqtt
+          listener 8083 127.0.0.1
+          protocol websockets
+          allow_anonymous true
+          EOF
+          mosquitto -c "$RUNNER_TEMP/mosquitto.conf" -d
+          sleep 1
+
+      - name: Run tests (including live broker integration test)
+        run: cargo test --locked -- --include-ignored
+
+  e2e:
+    name: E2E (real app on Xvfb)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $LINUX_DEPS \
+            xvfb mosquitto mosquitto-clients xdotool xclip x11-apps imagemagick openssl \
+            dbus at-spi2-core python3-pyatspi python3-yaml mesa-vulkan-drivers fonts-noto-cjk
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --locked
+
+      - name: Run end-to-end tests
+        run: ./e2e/run.sh
+
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            target/e2e/report.md
+            target/e2e/report.json
+            target/e2e/*.txt
+            target/e2e/*.log
+            target/e2e/shots/
+          if-no-files-found: ignore
+          retention-days: 7
+
   build:
+    name: Build ${{ matrix.name }}
+    needs: test
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
-            args: '--target universal-apple-darwin'
-            name: 'macOS'
-          - platform: 'ubuntu-22.04'
-            args: ''
-            name: 'Linux'
-          - platform: 'windows-latest'
-            args: ''
-            name: 'Windows'
-
+          - platform: windows-latest
+            name: windows-x64
+          - platform: macos-latest
+            name: macos-universal
+          - platform: ubuntu-22.04
+            name: linux-x64
     runs-on: ${{ matrix.platform }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 'lts/*'
-          cache: 'npm'
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: Install dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y $LINUX_DEPS
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          key: ${{ matrix.name }}
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Build (Windows / Linux)
+        if: runner.os != 'macOS'
+        run: cargo build --release --locked
 
-      - name: Generate changelog
-        id: changelog
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: mikepenz/release-changelog-builder-action@v5
-        with:
-          configurationJson: |
-            {
-              "categories": [
-                {
-                  "title": "## 新功能",
-                  "labels": ["feature", "enhancement"]
-                },
-                {
-                  "title": "## 修复",
-                  "labels": ["fix", "bug"]
-                },
-                {
-                  "title": "## 其他更新",
-                  "labels": []
-                }
-              ],
-              "template": "#{{CHANGELOG}}\n\n**完整更新日志**: #{{RELEASE_DIFF}}",
-              "pr_template": "- #{{TITLE}} (#{{NUMBER}})",
-              "empty_template": "- 常规更新和优化"
-            }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build (macOS universal)
+        if: runner.os == 'macOS'
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir -p target/universal
+          lipo -create \
+            target/aarch64-apple-darwin/release/mini-mqtt-client \
+            target/x86_64-apple-darwin/release/mini-mqtt-client \
+            -output target/universal/mini-mqtt-client
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: ${{ matrix.args }}
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
-          releaseBody: ${{ steps.changelog.outputs.changelog || '初始版本发布' }}
-          releaseDraft: false
-          prerelease: false
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/pkg | Out-Null
+          Copy-Item target/release/mini-mqtt-client.exe dist/pkg/
+          Copy-Item README.md dist/pkg/
+          Compress-Archive -Path dist/pkg/* -DestinationPath dist/mini-mqtt-client-windows-x64.zip
+          Remove-Item -Recurse dist/pkg
 
-      - name: Upload artifacts (non-release builds)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          APP="dist/Mini MQTT Client.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/universal/mini-mqtt-client "$APP/Contents/MacOS/"
+          cp assets/app-icon/icon.icns "$APP/Contents/Resources/AppIcon.icns"
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Mini MQTT Client</string>
+            <key>CFBundleDisplayName</key><string>Mini MQTT Client</string>
+            <key>CFBundleIdentifier</key><string>com.minimqtt.client</string>
+            <key>CFBundleExecutable</key><string>mini-mqtt-client</string>
+            <key>CFBundleIconFile</key><string>AppIcon</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+          cd dist
+          ditto -c -k --keepParent "Mini MQTT Client.app" mini-mqtt-client-macos-universal.zip
+          rm -rf "Mini MQTT Client.app"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          PKG=dist/mini-mqtt-client
+          mkdir -p "$PKG"
+          cp target/release/mini-mqtt-client README.md "$PKG/"
+          cp assets/app-icon/icon.png "$PKG/mini-mqtt-client.png"
+          cat > "$PKG/mini-mqtt-client.desktop" <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Mini MQTT Client
+          Comment=MQTT debugging client
+          Exec=mini-mqtt-client
+          Icon=mini-mqtt-client
+          Categories=Development;Network;
+          EOF
+          tar -czf dist/mini-mqtt-client-linux-x64.tar.gz -C dist mini-mqtt-client
+          rm -rf "$PKG"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mini-mqtt-client-${{ matrix.name }}
-          path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/*/release/bundle/msi/*.msi
-            src-tauri/target/*/release/bundle/nsis/*.exe
-            src-tauri/target/*/release/bundle/dmg/*.dmg
-          if-no-files-found: ignore
+          path: dist/*
+          if-no-files-found: error
           retention-days: 7
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Mini MQTT Client ${{ github.ref_name }}
+          body: 请查看变更日志获取更新内容。
+          files: dist/*

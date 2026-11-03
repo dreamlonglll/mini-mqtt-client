@@ -2,127 +2,163 @@
 
 English | [简体中文](README.zh-CN.md)
 
-A lightweight, good-looking MQTT debugging client built with Tauri 2 + Vue 3, available for Windows, macOS and Linux.
+A lightweight, good-looking MQTT debugging client. It is a native desktop app built with **Rust + [GPUI Kit](https://gpui-kit.com)** (GPU-rendered, no WebView), available for Windows, macOS and Linux.
 
-The interface follows your system language (English or Simplified Chinese) and can be switched at any time in Settings.
+> Starting with v2.0 the project has been completely rewritten from Tauri 2 + Vue 3 to pure Rust. Your existing data keeps working; see [Data compatibility](#data-compatibility).
 
-<!-- Main window screenshot -->
 ![Main window](docs/screenshots/main.png)
 
 ## Features
 
-### MQTT Connection Management
-- Manage multiple server configurations
-- MQTT 3.1.1 and 5.0 protocols
-- TLS/SSL connections (self-signed CA + client certificate + client private key)
+### MQTT connection management
+- Manage multiple server configurations (add / edit / duplicate / delete)
+- **MQTT 3.1.1 and 5.0**
+- Four transports: `mqtt://`, `mqtts://` (TLS/SSL), `ws://` and `wss://`
+- TLS with a custom CA certificate and mutual (client certificate) authentication in PEM format; the system root certificates are used when no CA is given
+- Keep several servers connected at the same time, with live connection status
+- Enabled topics are subscribed automatically once connected
+- Keep Alive / Clean Session settings; the Client ID can be generated automatically
 
-<!-- Server configuration screenshot -->
 ![Server configuration](docs/screenshots/server-config.png)
 
-### Publish & Subscribe
-- Subscribe to multiple topics at once
-- Wildcard subscriptions (`+` / `#`)
-- QoS 0/1/2
-- Retained messages
-- Switch message format: JSON / HEX / Text
+### Publishing and subscribing
+- Subscribe to multiple topics with `+` / `#` wildcards (validated), each can be enabled or disabled on its own
+- QoS 0/1/2 and retained messages
+- Publish as JSON / TEXT / HEX, with one-click JSON formatting
+- Message list: live scrolling, virtualized list (the latest 1000 messages per server), filter by direction, keyword search
+- JSON / TEXT / BIN is detected automatically; message details offer text, pretty-printed JSON and HEX dump views
+- Copy a message's content, or copy it into the publish panel, in one click
 
-<!-- Message list screenshot -->
-![Message list](docs/screenshots/messages.png)
+![Message details](docs/screenshots/messages.png)
 
-### Command Templates
-- Save frequently used commands as templates
-- Organize templates into categories
-- Send with one click
+### Command templates
+- Save frequently used commands as templates, with categories and search
+- The quick command bar at the bottom shows your most used templates
+- Import / export templates (JSON, compatible with the previous version's format)
 
-<!-- Command templates screenshot -->
 ![Command templates](docs/screenshots/templates.png)
 
-### Scheduled Publishing
-- One-off scheduled sending
-- Periodic, looped sending
-- Flexible interval settings
+### Scheduled publishing
+- Send several templates in a loop, in the order you ticked them or sorted by name
+- Configurable interval between messages and between rounds; loop forever or for a fixed number of rounds
+- Can run in the background; the publish panel shows live progress and can stop it at any time
 
-<!-- Scheduled publishing screenshot -->
 ![Scheduled publishing](docs/screenshots/scheduled-publish.png)
 
-### Preprocessing Scripts
-- JavaScript script engine
-- Before sending: encrypt messages, convert formats
-- After receiving: decrypt messages, parse data
-- Built-in crypto utilities (AES, SHA, MD5, HMAC and more)
+### Pre-processing scripts
+- Built-in JavaScript engine ([Boa](https://boajs.dev/), pure Rust) with `async/await`
+- Before-publish processing (e.g. encryption, framing) and after-receive processing (e.g. decryption, parsing)
+- Built-in crypto helpers: AES-GCM / AES-CBC, SHA-1 / SHA-256 / MD5, HMAC-SHA256, CRC32, Base64 / Hex and more
+- Code editor with syntax highlighting; **test-run** a script right away and see its `console.log` output
+- Infinite-loop protection: a script that exceeds its run limit is aborted instead of freezing the UI
 
-<!-- Script management screenshot -->
-![Preprocessing scripts](docs/screenshots/scripts.png)
+![Pre-processing scripts](docs/screenshots/scripts.png)
 
-### More
-- Dark / light theme
-- Custom data storage path (pair it with OneDrive to sync across devices)
-- Error logging
+### Other
+- Light / dark / follow-system theme
+- Custom data location (existing data can be migrated)
+- Error log recording and viewer (including crash information)
+- Message timestamps with millisecond precision
 
 ## Installation
 
-### Download
-
 Download the package for your platform from the [Releases](../../releases) page:
 
-| Platform | Format |
-|----------|--------|
-| Windows | `.msi` / `.exe` |
-| macOS | `.dmg` |
-| Linux | `.deb` / `.AppImage` |
+| Platform | File |
+|----------|------|
+| Windows | `mini-mqtt-client-windows-x64.zip` (unzip and run) |
+| macOS | `mini-mqtt-client-macos-universal.zip` (`Mini MQTT Client.app`) |
+| Linux | `mini-mqtt-client-linux-x64.tar.gz` |
 
-### Build from Source
+## Building from source
+
+Requires Rust 1.92+ (installing the latest stable with [rustup](https://rustup.rs) is recommended).
 
 ```bash
-# Clone the repository
 git clone https://github.com/dreamlonglll/mini-mqtt-client
 cd mini-mqtt-client
 
-# Install dependencies
-npm install
+# Run in development mode
+cargo run
 
-# Development mode
-npm run tauri dev
-
-# Release build
-npm run tauri build
+# Build a release (output in target/release/)
+cargo build --release
 ```
 
-## Tech Stack
+On Linux, install these system dependencies first (Ubuntu/Debian example):
+
+```bash
+sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig1-dev libfreetype6-dev
+```
+
+### Tests
+
+```bash
+# Unit tests (storage, protocol validation, crypto functions, script engine, ...)
+cargo test
+
+# Integration tests against a real broker (needs local listeners on 1883 TCP and 8083 WebSocket)
+cargo test -- --ignored
+
+# End-to-end tests: launch the real app under Xvfb, drive the UI through the accessibility tree,
+# and check what the broker received and what was written to disk (see e2e/README.md)
+./e2e/run.sh
+```
+
+## Data compatibility
+
+The new version uses the same data directory and file format as the previous (Tauri) version, so your servers, subscriptions, templates and scripts load automatically after upgrading:
+
+| Platform | Data directory |
+|----------|----------------|
+| Windows | `%APPDATA%\com.minimqtt.client` |
+| macOS | `~/Library/Application Support/com.minimqtt.client` |
+| Linux | `~/.local/share/com.minimqtt.client` |
+
+The directory contains `data.yaml` (data), `config.yaml` (custom data path, theme) and `logs/` (error logs). You can also point the app at another directory with the `MINI_MQTT_DATA_DIR` environment variable.
+
+Behaviour changes compared with the previous version:
+- Protocol version / TLS / WebSocket settings now actually take effect (the old backend always connected with MQTT 3.1.1 over TCP)
+- HEX templates are sent as bytes during scheduled publishing (the old version sent the HEX string as text)
+- `aesCbcEncrypt/Decrypt` use standard single-layer PKCS#7 padding and interoperate with other systems (the old version padded twice)
+- `md5` / `crc32` hash the UTF-8 bytes, so results match common tools
+- When an after-receive script does not change the content, the original bytes are kept and binary messages are no longer corrupted by UTF-8 conversion
+- The message list is an in-memory live view; publish records are no longer written to `data.yaml`
+- The message list keeps at most 1000 messages per server with at most 128 MiB of payload in total; when messages arrive faster than they can be processed, the oldest are dropped and you are notified
+- Message search matches the topic and the first 4 KB of the content; details of very large messages render only the beginning, while "Copy content" still copies everything
+
+## Tech stack
 
 | Layer | Technology |
 |-------|------------|
-| Frontend framework | Vue 3 + TypeScript |
-| UI components | Element Plus |
-| State management | Pinia |
-| Desktop framework | Tauri 2 |
-| Backend language | Rust |
-| MQTT library | rumqttc |
+| UI framework | [GPUI](https://www.gpui.rs) + [GPUI Kit](https://gpui-kit.com) (gpui-component library) |
+| MQTT | [rumqttc](https://github.com/bytebeamio/rumqtt) (tokio, rustls) |
+| Script engine | [Boa](https://github.com/boa-dev/boa) |
+| Crypto | RustCrypto (aes-gcm, cbc, sha2, hmac, ...) |
+| Storage | YAML (serde_yaml) |
 
-## Development Environment
-
-- Node.js 18+
-- Rust 1.70+
-- Recommended IDE: VS Code
-  - Extensions: Vue - Official, Tauri, rust-analyzer
-
-## Project Structure
+## Project layout
 
 ```
 mini-mqtt-client/
-├── src/                    # Vue frontend source
-│   ├── components/         # Vue components
-│   ├── stores/            # Pinia stores
-│   ├── utils/             # Utilities
-│   └── types/             # TypeScript types
-├── src-tauri/             # Tauri Rust backend
-│   └── src/
-│       ├── commands/      # Tauri commands
-│       ├── db/           # Data storage
-│       ├── mqtt/         # MQTT client
-│       └── log/          # Log management
-├── docs/                  # Documentation
-└── .github/workflows/     # CI/CD configuration
+├── src/
+│   ├── main.rs              # Entry point: initialise GPUI Kit, open the window
+│   ├── assets.rs            # Icon assets (Lucide)
+│   ├── state.rs             # AppState: connection status, message stream, operations
+│   ├── backend/             # UI-independent logic
+│   │   ├── models.rs        # Data models (compatible with the old data.yaml)
+│   │   ├── storage.rs       # YAML storage
+│   │   ├── config.rs        # Data directory, config.yaml
+│   │   ├── logger.rs        # Error log
+│   │   ├── mqtt.rs          # MQTT connection management (v3.1.1/v5, TLS, WS)
+│   │   ├── payload.rs       # Format detection, HEX, JSON
+│   │   ├── topic.rs         # Topic validation
+│   │   ├── errors.rs        # Friendly error messages
+│   │   └── script/          # JS script engine and crypto API
+│   └── ui/                  # GPUI views and dialogs
+├── assets/app-icon/         # Application icons
+├── docs/                    # Documentation and screenshots
+└── .github/workflows/       # CI / Release
 ```
 
 ## License

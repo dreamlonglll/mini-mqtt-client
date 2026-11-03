@@ -1,0 +1,15 @@
+[package]
+name = "mqtt-load"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone tool, not part of the application build.
+[workspace]
+
+[dependencies]
+rumqttc = { version = "0.25", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+[profile.release]
+opt-level = 3
