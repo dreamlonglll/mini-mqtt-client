@@ -227,6 +227,11 @@ impl Render for TemplateBrowser {
         let keyword = self.search.read(cx).value().trim().to_lowercase();
         let all = state.templates(self.server_id);
         let categories = state.storage.template_categories(self.server_id);
+        // The selected category disappears with its last template: show all
+        // again instead of an empty list without the category bar.
+        if self.category.as_ref().is_some_and(|c| !categories.contains(c)) {
+            self.category = None;
+        }
         let filtered: Vec<CommandTemplate> = all
             .iter()
             .filter(|t| self.category.as_ref().is_none_or(|c| t.category.as_ref() == Some(c)))

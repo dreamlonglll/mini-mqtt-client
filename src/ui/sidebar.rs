@@ -18,8 +18,13 @@ pub struct SidebarView {
     state: Entity<AppState>,
     /// Subscriptions of the active server, reloaded when the state changes.
     subscriptions: Vec<TopicSubscription>,
+    /// Collapsed state of the server / subscription sections (not persisted).
+    collapsed: [bool; 2],
     _subscription: Subscription,
 }
+
+const SERVERS: usize = 0;
+const SUBSCRIPTIONS: usize = 1;
 
 impl SidebarView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
@@ -29,6 +34,7 @@ impl SidebarView {
         });
         Self {
             subscriptions: Self::load(&state, cx),
+            collapsed: [false; 2],
             state,
             _subscription: subscription,
         }
@@ -42,26 +48,65 @@ impl SidebarView {
             .unwrap_or_default()
     }
 
+    /// Title row of a sidebar section: click the title (or the arrow) to
+    /// collapse / expand the list below it, `+` adds an item.
     fn section_header(
         &self,
+        section: usize,
         id: &'static str,
         title: SharedString,
         enabled: bool,
         on_add: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-        cx: &App,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let collapsed = self.collapsed[section];
+        let toggle = {
+            let entity = cx.entity();
+            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                entity.update(cx, |this, cx| {
+                    this.collapsed[section] = !this.collapsed[section];
+                    cx.notify();
+                })
+            }
+        };
+        let toggle_label = if collapsed {
+            tr!("sidebar.expand_section", section = title)
+        } else {
+            tr!("sidebar.collapse_section", section = title)
+        };
         h_flex()
             .flex_none()
             .justify_between()
-            .px_4()
+            .pl_2()
+            .pr_4()
             .pt_3()
             .pb_2()
             .child(
-                div()
-                    .text_xs()
-                    .font_semibold()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(title),
+                h_flex()
+                    .gap_0p5()
+                    .child(
+                        Button::new(("toggle-section", section))
+                            .accessibility_label(toggle_label.clone())
+                            .ghost()
+                            .xsmall()
+                            .icon(if collapsed {
+                                IconName::ChevronRight
+                            } else {
+                                IconName::ChevronDown
+                            })
+                            .tooltip(toggle_label)
+                            .on_click(toggle.clone()),
+                    )
+                    .child(
+                        div()
+                            .id(("section-title", section))
+                            .cursor_pointer()
+                            .text_xs()
+                            .font_semibold()
+                            .text_color(cx.theme().muted_foreground)
+                            .on_click(toggle)
+                            .child(title.clone()),
+                    ),
             )
             .child({
                 let label = if id == "add-server" {
@@ -376,21 +421,25 @@ impl Render for SidebarView {
                     .min_h_0()
                     .overflow_y_scrollbar()
                     .child(self.section_header(
+                        SERVERS,
                         "add-server",
                         tr!("sidebar.servers"),
                         true,
                         move |_, window, cx| server_dialog::open(add_server_state.clone(), None, window, cx),
                         cx,
                     ))
-                    .child(
-                        v_flex().gap_1().children(
-                            servers
-                                .iter()
-                                .map(|server| self.server_item(server, server.id == active_id, cx)),
-                        ),
-                    )
+                    .when(!self.collapsed[SERVERS], |this| {
+                        this.child(
+                            v_flex().gap_1().children(
+                                servers
+                                    .iter()
+                                    .map(|server| self.server_item(server, server.id == active_id, cx)),
+                            ),
+                        )
+                    })
                     .child(div().mx_4().my_3().h(px(1.)).bg(theme.sidebar_border))
                     .child(self.section_header(
+                        SUBSCRIPTIONS,
                         "add-subscription",
                         tr!("sidebar.subscriptions"),
                         active_id.is_some(),
@@ -401,22 +450,24 @@ impl Render for SidebarView {
                         },
                         cx,
                     ))
-                    .child(
-                        v_flex()
-                            .gap_0p5()
-                            .pb_3()
-                            .when(subscriptions.is_empty() && active_id.is_some(), |this| {
-                                this.child(
-                                    div()
-                                        .px_4()
-                                        .py_2()
-                                        .text_xs()
-                                        .text_color(theme.muted_foreground)
-                                        .child(tr!("sidebar.no_subscriptions")),
-                                )
-                            })
-                            .children(subscriptions.iter().map(|sub| self.subscription_item(sub, cx))),
-                    ),
+                    .when(!self.collapsed[SUBSCRIPTIONS], |this| {
+                        this.child(
+                            v_flex()
+                                .gap_0p5()
+                                .pb_3()
+                                .when(subscriptions.is_empty() && active_id.is_some(), |this| {
+                                    this.child(
+                                        div()
+                                            .px_4()
+                                            .py_2()
+                                            .text_xs()
+                                            .text_color(theme.muted_foreground)
+                                            .child(tr!("sidebar.no_subscriptions")),
+                                    )
+                                })
+                                .children(subscriptions.iter().map(|sub| self.subscription_item(sub, cx))),
+                        )
+                    }),
             )
             .child(
                 h_flex()

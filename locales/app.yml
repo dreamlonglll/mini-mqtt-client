@@ -835,6 +835,36 @@ script:
   hint_before:
     zh-CN: "定义 process(payload, topic) 函数，返回处理后的 payload（发送前执行）；env.变量名 读取环境变量"
     en: "Define process(payload, topic) and return the processed payload (runs before publishing); env.NAME reads a variable"
+  import:
+    zh-CN: "导入 JS"
+    en: "Import JS"
+  import_confirm:
+    zh-CN: "仍要导入"
+    en: "Import Anyway"
+  import_failed:
+    zh-CN: "读取文件失败: %{error}"
+    en: "Cannot read the file: %{error}"
+  import_not_utf8:
+    zh-CN: "文件不是 UTF-8 文本"
+    en: "The file is not UTF-8 text"
+  import_prompt:
+    zh-CN: "选择脚本文件（.js / .txt）"
+    en: "Choose a script file (.js / .txt)"
+  import_title:
+    zh-CN: "导入外部脚本"
+    en: "Import External Script"
+  import_too_large:
+    zh-CN: "脚本文件超过 1 MB"
+    en: "The script file is larger than 1 MB"
+  import_warning:
+    zh-CN: "导入的代码会在发送前或接收后处理你的消息，并能读取当前服务器的环境变量。请确认脚本来源可信后再导入。"
+    en: "Imported code processes your messages before publishing or after receiving and can read this server's environment variables. Only import scripts from sources you trust."
+  import_wrong_type:
+    zh-CN: "只能导入 .js 或 .txt 文件"
+    en: "Only .js or .txt files can be imported"
+  imported:
+    zh-CN: "已导入 %{file}"
+    en: "Imported %{file}"
   invalid_key_bits:
     zh-CN: "密钥位数必须为 128/192/256"
     en: "The key size must be 128, 192 or 256 bits"
@@ -1071,6 +1101,12 @@ settings:
   logs_cleared:
     zh-CN: "日志已清空"
     en: "Logs cleared"
+  message_limit:
+    zh-CN: "消息列表上限"
+    en: "Message List Limit"
+  message_limit_hint:
+    zh-CN: "每个服务器在内存中保留的最大消息条数（100–10000）"
+    en: "Messages kept in memory per server (100–10000)"
   migrate_data:
     zh-CN: "迁移现有数据到新位置"
     en: "Move the current data to the new location"
@@ -1117,6 +1153,9 @@ sidebar:
   add_subscription:
     zh-CN: "新增订阅"
     en: "Add Subscription"
+  collapse_section:
+    zh-CN: "收起 %{section}"
+    en: "Collapse %{section}"
   current:
     zh-CN: "当前"
     en: "current"
@@ -1141,6 +1180,9 @@ sidebar:
   enable_subscription:
     zh-CN: "启用订阅 %{topic}"
     en: "Enable subscription %{topic}"
+  expand_section:
+    zh-CN: "展开 %{section}"
+    en: "Expand %{section}"
   light_mode:
     zh-CN: "浅色模式"
     en: "Light Mode"
