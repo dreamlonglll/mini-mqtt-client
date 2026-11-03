@@ -83,6 +83,8 @@ cargo clippy && cargo fmt       # 提交前检查
 8. **国际化**：界面上的所有文字用 `tr!("键", 参数 = 值)`（返回 `SharedString`，参数占位符为 `%{参数}`）从 `locales/app.yml` 取，新增键必须同时写 `zh-CN` 与 `en`；改中文文案前先查 `e2e/test_app.py` 是否按它定位控件。`i18n.rs` 的测试会检查两种语言的键集与占位符一致、源码里引用的字面量键都存在。语言切换后发 `LanguageChanged`，常驻视图要刷新存在状态里的文字（如输入框占位符）。按动态拼出的键取文（`tr!(format!(..))`）时，要在对应模块补测试确认键存在。
 9. **数据兼容**：每个实体和 `AppData` / `AppConfig` 都有 `#[serde(flatten)] extra`，未建模的字段原样写回；编辑时以已存的对象为底稿（`..base`），不要整体重建。旧版的主题 / 语言 / 消息上限存在 WebView localStorage，读不到。
 10. **检查更新**：`backend/update.rs` 用 rustls（ring）手写一次 HTTPS GET（不要引入 reqwest / ureq 等 HTTP crate，避免 aws-lc / cmake / NASM），在独立线程执行；自动检查（启动 5 秒后）失败只记 `log::warn`。
+11. **长列表**：条数不受控的列表一律虚拟化，只渲染可见行（一次性渲染 2000 张模板卡片曾让打开抽屉卡 2 秒多、内存涨 460 MB）。行高可变用 `list` + `ListState`（消息列表、模板抽屉；数据变化时 `reset`，过滤条件不变则恢复滚动位置），行高一致用 `uniform_list` + `UniformListScrollHandle`（定时发布的命令列表与日志：每行文字单行截断，行要 `.w_full()`，因为行是单独布局、不会像 flex 子项那样自动拉伸）。列表数据缓存在视图里、随状态变化重建，不要在 `render` 里每帧重新读取和过滤。屏幕外的行不在无障碍树里，E2E / perf 按可见行断言。
+12. **视图缓存**：收消息时整窗每秒重绘多次，侧边栏用 `cached(..)` 嵌入（`app_view.rs`），只在被 notify 时重建，所以它显示的内容必须来自会 notify 它的状态。GPUI 每帧从 prepaint 重建无障碍树，复用的缓存子树会从树里消失，因此 `window.is_a11y_active()` 时不缓存（读屏接入 / 断开时 GPUI 会整窗刷新）。E2E 跑在 AT-SPI 下，走的是不缓存的路径。
 
 ## 脚本引擎 API
 

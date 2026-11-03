@@ -10,7 +10,7 @@
 | `explore.py` | 校准：线程名、AT-SPI 探针开销、空闲点击延迟 |
 | `compare.py` | 对比两个结果目录，输出修复前/后表格：`python3 perf/compare.py <before> <after>` |
 | `loadgen/` | Rust（rumqttc）负载生成器 `mqtt-load`：`pub` 按速率发送带 `seq`/`ts` 的消息，`sub` 统计到达速率/间隔 |
-| `scriptbench/` | 原样编译 `src/backend/script`，测量每条消息执行接收后脚本的开销 |
+| `scriptbench/` | 原样编译 `src/backend/script`（连同 `src/backend/env.rs` 与 `locales/`），测量每条消息执行接收后脚本的开销 |
 
 ## 运行
 
@@ -31,7 +31,8 @@ PERF_WORK=/some/dir PERF_EXP=2,3 perf/env.sh perf/perf_run.py
 - **吞吐/显示延迟**：负载 payload 内含全局 `seq` 和发送时刻 `ts`（epoch ms）。`LagWatcher` 每 0.5 s 通过 AT-SPI 读取消息列表最上面一行（最新消息），得到“界面已显示到第几条”与 `now - ts`。负载结束后等到最后一条 `seq` 出现，得到积压排空时间；`app_throughput = 发送条数 / (最后一条显示时刻 - 开始时刻)`。
 - **界面响应**：`filter_probe` 用 xdotool 真实点击「消息过滤 发布」再点「消息过滤 全部」，计时到 AT-SPI 显示为 pressed。空闲基线约 0.106 s（xdotool 进程 + AT-SPI 往返的固定开销）。
 - **丢弃统计**：负载结束后等到最后一条出现，或最新 seq 4 s 不再变化（最后几条可能被丢弃）；丢弃数从应用日志 `logs/error-*.log` 中的“已丢弃 N 条”累加；`LagWatcher` 同时记录名称含“已丢弃”的提示。
-- **注意**：探针会用 AT-SPI 遍历整棵无障碍树；当界面上有上千个节点（如 2000 个模板的抽屉/定时发布对话框）时，单次遍历本身就要数秒，此时的“交互延迟”主要是测量开销，应看主线程 CPU 秒数。
+- **注意**：探针会用 AT-SPI 遍历整棵无障碍树；界面上节点越多，单次遍历越慢，此时的“交互延迟”含有测量开销，应结合主线程 CPU 秒数看。模板抽屉、定时发布的命令列表与日志都是虚拟列表，只有可见的行在无障碍树里，实验 5 按可见行判断搜索 / 全选是否生效。
+- **断线重连**：连上后意外断开会进入「重连中...」并退避重连（0.5 s 起翻倍，最长 10 s）；实验 8 在负载持续时杀掉并重启 broker，检查无需点击即自动重连、恢复订阅并继续显示新消息。
 - **CPU/内存**：`/proc/<pid>/stat`、`/proc/<pid>/task/*/stat`、`/proc/<pid>/status`。线程分组：`main`（UI 线程）、`llvmpipe`（Mesa 软件渲染）、`mqtt_io`（tokio）、`Worker`（gpui 后台执行器）。
 
 注意：Xvfb 下没有 GPU，渲染由 llvmpipe 在 CPU 上完成，渲染开销会明显高于真机；负载生成器、broker、AT-SPI 与应用共享 4 个核。

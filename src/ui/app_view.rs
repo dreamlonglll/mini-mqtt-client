@@ -59,10 +59,27 @@ impl AppView {
 }
 
 impl Render for AppView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let has_server = self.state.read(cx).active_server().is_some();
         let theme = cx.theme();
         let state = self.state.clone();
+        // Incoming messages redraw the window many times a second; rebuilding
+        // every server / subscription row each frame cost the UI thread ~20%
+        // of a core with 100 servers. A cached sidebar is only rebuilt when
+        // notified: everything it shows comes from AppState, which notifies
+        // it on change (theme switches refresh the whole window anyway).
+        // GPUI rebuilds the accessibility tree every frame from the elements
+        // it prepaints, and a reused (cached) subtree would drop out of it, so
+        // stay uncached while assistive technology is connected (connecting
+        // one refreshes the window).
+        let sidebar = if window.is_a11y_active() {
+            self.sidebar.clone().into_any_element()
+        } else {
+            self.sidebar
+                .clone()
+                .cached(StyleRefinement::default().flex_none().w(px(260.)).h_full())
+                .into_any_element()
+        };
 
         let main = if has_server {
             v_flex()
@@ -99,7 +116,7 @@ impl Render for AppView {
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
-            .child(self.sidebar.clone())
+            .child(sidebar)
             .child(
                 v_flex()
                     .flex_1()

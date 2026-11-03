@@ -18,6 +18,17 @@ struct TemplateBrowser {
     server_id: i64,
     search: Entity<InputState>,
     category: Option<String>,
+    /// Templates shown by the list, rebuilt when the templates, the search
+    /// text or the category change (not on every frame).
+    filtered: Vec<CommandTemplate>,
+    /// Number of templates of the server before filtering.
+    total: usize,
+    categories: Vec<String>,
+    /// Only the cards in view are laid out and painted: rendering every card
+    /// cost seconds and hundreds of MB once there were thousands.
+    list_state: ListState,
+    /// Search text and category `filtered` was built for.
+    filter_key: (String, Option<String>),
     _subscriptions: Vec<Subscription>,
 }
 
@@ -25,20 +36,72 @@ impl TemplateBrowser {
     fn new(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("template.search_placeholder")));
         let subscriptions = vec![
-            cx.observe(&state, |_, _, cx| cx.notify()),
-            cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
+            cx.observe(&state, |this, _, cx| this.refresh(cx)),
+            cx.subscribe(&search, |this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
-                    cx.notify();
+                    this.refresh(cx);
                 }
             }),
         ];
-        Self {
+        let mut this = Self {
             state,
             server_id,
             search,
             category: None,
+            filtered: Vec::new(),
+            total: 0,
+            categories: Vec::new(),
+            list_state: ListState::new(0, ListAlignment::Top, px(400.)),
+            filter_key: (String::new(), None),
             _subscriptions: subscriptions,
+        };
+        this.refresh(cx);
+        this
+    }
+
+    fn refresh(&mut self, cx: &mut Context<Self>) {
+        let keyword = self.search.read(cx).value().trim().to_lowercase();
+        let state = self.state.read(cx);
+        let all = state.templates(self.server_id);
+        let categories = state.storage.template_categories(self.server_id);
+        // The selected category disappears with its last template: show all
+        // again instead of an empty list without the category bar.
+        if self.category.as_ref().is_some_and(|c| !categories.contains(c)) {
+            self.category = None;
         }
+        self.total = all.len();
+        let filtered: Vec<CommandTemplate> = all
+            .into_iter()
+            .filter(|t| self.category.as_ref().is_none_or(|c| t.category.as_ref() == Some(c)))
+            .filter(|t| {
+                keyword.is_empty()
+                    || t.name.to_lowercase().contains(&keyword)
+                    || t.topic.to_lowercase().contains(&keyword)
+                    || t.description
+                        .as_ref()
+                        .is_some_and(|d| d.to_lowercase().contains(&keyword))
+            })
+            .collect();
+        let key = (keyword, self.category.clone());
+        if key != self.filter_key {
+            // Another search or category: start from the top.
+            self.list_state.reset(filtered.len());
+        } else if filtered != self.filtered {
+            // Same filter, changed templates (edit, duplicate, delete, use
+            // count): measure the cards again but keep the reading position.
+            let top = self.list_state.logical_scroll_top();
+            self.list_state.reset(filtered.len());
+            if let Some(last) = filtered.len().checked_sub(1) {
+                self.list_state.scroll_to(ListOffset {
+                    item_ix: top.item_ix.min(last),
+                    offset_in_item: top.offset_in_item,
+                });
+            }
+        }
+        self.filtered = filtered;
+        self.filter_key = key;
+        self.categories = categories;
+        cx.notify();
     }
 
     fn import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -223,33 +286,12 @@ impl TemplateBrowser {
 impl Render for TemplateBrowser {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
-        let state = self.state.read(cx);
-        let keyword = self.search.read(cx).value().trim().to_lowercase();
-        let all = state.templates(self.server_id);
-        let categories = state.storage.template_categories(self.server_id);
-        // The selected category disappears with its last template: show all
-        // again instead of an empty list without the category bar.
-        if self.category.as_ref().is_some_and(|c| !categories.contains(c)) {
-            self.category = None;
-        }
-        let filtered: Vec<CommandTemplate> = all
-            .iter()
-            .filter(|t| self.category.as_ref().is_none_or(|c| t.category.as_ref() == Some(c)))
-            .filter(|t| {
-                keyword.is_empty()
-                    || t.name.to_lowercase().contains(&keyword)
-                    || t.topic.to_lowercase().contains(&keyword)
-                    || t.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&keyword))
-            })
-            .cloned()
-            .collect();
         let entity = cx.entity();
         let (e_import, e_export) = (entity.clone(), entity.clone());
         let new_state = self.state.clone();
         let server_id = self.server_id;
-        let has_templates = !all.is_empty();
+        let has_templates = self.total > 0;
+        let categories = &self.categories;
 
         let category_button = |label: String, value: Option<String>, ix: usize, selected: bool| {
             let entity = entity.clone();
@@ -258,7 +300,7 @@ impl Render for TemplateBrowser {
             button.on_click(move |_, _, cx| {
                 entity.update(cx, |this, cx| {
                     this.category = value.clone();
-                    cx.notify();
+                    this.refresh(cx);
                 })
             })
         };
@@ -319,7 +361,7 @@ impl Render for TemplateBrowser {
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child(tr!("template.total", count = all.len())),
+                            .child(tr!("template.total", count = self.total)),
                     ),
             )
             .when(!categories.is_empty(), |this| {
@@ -338,26 +380,40 @@ impl Render for TemplateBrowser {
                         })),
                 )
             })
-            .child(
-                v_flex()
-                    .id("template-cards")
+            .child(if self.filtered.is_empty() {
+                div()
+                    .flex_1()
+                    .child(div().h(px(240.)).child(empty_state(
+                        IconName::Inbox,
+                        if has_templates {
+                            tr!("template.no_match")
+                        } else {
+                            tr!("template.empty")
+                        },
+                        cx,
+                    )))
+                    .into_any_element()
+            } else {
+                let view = entity.downgrade();
+                div()
+                    .relative()
                     .flex_1()
                     .min_h_0()
-                    .gap_2()
-                    .overflow_y_scrollbar()
-                    .when(filtered.is_empty(), |this| {
-                        this.child(div().h(px(240.)).child(empty_state(
-                            IconName::Inbox,
-                            if has_templates {
-                                tr!("template.no_match")
-                            } else {
-                                tr!("template.empty")
-                            },
-                            cx,
-                        )))
-                    })
-                    .children(filtered.iter().map(|t| self.render_card(t, cx))),
-            )
+                    .child(
+                        list(self.list_state.clone(), move |ix, _window, cx| {
+                            view.upgrade()
+                                .and_then(|view| {
+                                    let this = view.read(cx);
+                                    let card = this.render_card(this.filtered.get(ix)?, cx);
+                                    Some(div().pb_2().child(card).into_any_element())
+                                })
+                                .unwrap_or_else(|| div().into_any_element())
+                        })
+                        .size_full(),
+                    )
+                    .vertical_scrollbar(&self.list_state)
+                    .into_any_element()
+            })
     }
 }
 

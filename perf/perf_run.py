@@ -715,7 +715,13 @@ def exp5(n_servers=100, n_templates=2000, n_legacy=10_000):
         res["drawer_items_in_tree"] = len(app.find_all(role="list item", pattern=r"^模板 "))
         t0 = time.time()
         app.fill(Query(name="搜索模板"), "tpl-19")
-        wait_until(lambda: len(app.find_all(role="list item", pattern=r"^模板 ")) <= 111, 120, desc="drawer search")
+
+        def searched():
+            # The drawer only renders the cards in view: check what is shown.
+            cards = app.find_all(role="list item", pattern=r"^模板 ")
+            return cards and all(" tpl-19" in n.name for n in cards)
+
+        wait_until(searched, 120, desc="drawer search")
         res["drawer_search_s"] = round(time.time() - t0, 2)
         res["drawer_cpu"] = env.sampler.summary("drawer")
         # close the drawer by clicking its overlay
@@ -736,7 +742,8 @@ def exp5(n_servers=100, n_templates=2000, n_legacy=10_000):
         res["schedule_select_click_s"] = round(time.time() - t0, 2)
         t0 = time.time()
         app.raw_click(app.find(role="check box", name="全选"))
-        app.find(role="list item", name=f"命令 tpl-{n_templates:04d} 已选 #{n_templates}", timeout=120)
+        # Only the rows in view are rendered: the second row shows the new selection.
+        app.find(role="list item", name="命令 tpl-0002 已选 #2", timeout=120)
         res["schedule_select_all_s"] = round(time.time() - t0, 2)
         res["schedule_dialog_cpu"] = env.sampler.summary("schedule-dialog")
         app.escape_all(3)
@@ -896,8 +903,10 @@ def exp8(cycles=40):
         env.phase("broker-down")
         t_kill = time.time()
         broker.kill()
+        # An established connection that drops goes to "重连中..." and retries
+        # with backoff (0.5 s doubling, at most 10 s); the load keeps running.
         try:
-            app.find(role="status bar", pattern=r"^连接状态 (连接错误|未连接)", timeout=60)
+            app.find(role="status bar", pattern=r"^连接状态 (重连中|连接错误|未连接)", timeout=30)
             res["ui_status_after_kill_s"] = round(time.time() - t_kill, 2)
         except Exception as err:
             res["ui_status_after_kill_s"] = f"no change: {str(err).splitlines()[0]}"
@@ -908,11 +917,23 @@ def exp8(cycles=40):
         env.phase("broker-restarted")
         broker.start()
         t_restart = time.time()
-        time.sleep(15)
-        res["ui_status_15s_after_restart"] = status_name(app)
+        try:
+            app.find(role="status bar", pattern=r"^连接状态 已连接", timeout=30)
+            res["auto_reconnect_s"] = round(time.time() - t_restart, 2)
+        except Exception as err:
+            res["auto_reconnect_s"] = f"no reconnect: {str(err).splitlines()[0]}"
+        res["ui_status_after_restart"] = status_name(app)
+        # Subscriptions restored and messages flowing again without any click
+        # (the load generator reconnects by itself too).
         seq_mid = parse_seq(app.top_message())
-        time.sleep(2)
-        res["auto_resumed"] = parse_seq(app.top_message()) != seq_mid
+        try:
+            wait_until(lambda: (parse_seq(app.top_message()) or (0,))[0] > max(seq_mid[0] if seq_mid else 0,
+                                                                             seq_before[0] if seq_before else 0),
+                       15, desc="messages after the automatic reconnect")
+            res["auto_resumed"] = True
+        except Exception:
+            res["auto_resumed"] = False
+        res["seq_after_auto_reconnect"] = parse_seq(app.top_message())
         res["alive_after_broker_restart"] = app.alive()
         app.screenshot("exp8-broker-restarted")
         # manual reconnect
