@@ -226,18 +226,68 @@ pub fn confirm(
     ok_text: impl Into<SharedString>,
     on_ok: impl Fn(&mut Window, &mut App) + 'static,
 ) {
-    let title = title.into();
-    let description = description.into();
-    let ok_text = ok_text.into();
+    alert(
+        window,
+        cx,
+        true,
+        title.into(),
+        description.into(),
+        ok_text.into(),
+        on_ok,
+    );
+}
+
+/// Question with a regular (primary) OK button, e.g. "go to the download page?".
+pub fn ask(
+    window: &mut Window,
+    cx: &mut App,
+    title: impl Into<SharedString>,
+    description: impl Into<SharedString>,
+    ok_text: impl Into<SharedString>,
+    on_ok: impl Fn(&mut Window, &mut App) + 'static,
+) {
+    alert(
+        window,
+        cx,
+        false,
+        title.into(),
+        description.into(),
+        ok_text.into(),
+        on_ok,
+    );
+}
+
+fn alert(
+    window: &mut Window,
+    cx: &mut App,
+    danger: bool,
+    title: SharedString,
+    description: SharedString,
+    ok_text: SharedString,
+    on_ok: impl Fn(&mut Window, &mut App) + 'static,
+) {
     let on_ok = std::rc::Rc::new(on_ok);
     window.open_alert_dialog(cx, move |alert, _, cx| {
         let on_ok = on_ok.clone();
+        let (icon, color, variant) = if danger {
+            (
+                IconName::TriangleAlert,
+                cx.theme().warning,
+                gpui_kit::component::button::ButtonVariant::Danger,
+            )
+        } else {
+            (
+                IconName::Info,
+                cx.theme().primary,
+                gpui_kit::component::button::ButtonVariant::Primary,
+            )
+        };
         alert
-            .icon(Icon::new(IconName::TriangleAlert).text_color(cx.theme().warning))
+            .icon(Icon::new(icon).text_color(color))
             .title(title.clone())
             .description(description.clone())
             .ok_text(ok_text.clone())
-            .ok_variant(gpui_kit::component::button::ButtonVariant::Danger)
+            .ok_variant(variant)
             .cancel_text(tr!("common.cancel"))
             .show_cancel(true)
             .on_ok(move |_, window, cx| {

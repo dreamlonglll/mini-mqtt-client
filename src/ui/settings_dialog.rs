@@ -1,7 +1,8 @@
 //! System settings: theme, language, data location, logs.
 
-use super::common::{IconName, Lucide, confirm, notify, section_label};
+use super::common::{IconName, Lucide, chip, confirm, notify, section_label};
 use crate::backend::config::ThemePreference;
+use crate::backend::update;
 use crate::i18n::Language;
 use crate::state::{AppEvent, AppState, ToastKind};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -99,6 +100,72 @@ impl SettingsView {
             Err(err) => notify(window, cx, ToastKind::Error, tr!("settings.save_failed", error = err)),
         }
         cx.notify();
+    }
+}
+
+impl SettingsView {
+    fn render_update(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let status = self.state.read(cx).update.clone();
+        let check_state = self.state.clone();
+        v_flex()
+            .gap_2()
+            .child(section_label(tr!("update.title"), cx))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(theme.muted_foreground)
+                    .child(tr!("update.current_version", version = update::current_version())),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        Button::new("check-update")
+                            .small()
+                            .icon(IconName::RefreshCw)
+                            .label(tr!("update.check"))
+                            .loading(status.checking)
+                            .on_click(move |_, _, cx| {
+                                check_state.update(cx, |state, cx| state.check_for_updates(true, cx))
+                            }),
+                    )
+                    .when_some(status.info, |this, info| {
+                        if info.has_update {
+                            this.child(
+                                chip(tr!("update.new_version", version = info.latest), theme.success, cx)
+                                    .text_sm()
+                                    .px_2()
+                                    .id("update-status")
+                                    .role(Role::Status)
+                                    .aria_label(tr!("update.new_version", version = info.latest)),
+                            )
+                            .child(
+                                Button::new("open-release")
+                                    .primary()
+                                    .small()
+                                    .icon(Lucide::Download)
+                                    .label(tr!("update.go_download"))
+                                    .on_click(|_, _, cx| cx.open_url(update::RELEASES_PAGE)),
+                            )
+                        } else {
+                            this.child(
+                                chip(tr!("update.up_to_date"), theme.muted_foreground, cx)
+                                    .text_sm()
+                                    .px_2()
+                                    .id("update-status")
+                                    .role(Role::Status)
+                                    .aria_label(tr!("update.up_to_date")),
+                            )
+                        }
+                    }),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("Mini MQTT Client · Rust + GPUI Kit"),
+            )
     }
 }
 
@@ -340,10 +407,7 @@ impl Render for SettingsView {
                         ),
                     ),
             )
-            .child(div().text_xs().text_color(theme.muted_foreground).child(format!(
-                "Mini MQTT Client v{} · Rust + GPUI Kit",
-                env!("CARGO_PKG_VERSION")
-            )))
+            .child(self.render_update(cx))
     }
 }
 

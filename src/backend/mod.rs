@@ -10,3 +10,4 @@ pub mod payload;
 pub mod script;
 pub mod storage;
 pub mod topic;
+pub mod update;

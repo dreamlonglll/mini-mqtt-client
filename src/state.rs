@@ -10,6 +10,7 @@ use crate::backend::models::{
 use crate::backend::mqtt::{ConnectionStatus, IncomingMessage, MqttEvent, MqttManager};
 use crate::backend::payload::{self, DetectedFormat};
 use crate::backend::storage::Storage;
+use crate::backend::update::{self, UpdateInfo};
 use crate::backend::{env, script, topic};
 use crate::i18n::{self, Language};
 use chrono::{DateTime, Local};
@@ -37,6 +38,17 @@ const SCRIPT_CHUNK: usize = 256;
 const DROP_NOTICE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 /// Script errors written to the log per batch (the rest are counted).
 const MAX_LOGGED_SCRIPT_ERRORS: usize = 5;
+/// The automatic update check waits this long after start-up, so it does not
+/// compete with loading the window.
+const UPDATE_CHECK_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// State of "check for updates".
+#[derive(Debug, Clone, Default)]
+pub struct UpdateState {
+    pub checking: bool,
+    /// Result of the last successful check.
+    pub info: Option<UpdateInfo>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -242,6 +254,7 @@ pub struct AppState {
     next_message_id: u64,
     /// `MINI_MQTT_LANG` in effect until a language is picked in the settings.
     language_override: Option<Language>,
+    pub update: UpdateState,
     _pump: Task<()>,
 }
 
@@ -322,9 +335,17 @@ impl AppState {
             drop_report_scheduled: false,
             next_message_id: 1,
             language_override,
+            update: UpdateState::default(),
             _pump: pump,
         };
         state.apply_theme(cx);
+        if !update::auto_check_disabled() {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(UPDATE_CHECK_DELAY).await;
+                let _ = this.update(cx, |state, cx| state.check_for_updates(false, cx));
+            })
+            .detach();
+        }
         state
     }
 
@@ -621,6 +642,67 @@ impl AppState {
             self.toast(ToastKind::Error, err, cx);
         }
         cx.notify();
+    }
+
+    // ----------------------------------------------------------------------
+    // Updates
+
+    /// Ask GitHub for the latest release on a background thread. `manual`
+    /// checks (from the settings) report every outcome; the automatic one
+    /// stays quiet unless a new version exists.
+    pub fn check_for_updates(&mut self, manual: bool, cx: &mut Context<Self>) {
+        if self.update.checking {
+            return;
+        }
+        self.update.checking = true;
+        cx.notify();
+        let (tx, rx) = futures::channel::oneshot::channel();
+        let spawned = std::thread::Builder::new().name("update-check".into()).spawn(move || {
+            let _ = tx.send(update::check());
+        });
+        if let Err(err) = spawned {
+            self.on_update_checked(Err(err.to_string()), manual, cx);
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let result = rx.await.unwrap_or_else(|_| Err("update check aborted".into()));
+            let _ = this.update(cx, |state, cx| state.on_update_checked(result, manual, cx));
+        })
+        .detach();
+    }
+
+    fn on_update_checked(&mut self, result: Result<UpdateInfo, String>, manual: bool, cx: &mut Context<Self>) {
+        self.update.checking = false;
+        match result {
+            Ok(info) => {
+                if info.has_update {
+                    let already_known = self.update.info.as_ref().is_some_and(|i| i.latest == info.latest);
+                    if !manual && !already_known {
+                        self.toast(ToastKind::Info, tr!("update.found_toast", version = info.latest), cx);
+                    }
+                } else if manual {
+                    self.toast(ToastKind::Success, tr!("update.up_to_date"), cx);
+                }
+                self.update.info = Some(info);
+            }
+            Err(err) => {
+                // The automatic check fails quietly (offline, rate limited...).
+                log::warn!("update check failed: {err}");
+                if manual {
+                    self.toast(ToastKind::Error, tr!("update.check_failed", error = err), cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// The latest version, if it is newer than the running one.
+    pub fn available_update(&self) -> Option<&str> {
+        self.update
+            .info
+            .as_ref()
+            .filter(|i| i.has_update)
+            .map(|i| i.latest.as_str())
     }
 
     // ----------------------------------------------------------------------

@@ -1430,3 +1430,37 @@ topic:
   too_long:
     zh-CN: "Topic 长度超过限制"
     en: "The topic is too long"
+update:
+  badge_hint:
+    zh-CN: "发现新版本 v%{version}，点击前往下载"
+    en: "Version v%{version} is available. Click to download it"
+  check:
+    zh-CN: "检查更新"
+    en: "Check for Updates"
+  check_failed:
+    zh-CN: "检查更新失败: %{error}"
+    en: "Failed to check for updates: %{error}"
+  current_version:
+    zh-CN: "当前版本: v%{version}"
+    en: "Current version: v%{version}"
+  found_confirm:
+    zh-CN: "发现新版本 v%{version}，是否前往下载？"
+    en: "Version v%{version} is available. Open the download page?"
+  found_title:
+    zh-CN: "发现新版本"
+    en: "New Version Available"
+  found_toast:
+    zh-CN: "发现新版本 v%{version}，点击侧边栏的版本号前往下载"
+    en: "Version v%{version} is available. Click the version in the sidebar to download it"
+  go_download:
+    zh-CN: "前往下载"
+    en: "Download"
+  new_version:
+    zh-CN: "发现新版本: v%{version}"
+    en: "New version: v%{version}"
+  title:
+    zh-CN: "检查更新"
+    en: "Updates"
+  up_to_date:
+    zh-CN: "已是最新版本"
+    en: "You are up to date"

@@ -1,8 +1,9 @@
 //! Left sidebar: servers, subscriptions, theme toggle and settings.
 
-use super::common::{IconName, Lucide, chip, confirm, status_dot};
+use super::common::{IconName, Lucide, ask, chip, confirm, status_dot};
 use super::{server_dialog, settings_dialog, subscription_dialog};
 use crate::backend::models::{MqttServer, Subscription as TopicSubscription};
+use crate::backend::update;
 use crate::state::AppState;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -77,6 +78,44 @@ impl SidebarView {
                     .tooltip(label)
                     .on_click(on_add)
             })
+    }
+
+    /// `v2.0.0` next to the title; with a newer release it becomes a button
+    /// (with a red dot) that offers to open the download page.
+    fn version_badge(&self, cx: &App) -> AnyElement {
+        let theme = cx.theme();
+        let current = format!("v{}", update::current_version());
+        let Some(latest) = self.state.read(cx).available_update().map(str::to_string) else {
+            return div()
+                .text_xs()
+                .text_color(theme.muted_foreground)
+                .child(current)
+                .into_any_element();
+        };
+        let hint = tr!("update.badge_hint", version = latest);
+        h_flex()
+            .gap_0p5()
+            .child(
+                Button::new("app-version")
+                    .ghost()
+                    .xsmall()
+                    .label(current)
+                    .text_color(theme.primary)
+                    .accessibility_label(hint.clone())
+                    .tooltip(hint)
+                    .on_click(move |_, window, cx| {
+                        ask(
+                            window,
+                            cx,
+                            tr!("update.found_title"),
+                            tr!("update.found_confirm", version = latest),
+                            tr!("update.go_download"),
+                            |_, cx| cx.open_url(update::RELEASES_PAGE),
+                        )
+                    }),
+            )
+            .child(div().size(px(8.)).rounded_full().bg(theme.danger))
+            .into_any_element()
     }
 
     fn server_item(&self, server: &MqttServer, active: bool, cx: &App) -> impl IntoElement {
@@ -295,7 +334,8 @@ impl Render for SidebarView {
                     .border_b_1()
                     .border_color(theme.sidebar_border)
                     .child(Icon::new(Lucide::Layers).size(px(26.)).text_color(theme.primary))
-                    .child(div().text_lg().font_bold().child("MQTT Client")),
+                    .child(div().text_lg().font_bold().child("MQTT Client"))
+                    .child(self.version_badge(cx)),
             )
             .child(
                 // Servers and subscriptions share one scroll area.

@@ -24,8 +24,10 @@ export E2E_WS_PORT="${E2E_WS_PORT:-18083}"
 export E2E_TLS_PORT="${E2E_TLS_PORT:-18883}"
 # The scenarios find controls by their (Chinese) accessible names: pin the
 # interface language instead of following the machine's locale (often C or
-# en_US on CI).
+# en_US on CI). No update check either: the tests must not depend on the
+# network or on what GitHub currently lists as the latest release.
 export MINI_MQTT_LANG=zh-CN
+export MINI_MQTT_NO_UPDATE_CHECK=1
 
 missing=()
 for tool in Xvfb mosquitto mosquitto_pub mosquitto_sub xdotool xclip xwd convert openssl dbus-run-session; do
