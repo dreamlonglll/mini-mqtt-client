@@ -43,6 +43,7 @@ struct ServerForm {
     ca_cert: Entity<TextareaState>,
     client_cert: Entity<TextareaState>,
     client_key: Entity<TextareaState>,
+    client_key_password: Entity<InputState>,
     transport: Transport,
     v5: bool,
     clean_session: bool,
@@ -84,8 +85,15 @@ impl ServerForm {
         let ca_cert = pem_state(window, cx, &server.ca_cert, &tr!("server.ca_placeholder"));
         let client_cert = pem_state(window, cx, &server.client_cert, &tr!("server.cert_placeholder"));
         let client_key = pem_state(window, cx, &server.client_key, &tr!("server.key_placeholder"));
+        let client_key_password = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(tr!("server.key_password_placeholder"))
+                .masked(true)
+                .default_value(server.client_key_password.clone().unwrap_or_default())
+        });
         Self {
             state,
+            client_key_password,
             transport: server.transport(),
             v5: server.is_v5(),
             clean_session: server.clean_session,
@@ -159,6 +167,7 @@ impl ServerForm {
             ca_cert: pem(&self.ca_cert, cx),
             client_cert: pem(&self.client_cert, cx),
             client_key: pem(&self.client_key, cx),
+            client_key_password: Some(input_value(&self.client_key_password, cx)).filter(|p| tls && !p.is_empty()),
             ..base
         };
 
@@ -377,6 +386,14 @@ impl ServerForm {
                     tr!("server.client_key"),
                     false,
                     Textarea::new(&self.client_key).aria_label(tr!("server.client_key")),
+                    cx,
+                ))
+                .child(form_row(
+                    tr!("server.key_password"),
+                    false,
+                    Input::new(&self.client_key_password)
+                        .aria_label(tr!("server.key_password"))
+                        .mask_toggle(),
                     cx,
                 ))
             })

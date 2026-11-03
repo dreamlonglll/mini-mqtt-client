@@ -989,6 +989,12 @@ server:
   keep_alive_range:
     zh-CN: "Keep Alive 范围为 0-65535"
     en: "Keep Alive must be between 0 and 65535"
+  key_password:
+    zh-CN: "私钥密码"
+    en: "Key Password"
+  key_password_placeholder:
+    zh-CN: "私钥已加密时填写（ENCRYPTED PRIVATE KEY）"
+    en: "If the key is encrypted (ENCRYPTED PRIVATE KEY)"
   key_placeholder:
     zh-CN: "-----BEGIN PRIVATE KEY-----（可选，双向认证）"
     en: "-----BEGIN PRIVATE KEY----- (optional, mutual TLS)"
@@ -1458,6 +1464,12 @@ tls:
   key_parse_failed:
     zh-CN: "客户端私钥解析失败: %{error}"
     en: "Failed to parse the client key: %{error}"
+  key_password_required:
+    zh-CN: "客户端私钥已加密，请填写私钥密码"
+    en: "The client key is encrypted: enter its password"
+  key_password_wrong:
+    zh-CN: "客户端私钥解密失败，请检查私钥密码"
+    en: "Cannot decrypt the client key: check its password"
   no_pem_cert:
     zh-CN: "未找到 PEM 证书"
     en: "no PEM certificate found"

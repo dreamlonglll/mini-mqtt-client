@@ -502,9 +502,7 @@ fn build_tls(server: &MqttServer) -> Result<TlsConfiguration, String> {
             let chain = rustls_pemfile::certs(&mut cert.as_bytes())
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|e| tr!("tls.cert_parse_failed", error = e).to_string())?;
-            let key = rustls_pemfile::private_key(&mut key.as_bytes())
-                .map_err(|e| tr!("tls.key_parse_failed", error = e).to_string())?
-                .ok_or_else(|| tr!("tls.key_parse_failed", error = tr!("tls.no_pem_key")).to_string())?;
+            let key = parse_private_key(key, non_empty(&server.client_key_password))?;
             builder
                 .with_client_auth_cert(chain, key)
                 .map_err(|e| tr!("tls.cert_invalid", error = e).to_string())?
@@ -564,6 +562,28 @@ async fn back_off(delay: &mut Duration, shutdown: &mut oneshot::Receiver<()>) ->
         _ = shutdown => false,
         _ = tokio::time::sleep(wait) => true,
     }
+}
+
+/// A client key in PEM: unencrypted (PKCS#1 / PKCS#8 / SEC1) or encrypted
+/// PKCS#8 (`ENCRYPTED PRIVATE KEY`, decrypted with `password`).
+fn parse_private_key(pem: &str, password: Option<&str>) -> Result<rustls::pki_types::PrivateKeyDer<'static>, String> {
+    if let Some(key) = rustls_pemfile::private_key(&mut pem.as_bytes())
+        .map_err(|e| tr!("tls.key_parse_failed", error = e).to_string())?
+    {
+        return Ok(key);
+    }
+    if !pem.contains("ENCRYPTED PRIVATE KEY") {
+        return Err(tr!("tls.key_parse_failed", error = tr!("tls.no_pem_key")).to_string());
+    }
+    let password = password.ok_or_else(|| tr!("tls.key_password_required").to_string())?;
+    let (_, der) = pkcs8::der::pem::decode_vec(pem.trim().as_bytes())
+        .map_err(|e| tr!("tls.key_parse_failed", error = e).to_string())?;
+    let encrypted = pkcs8::EncryptedPrivateKeyInfo::try_from(der.as_slice())
+        .map_err(|e| tr!("tls.key_parse_failed", error = e).to_string())?;
+    let key = encrypted
+        .decrypt(password)
+        .map_err(|_| tr!("tls.key_password_wrong").to_string())?;
+    Ok(rustls::pki_types::PrivateKeyDer::Pkcs8(key.as_bytes().to_vec().into()))
 }
 
 fn incoming(server_id: i64, topic: String, payload: &[u8], qos: u8, retain: bool) -> IncomingMessage {
@@ -810,6 +830,38 @@ mod tests {
         };
         assert!(manager.connect(&invalid).is_err(), "port 0 is rejected");
         manager.disconnect_all();
+    }
+
+    /// EC P-256 key; `ENCRYPTED` is the same key encrypted by
+    /// `openssl pkcs8 -topk8 -v2 aes-256-cbc` with the password "secret".
+    const PLAIN_KEY: &str = "-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgTDFbYNqF6+Y+FwUM
+vdsPUka9GW3D+pIjiipIHWl/GVahRANCAAQwhspraYjFa9b5+2UGjKLpFXTbIIr4
+hzczpVoQI13VQ80THpHhWI3GnNWXuDdBtP+yU3bfR1enezFec/GnxU4L
+-----END PRIVATE KEY-----
+";
+    const ENCRYPTED_KEY: &str = "-----BEGIN ENCRYPTED PRIVATE KEY-----
+MIH0MF8GCSqGSIb3DQEFDTBSMDEGCSqGSIb3DQEFDDAkBBC6Kl+25tuJgY9IZKCD
+1P8dAgIIADAMBggqhkiG9w0CCQUAMB0GCWCGSAFlAwQBKgQQfVgdtrlM/Uo9V44v
+bCKo6wSBkDsUSDtjGvWZKgw5sPTDfn+0x7aTIlM/PmkRh9cdQqAHQhd5lE0PSb4Z
+I6gDOM32iTXUkjQTr7vcFzucY2jEVEDGADTNWHyaJbCfokSgwaWKk42JXThnEZ5d
+1ajfIYrR1tKX24a+S1HQ8Q6mF3tTcYL2lpsgxPSxXUnSeFTsyjbJC5fDWfQe0w2M
+hhExTXhxCg==
+-----END ENCRYPTED PRIVATE KEY-----
+";
+
+    #[test]
+    fn client_keys_are_decrypted_with_their_password() {
+        use rustls::pki_types::PrivateKeyDer;
+        let plain = parse_private_key(PLAIN_KEY, None).unwrap();
+        let decrypted = parse_private_key(ENCRYPTED_KEY, Some("secret")).unwrap();
+        assert!(matches!(decrypted, PrivateKeyDer::Pkcs8(_)));
+        assert_eq!(decrypted.secret_der(), plain.secret_der());
+        // A password given for an unencrypted key is ignored.
+        assert!(parse_private_key(PLAIN_KEY, Some("unused")).is_ok());
+        assert!(parse_private_key(ENCRYPTED_KEY, Some("wrong")).is_err());
+        assert!(parse_private_key(ENCRYPTED_KEY, None).is_err());
+        assert!(parse_private_key("not a key", None).is_err());
     }
 
     #[test]

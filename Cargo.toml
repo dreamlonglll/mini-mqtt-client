@@ -23,6 +23,8 @@ rumqttc = { version = "0.25", default-features = false, features = ["use-rustls-
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 rustls-native-certs = "0.8"
 rustls-pemfile = "2"
+# Encrypted (PKCS#8) client keys; pure RustCrypto, like the crates below.
+pkcs8 = { version = "0.10", features = ["encryption", "pem", "std"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 futures = "0.3"
 
