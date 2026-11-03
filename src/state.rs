@@ -252,7 +252,17 @@ impl AppState {
                 let fallback = app_dir.join("data.yaml");
                 Storage::open(fallback).unwrap_or_else(|e| panic!("无法初始化存储: {e}"))
             }
-        };
+        }
+        .with_logger(logs.clone());
+        if let Some(backup) = storage.corrupt_backup().map(Path::to_path_buf) {
+            let message = format!("数据文件无法解析，已备份到 {}，本次以空数据启动", backup.display());
+            logs.write(LogKind::Storage, &message, Some(&data_file.display().to_string()));
+            // Shown once the window (which listens for toasts) is open.
+            cx.spawn(async move |this, cx| {
+                let _ = this.update(cx, |state, cx| state.toast(ToastKind::Error, message, cx));
+            })
+            .detach();
+        }
         let (mqtt, mut events) = MqttManager::new();
         let servers = storage.servers();
         let active_server_id = servers.first().and_then(|s| s.id);
@@ -820,7 +830,7 @@ impl AppState {
         let topic_filter = topic_filter.trim().to_string();
         topic::validate_subscribe_topic(&topic_filter)?;
         self.storage
-            .create_subscription(server_id, topic_filter.clone(), qos as i32)?;
+            .create_subscription(server_id, topic_filter.clone(), qos as i32, None)?;
         if self.mqtt.is_connected(server_id) {
             self.mqtt.subscribe(server_id, &topic_filter, qos)?;
         }
@@ -919,11 +929,10 @@ impl AppState {
     /// Load a template into the publish panel and count the usage.
     pub fn use_template(&mut self, id: i64, cx: &mut Context<Self>) {
         match self.storage.use_template(id) {
-            Ok(Some(t)) => {
+            Ok(t) => {
                 self.toast(ToastKind::Success, format!("已加载: {}", t.name), cx);
                 cx.emit(AppEvent::FillPublish(PublishDraft::from(&t)));
             }
-            Ok(None) => self.toast(ToastKind::Error, "模板不存在", cx),
             Err(err) => self.toast(ToastKind::Error, err, cx),
         }
         cx.notify();
@@ -1007,7 +1016,7 @@ impl AppState {
     // Settings
 
     pub fn data_file(&self) -> PathBuf {
-        self.storage.file_path().to_path_buf()
+        self.storage.file_path()
     }
 
     pub fn migrate_data_path(
@@ -1018,6 +1027,15 @@ impl AppState {
     ) -> Result<(), String> {
         let current = self.data_file();
         config::migrate_data_path(&self.app_dir, &mut self.config, &current, &new_path, copy_data)?;
+        if copy_data {
+            // Keep writing to the copy, so changes made before the restart
+            // are not left behind in the old file.
+            self.storage.set_file_path(new_path);
+            if let Err(err) = self.storage.save() {
+                self.storage.set_file_path(current);
+                return Err(err);
+            }
+        }
         cx.notify();
         Ok(())
     }

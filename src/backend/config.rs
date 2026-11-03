@@ -34,6 +34,9 @@ pub struct AppConfig {
     pub data_path: Option<String>,
     #[serde(default)]
     pub theme: ThemePreference,
+    /// Keys this version does not model, written back unchanged.
+    #[serde(flatten)]
+    pub extra: serde_yaml::Mapping,
 }
 
 impl AppConfig {
@@ -51,7 +54,7 @@ impl AppConfig {
     pub fn save(&self, app_dir: &Path) -> Result<(), String> {
         fs::create_dir_all(app_dir).map_err(|e| e.to_string())?;
         let content = serde_yaml::to_string(self).map_err(|e| e.to_string())?;
-        fs::write(Self::path(app_dir), content).map_err(|e| format!("保存配置失败: {e}"))
+        super::storage::write_atomic(&Self::path(app_dir), content.as_bytes()).map_err(|e| format!("保存配置失败: {e}"))
     }
 
     /// Resolve the data file: the custom path if it (or its parent) exists,
@@ -98,5 +101,21 @@ mod tests {
         let config: AppConfig = serde_yaml::from_str("data_path: /tmp/x/data.yaml\n").unwrap();
         assert_eq!(config.data_path.as_deref(), Some("/tmp/x/data.yaml"));
         assert_eq!(config.theme, ThemePreference::System);
+    }
+
+    #[test]
+    fn unknown_config_keys_survive_a_save() {
+        let dir = std::env::temp_dir().join(format!("mini-mqtt-test-config-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("config.yaml"), "theme: dark\nfuture_option: 3\n").unwrap();
+        let mut config = AppConfig::load(&dir);
+        assert_eq!(config.theme, ThemePreference::Dark);
+        config.theme = ThemePreference::Light;
+        config.save(&dir).unwrap();
+        let saved: serde_yaml::Value =
+            serde_yaml::from_str(&fs::read_to_string(dir.join("config.yaml")).unwrap()).unwrap();
+        assert_eq!(saved["theme"], serde_yaml::Value::from("light"));
+        assert_eq!(saved["future_option"], serde_yaml::Value::from(3));
+        let _ = fs::remove_dir_all(dir);
     }
 }

@@ -146,9 +146,10 @@ impl ServerForm {
             let v = state.read(cx).value().trim().to_string();
             (tls && !v.is_empty()).then_some(v)
         };
+        // Start from the stored server so fields this form does not edit
+        // (and keys written by other versions) are kept.
         let base = self.existing.clone().unwrap_or_default();
         let server = MqttServer {
-            id: base.id,
             name,
             host,
             port,
@@ -163,8 +164,7 @@ impl ServerForm {
             ca_cert: pem(&self.ca_cert, cx),
             client_cert: pem(&self.client_cert, cx),
             client_key: pem(&self.client_key, cx),
-            created_at: base.created_at,
-            updated_at: base.updated_at,
+            ..base
         };
 
         let is_new = server.id.is_none();

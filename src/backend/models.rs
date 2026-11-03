@@ -2,8 +2,14 @@
 //!
 //! Field names and serde attributes are kept compatible with the `data.yaml`
 //! written by the previous Tauri version, so existing user data loads as-is.
+//! Every entity also keeps the keys it does not model ([`Extra`]), so saving
+//! never drops data written by another version.
 
 use serde::{Deserialize, Serialize};
+
+/// Keys of a stored entity that this version does not model (written by an
+/// older or newer version). They are written back unchanged on save.
+pub type Extra = serde_yaml::Mapping;
 
 fn default_true() -> bool {
     true
@@ -85,8 +91,13 @@ pub struct MqttServer {
     pub ca_cert: Option<String>,
     pub client_cert: Option<String>,
     pub client_key: Option<String>,
+    /// Password of an encrypted (PKCS#8) client key.
+    #[serde(default)]
+    pub client_key_password: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 impl Default for MqttServer {
@@ -107,8 +118,10 @@ impl Default for MqttServer {
             ca_cert: None,
             client_cert: None,
             client_key: None,
+            client_key_password: None,
             created_at: None,
             updated_at: None,
+            extra: Extra::new(),
         }
     }
 }
@@ -143,7 +156,13 @@ pub struct Subscription {
     pub qos: i32,
     #[serde(default = "default_true")]
     pub is_active: bool,
+    /// Colour mark of the subscription (`#RRGGBB` or `rgba(..)`), used to
+    /// highlight its messages in the list.
+    #[serde(default)]
+    pub color: Option<String>,
     pub created_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 /// Message history kept from the previous version. It is preserved on disk
@@ -220,6 +239,8 @@ pub struct CommandTemplate {
     pub last_used_at: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 fn default_payload_type() -> String {
@@ -287,12 +308,33 @@ pub struct Script {
     pub description: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 impl Script {
     pub fn kind(&self) -> ScriptType {
         ScriptType::parse(&self.script_type)
     }
+}
+
+/// Environment variable of a server, referenced as `{{name}}` in topics and
+/// payloads and as `env.name` in scripts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EnvVariable {
+    pub id: Option<i64>,
+    pub server_id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub value: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 #[cfg(test)]
