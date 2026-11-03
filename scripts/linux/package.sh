@@ -36,6 +36,8 @@ OUT_DIR=$2
 [ "$(uname -s)" = "Linux" ] || die "只能在 Linux 上运行"
 [ "$(uname -m)" = "x86_64" ] || die "目前只打 x86_64 包（当前 $(uname -m)）"
 [ -x "$BIN" ] || die "找不到可执行文件 $BIN"
+# 转成绝对路径：回读校验在 $WORK 里比对可执行文件，相对路径（release.yml 传的就是）cd 之后会找不到
+BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
