@@ -152,6 +152,7 @@ impl SettingsView {
             )
             .child(
                 h_flex()
+                    .flex_wrap()
                     .gap_2()
                     .child(
                         Button::new("check-update")
@@ -192,12 +193,6 @@ impl SettingsView {
                             )
                         }
                     }),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child("Mini MQTT Client · Rust + GPUI Kit"),
             )
     }
 }
@@ -241,56 +236,70 @@ impl Render for SettingsView {
                 .child(path)
         };
 
+        // Short sections share a row, so the dialog keeps its height (it has
+        // to fit an 800 px window without scrolling).
         v_flex()
             .gap_5()
             .child(
-                v_flex()
-                    .gap_2()
-                    .child(section_label(tr!("settings.appearance"), cx))
+                h_flex()
+                    .items_start()
+                    .gap_6()
                     .child(
-                        RadioGroup::horizontal("settings-theme")
-                            .selected_index(Some(theme_ix))
-                            .on_click(move |ix, _, cx| {
-                                let pref = match *ix {
-                                    1 => ThemePreference::Light,
-                                    2 => ThemePreference::Dark,
-                                    _ => ThemePreference::System,
-                                };
-                                theme_state.update(cx, |state, cx| state.set_theme(pref, cx))
-                            })
-                            .child(Radio::new("theme-system").label(tr!("settings.follow_system")))
-                            .child(Radio::new("theme-light").label(tr!("settings.light")))
-                            .child(Radio::new("theme-dark").label(tr!("settings.dark"))),
-                    ),
-            )
-            .child(
-                v_flex()
-                    .gap_2()
-                    .child(section_label(tr!("settings.language"), cx))
-                    .child(
-                        RadioGroup::horizontal("settings-language")
-                            .selected_index(Some(language_ix))
-                            .on_click(move |ix, _, cx| {
-                                let language = match *ix {
-                                    1 => Language::Chinese,
-                                    2 => Language::English,
-                                    _ => Language::System,
-                                };
-                                language_state.update(cx, |state, cx| state.set_language(language, cx))
-                            })
-                            // Language names are shown in their own language.
-                            .child(Radio::new("language-system").label(tr!("settings.follow_system")))
-                            .child(Radio::new("language-zh").label("简体中文"))
-                            .child(Radio::new("language-en").label("English")),
-                    ),
-            )
-            .child(
-                v_flex()
-                    .gap_2()
-                    .child(section_label(tr!("settings.message_limit"), cx))
-                    .child(
-                        h_flex()
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
                             .gap_2()
+                            .child(section_label(tr!("settings.appearance"), cx))
+                            .child(
+                                RadioGroup::horizontal("settings-theme")
+                                    .selected_index(Some(theme_ix))
+                                    .on_click(move |ix, _, cx| {
+                                        let pref = match *ix {
+                                            1 => ThemePreference::Light,
+                                            2 => ThemePreference::Dark,
+                                            _ => ThemePreference::System,
+                                        };
+                                        theme_state.update(cx, |state, cx| state.set_theme(pref, cx))
+                                    })
+                                    .child(Radio::new("theme-system").label(tr!("settings.follow_system")))
+                                    .child(Radio::new("theme-light").label(tr!("settings.light")))
+                                    .child(Radio::new("theme-dark").label(tr!("settings.dark"))),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_2()
+                            .child(section_label(tr!("settings.language"), cx))
+                            .child(
+                                RadioGroup::horizontal("settings-language")
+                                    .selected_index(Some(language_ix))
+                                    .on_click(move |ix, _, cx| {
+                                        let language = match *ix {
+                                            1 => Language::Chinese,
+                                            2 => Language::English,
+                                            _ => Language::System,
+                                        };
+                                        language_state.update(cx, |state, cx| state.set_language(language, cx))
+                                    })
+                                    // Language names are shown in their own language.
+                                    .child(Radio::new("language-system").label(tr!("settings.follow_system")))
+                                    .child(Radio::new("language-zh").label("简体中文"))
+                                    .child(Radio::new("language-en").label("English")),
+                            ),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .items_start()
+                    .gap_6()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_2()
+                            .child(section_label(tr!("settings.message_limit"), cx))
                             .child(div().w(px(170.)).child(number_field(
                                 "message-limit",
                                 &tr!("settings.message_limit"),
@@ -305,7 +314,8 @@ impl Render for SettingsView {
                                     .text_color(theme.muted_foreground)
                                     .child(tr!("settings.message_limit_hint")),
                             ),
-                    ),
+                    )
+                    .child(div().flex_1().min_w_0().child(self.render_update(cx))),
             )
             .child(
                 v_flex()
@@ -463,7 +473,6 @@ impl Render for SettingsView {
                         ),
                     ),
             )
-            .child(self.render_update(cx))
     }
 }
 
@@ -472,7 +481,7 @@ pub fn open(state: Entity<AppState>, window: &mut Window, cx: &mut App) {
     window.open_dialog(cx, move |dialog, _, _| {
         dialog
             .title(tr!("settings.title"))
-            .w(px(640.))
+            .w(px(720.))
             .child(view.clone())
             .footer(DialogFooter::new().child(super::common::close_button(tr!("settings.done"), true)))
     });
