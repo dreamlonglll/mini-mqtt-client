@@ -142,6 +142,28 @@ impl MqttServer {
         self.protocol_version.trim() == "5.0" || self.protocol_version.trim() == "5"
     }
 
+    /// Check the parameters before they are stored or used to connect.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.trim().is_empty() {
+            return Err(tr!("server.name_required").into());
+        }
+        self.validate_connection()
+    }
+
+    /// The parameters a connection needs (host, port, keep-alive).
+    pub fn validate_connection(&self) -> Result<(), String> {
+        if self.host.trim().is_empty() {
+            return Err(tr!("server.host_required").into());
+        }
+        if !(1..=65535).contains(&self.port) {
+            return Err(tr!("server.port_range").into());
+        }
+        if !(0..=65535).contains(&self.keep_alive) {
+            return Err(tr!("server.keep_alive_range").into());
+        }
+        Ok(())
+    }
+
     /// `scheme://host:port`, as shown in the sidebar and header.
     pub fn address(&self) -> String {
         format!("{}://{}:{}", self.transport().scheme(), self.host, self.port)
@@ -340,6 +362,37 @@ pub struct EnvVariable {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_parameters_are_validated() {
+        let ok = MqttServer {
+            name: "n".into(),
+            host: "h".into(),
+            ..Default::default()
+        };
+        assert!(ok.validate().is_ok());
+        for bad in [
+            MqttServer { port: 0, ..ok.clone() },
+            MqttServer {
+                port: 70000,
+                ..ok.clone()
+            },
+            MqttServer {
+                keep_alive: -1,
+                ..ok.clone()
+            },
+            MqttServer {
+                host: " ".into(),
+                ..ok.clone()
+            },
+            MqttServer {
+                name: String::new(),
+                ..ok.clone()
+            },
+        ] {
+            assert!(bad.validate().is_err(), "{bad:?}");
+        }
+    }
 
     #[test]
     fn legacy_server_yaml_loads() {

@@ -8,7 +8,7 @@ use super::common::{
 };
 use crate::backend::models::{CommandTemplate, PayloadFormat};
 use crate::backend::payload;
-use crate::state::{AppState, PublishDraft, ToastKind};
+use crate::state::{AppEvent, AppState, PublishDraft, ToastKind};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::InputState;
@@ -54,12 +54,22 @@ pub struct Scheduler {
     failed: usize,
     logs: VecDeque<LogLine>,
     task: Option<Task<anyhow::Result<()>>>,
+    _subscription: Option<Subscription>,
 }
 
 impl Scheduler {
-    pub fn new(state: Entity<AppState>, _cx: &mut Context<Self>) -> Self {
+    pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
+        // A run on a deleted server would only count failures.
+        let subscription = cx.subscribe(&state, |this, _, event: &AppEvent, cx| {
+            if let AppEvent::ServerDeleted(id) = event
+                && this.is_running_for(*id)
+            {
+                this.stop(cx);
+            }
+        });
         Self {
             state: Some(state),
+            _subscription: Some(subscription),
             ..Default::default()
         }
     }

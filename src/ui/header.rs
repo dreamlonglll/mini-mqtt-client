@@ -62,7 +62,7 @@ impl Render for HeaderView {
         };
 
         let error = match &status {
-            ConnectionStatus::Error(err) => Some(friendly_mqtt_error(err)),
+            ConnectionStatus::Error(err) | ConnectionStatus::Reconnecting(err) => Some(friendly_mqtt_error(err)),
             _ => None,
         };
 

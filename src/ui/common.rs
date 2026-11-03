@@ -23,7 +23,7 @@ pub fn status_color(status: &ConnectionStatus, cx: &App) -> Hsla {
     let theme = cx.theme();
     match status {
         ConnectionStatus::Connected => theme.success,
-        ConnectionStatus::Connecting => theme.warning,
+        ConnectionStatus::Connecting | ConnectionStatus::Reconnecting(_) => theme.warning,
         ConnectionStatus::Error(_) => theme.danger,
         ConnectionStatus::Disconnected => theme.muted_foreground.opacity(0.6),
     }

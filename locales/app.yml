@@ -320,6 +320,9 @@ mqtt:
   not_connected:
     zh-CN: "未连接到服务器"
     en: "Not connected to the broker"
+  packet_too_large_stopped:
+    zh-CN: "消息超过大小上限（%{max} MB），已停止重连：%{error}"
+    en: "A packet exceeds the size limit (%{max} MB); not reconnecting: %{error}"
   server_disconnected:
     zh-CN: "服务器断开连接"
     en: "The broker closed the connection"
@@ -1217,6 +1220,9 @@ status:
   error:
     zh-CN: "连接错误"
     en: "Connection Error"
+  reconnecting:
+    zh-CN: "重连中..."
+    en: "Reconnecting..."
 storage:
   backup_failed:
     zh-CN: "数据文件无法解析，且备份失败: %{error}（%{reason}）"
@@ -1471,6 +1477,9 @@ toast:
   connected_to:
     zh-CN: "已连接到 %{name}"
     en: "Connected to %{name}"
+  connection_lost:
+    zh-CN: "与 %{name} 的连接已断开，正在重连：%{error}"
+    en: "Lost the connection to %{name}, reconnecting: %{error}"
 topic:
   empty:
     zh-CN: "Topic 不能为空"

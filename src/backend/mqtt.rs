@@ -30,6 +30,12 @@ const MAX_PENDING_BYTES: usize = 256 * 1024 * 1024;
 /// rumqttc's v5 client preallocates its inflight table from this limit
 /// (u16::MAX when unset, ~13 MB per connection).
 const MAX_OUTGOING_INFLIGHT: u16 = 100;
+/// Largest packet accepted or sent.
+const MAX_PACKET_SIZE: usize = 64 * 1024 * 1024;
+/// Back-off between reconnection attempts after an established connection
+/// was lost (doubling up to the maximum).
+const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(500);
+const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ConnectionStatus {
@@ -37,6 +43,8 @@ pub enum ConnectionStatus {
     Disconnected,
     Connecting,
     Connected,
+    /// The connection was lost and is being re-established (with the error).
+    Reconnecting(String),
     Error(String),
 }
 
@@ -46,6 +54,7 @@ impl ConnectionStatus {
             ConnectionStatus::Disconnected => tr!("status.disconnected"),
             ConnectionStatus::Connecting => tr!("status.connecting"),
             ConnectionStatus::Connected => tr!("status.connected"),
+            ConnectionStatus::Reconnecting(_) => tr!("status.reconnecting"),
             ConnectionStatus::Error(_) => tr!("status.error"),
         }
     }
@@ -55,7 +64,10 @@ impl ConnectionStatus {
     }
 
     pub fn is_busy(&self) -> bool {
-        matches!(self, ConnectionStatus::Connecting | ConnectionStatus::Connected)
+        matches!(
+            self,
+            ConnectionStatus::Connecting | ConnectionStatus::Connected | ConnectionStatus::Reconnecting(_)
+        )
     }
 }
 
@@ -232,6 +244,7 @@ impl MqttManager {
 
     pub fn connect(&self, server: &MqttServer) -> Result<(), String> {
         let server_id = server.id.ok_or("Server ID is required")?;
+        server.validate_connection()?;
         self.shutdown(server_id);
 
         let generation = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
@@ -259,32 +272,40 @@ impl MqttManager {
         // Enter the runtime: rumqttc's constructors and TLS setup expect it.
         let _guard = self.runtime.enter();
 
-        let client = if server.is_v5() {
+        // The handle is registered (and "connecting" reported) before the
+        // event loop starts, so its first events are never discarded as
+        // coming from a stale connection.
+        let flag = connected.clone();
+        if server.is_v5() {
             let mut options = rumqttc::v5::MqttOptions::new(client_id, host, port);
             options
                 .set_keep_alive(keep_alive)
                 .set_clean_start(server.clean_session)
                 .set_transport(transport)
                 .set_connection_timeout(CONNECTION_TIMEOUT_SECS)
-                .set_max_packet_size(Some(64 * 1024 * 1024))
+                .set_max_packet_size(Some(MAX_PACKET_SIZE as u32))
                 .set_outgoing_inflight_upper_limit(MAX_OUTGOING_INFLIGHT);
             if let Some((user, pass)) = credentials {
                 options.set_credentials(user, pass);
             }
             let (client, eventloop) = rumqttc::v5::AsyncClient::new(options, REQUEST_CHANNEL_CAPACITY);
-            let loop_client = client.clone();
-            let flag = connected.clone();
+            self.register(
+                server_id,
+                generation,
+                Client::V5(client.clone()),
+                connected,
+                shutdown_tx,
+            );
             self.runtime.spawn(async move {
-                run_v5(inner, server_id, generation, eventloop, loop_client, flag, shutdown_rx).await;
+                run_v5(inner, server_id, generation, eventloop, client, flag, shutdown_rx).await;
             });
-            Client::V5(client)
         } else {
             let mut options = rumqttc::MqttOptions::new(client_id, host, port);
             options
                 .set_keep_alive(keep_alive)
                 .set_clean_session(server.clean_session)
                 .set_transport(transport)
-                .set_max_packet_size(64 * 1024 * 1024, 64 * 1024 * 1024);
+                .set_max_packet_size(MAX_PACKET_SIZE, MAX_PACKET_SIZE);
             if let Some((user, pass)) = credentials {
                 options.set_credentials(user, pass);
             }
@@ -292,26 +313,39 @@ impl MqttManager {
             let mut network = rumqttc::NetworkOptions::new();
             network.set_connection_timeout(CONNECTION_TIMEOUT_SECS);
             eventloop.set_network_options(network);
-            let loop_client = client.clone();
-            let flag = connected.clone();
+            self.register(
+                server_id,
+                generation,
+                Client::V4(client.clone()),
+                connected,
+                shutdown_tx,
+            );
             self.runtime.spawn(async move {
-                run_v4(inner, server_id, generation, eventloop, loop_client, flag, shutdown_rx).await;
+                run_v4(inner, server_id, generation, eventloop, client, flag, shutdown_rx).await;
             });
-            Client::V4(client)
-        };
+        }
+        Ok(())
+    }
 
+    fn register(
+        &self,
+        server_id: i64,
+        generation: u64,
+        client: Client,
+        connected: Arc<AtomicBool>,
+        shutdown: oneshot::Sender<()>,
+    ) {
         self.inner.clients.lock().insert(
             server_id,
             Handle {
                 client,
                 generation,
                 connected,
-                shutdown: Some(shutdown_tx),
+                shutdown: Some(shutdown),
             },
         );
         self.inner
             .emit_status(server_id, generation, ConnectionStatus::Connecting);
-        Ok(())
     }
 
     /// Stop the connection loop of a server without emitting any event.
@@ -440,7 +474,12 @@ fn build_transport(server: &MqttServer) -> Result<RumqttTransport, String> {
 }
 
 fn build_tls(server: &MqttServer) -> Result<TlsConfiguration, String> {
+    // The system's root certificates are always trusted; a custom CA is
+    // trusted in addition (as in the previous version).
     let mut roots = rustls::RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs().certs {
+        let _ = roots.add(cert);
+    }
     if let Some(ca) = non_empty(&server.ca_cert) {
         let certs = rustls_pemfile::certs(&mut ca.as_bytes())
             .collect::<Result<Vec<_>, _>>()
@@ -453,14 +492,8 @@ fn build_tls(server: &MqttServer) -> Result<TlsConfiguration, String> {
                 .add(cert)
                 .map_err(|e| tr!("tls.ca_invalid", error = e).to_string())?;
         }
-    } else {
-        let native = rustls_native_certs::load_native_certs();
-        for cert in native.certs {
-            let _ = roots.add(cert);
-        }
-        if roots.is_empty() {
-            return Err(tr!("tls.no_system_roots").to_string());
-        }
+    } else if roots.is_empty() {
+        return Err(tr!("tls.no_system_roots").to_string());
     }
 
     let builder = rustls::ClientConfig::builder().with_root_certificates(roots);
@@ -480,6 +513,57 @@ fn build_tls(server: &MqttServer) -> Result<TlsConfiguration, String> {
         _ => return Err(tr!("tls.cert_and_key_required").to_string()),
     };
     Ok(TlsConfiguration::Rustls(Arc::new(config)))
+}
+
+/// An inbound or outbound packet over the size limit: reconnecting would only
+/// fetch the same (retained) packet again, so the connection stops.
+fn is_packet_size_error(err: &impl std::fmt::Debug) -> bool {
+    let text = format!("{err:?}");
+    text.contains("PayloadSizeLimitExceeded") || text.contains("OutgoingPacketTooLarge")
+}
+
+/// What to do after the event loop reported an error.
+enum AfterError {
+    /// Wait, then let the next poll reconnect.
+    Retry,
+    /// Report the error and end the connection.
+    Stop(String),
+}
+
+/// Lost connections are re-established (with back-off) once the server was
+/// reached; a failed first connection, a refused CONNACK and oversized
+/// packets end the connection.
+fn after_error(was_connected: bool, terminal: bool, err: &(impl std::fmt::Display + std::fmt::Debug)) -> AfterError {
+    if is_packet_size_error(err) {
+        return AfterError::Stop(
+            tr!(
+                "mqtt.packet_too_large_stopped",
+                max = MAX_PACKET_SIZE / 1024 / 1024,
+                error = err
+            )
+            .to_string(),
+        );
+    }
+    if was_connected && !terminal {
+        return AfterError::Retry;
+    }
+    let prefix = if was_connected {
+        "Connection error"
+    } else {
+        "Failed to connect"
+    };
+    AfterError::Stop(format!("{prefix}: {err}"))
+}
+
+/// Sleep before the next reconnection attempt; `false` if the connection was
+/// closed meanwhile.
+async fn back_off(delay: &mut Duration, shutdown: &mut oneshot::Receiver<()>) -> bool {
+    let wait = *delay;
+    *delay = (*delay * 2).min(MAX_RECONNECT_DELAY);
+    tokio::select! {
+        _ = shutdown => false,
+        _ = tokio::time::sleep(wait) => true,
+    }
 }
 
 fn incoming(server_id: i64, topic: String, payload: &[u8], qos: u8, retain: bool) -> IncomingMessage {
@@ -502,8 +586,9 @@ async fn run_v4(
     connected: Arc<AtomicBool>,
     mut shutdown: oneshot::Receiver<()>,
 ) {
-    use rumqttc::{ConnectReturnCode, Event, Outgoing, Packet, SubscribeReasonCode};
+    use rumqttc::{ConnectReturnCode, ConnectionError, Event, Outgoing, Packet, SubscribeReasonCode};
     let mut was_connected = false;
+    let mut delay = INITIAL_RECONNECT_DELAY;
     loop {
         tokio::select! {
             _ = &mut shutdown => {
@@ -522,6 +607,7 @@ async fn run_v4(
                 Ok(Event::Incoming(Packet::ConnAck(ack))) => {
                     if ack.code == ConnectReturnCode::Success {
                         was_connected = true;
+                        delay = INITIAL_RECONNECT_DELAY;
                         connected.store(true, Ordering::Relaxed);
                         inner.emit_status(server_id, generation, ConnectionStatus::Connected);
                     } else {
@@ -539,9 +625,20 @@ async fn run_v4(
                 }
                 Ok(_) => {}
                 Err(err) => {
-                    let prefix = if was_connected { "Connection error" } else { "Failed to connect" };
-                    inner.emit_status(server_id, generation, ConnectionStatus::Error(format!("{prefix}: {err}")));
-                    break;
+                    connected.store(false, Ordering::Relaxed);
+                    let terminal = matches!(err, ConnectionError::ConnectionRefused(_) | ConnectionError::RequestsDone);
+                    match after_error(was_connected, terminal, &err) {
+                        AfterError::Retry => {
+                            inner.emit_status(server_id, generation, ConnectionStatus::Reconnecting(err.to_string()));
+                            if !back_off(&mut delay, &mut shutdown).await {
+                                break;
+                            }
+                        }
+                        AfterError::Stop(message) => {
+                            inner.emit_status(server_id, generation, ConnectionStatus::Error(message));
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -560,9 +657,10 @@ async fn run_v5(
     mut shutdown: oneshot::Receiver<()>,
 ) {
     use rumqttc::Outgoing;
-    use rumqttc::v5::Event;
     use rumqttc::v5::mqttbytes::v5::{ConnectReturnCode, Packet, SubscribeReasonCode};
+    use rumqttc::v5::{ConnectionError, Event};
     let mut was_connected = false;
+    let mut delay = INITIAL_RECONNECT_DELAY;
     loop {
         tokio::select! {
             _ = &mut shutdown => {
@@ -581,6 +679,7 @@ async fn run_v5(
                 Ok(Event::Incoming(Packet::ConnAck(ack))) => {
                     if ack.code == ConnectReturnCode::Success {
                         was_connected = true;
+                        delay = INITIAL_RECONNECT_DELAY;
                         connected.store(true, Ordering::Relaxed);
                         inner.emit_status(server_id, generation, ConnectionStatus::Connected);
                     } else {
@@ -603,9 +702,20 @@ async fn run_v5(
                 }
                 Ok(_) => {}
                 Err(err) => {
-                    let prefix = if was_connected { "Connection error" } else { "Failed to connect" };
-                    inner.emit_status(server_id, generation, ConnectionStatus::Error(format!("{prefix}: {err}")));
-                    break;
+                    connected.store(false, Ordering::Relaxed);
+                    let terminal = matches!(err, ConnectionError::ConnectionRefused(_) | ConnectionError::RequestsDone);
+                    match after_error(was_connected, terminal, &err) {
+                        AfterError::Retry => {
+                            inner.emit_status(server_id, generation, ConnectionStatus::Reconnecting(err.to_string()));
+                            if !back_off(&mut delay, &mut shutdown).await {
+                                break;
+                            }
+                        }
+                        AfterError::Stop(message) => {
+                            inner.emit_status(server_id, generation, ConnectionStatus::Error(message));
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -655,6 +765,51 @@ mod tests {
             .inner
             .emit_message(7, 1, incoming(7, "again".into(), b"x", 0, false));
         assert!(matches!(events.try_recv(), Ok(MqttEvent::MessagesReady)));
+    }
+
+    #[test]
+    fn lost_connections_are_retried_but_failures_to_connect_are_not() {
+        let io = rumqttc::ConnectionError::Io(std::io::Error::other("reset by peer"));
+        assert!(matches!(after_error(true, false, &io), AfterError::Retry));
+        match after_error(false, false, &io) {
+            AfterError::Stop(message) => assert!(message.starts_with("Failed to connect"), "{message}"),
+            AfterError::Retry => panic!("a first connection is not retried"),
+        }
+        let refused = rumqttc::ConnectionError::ConnectionRefused(rumqttc::ConnectReturnCode::NotAuthorized);
+        assert!(matches!(after_error(true, true, &refused), AfterError::Stop(_)));
+        let too_large = rumqttc::ConnectionError::MqttState(rumqttc::StateError::Deserialization(
+            rumqttc::mqttbytes::Error::PayloadSizeLimitExceeded(1 << 30),
+        ));
+        assert!(is_packet_size_error(&too_large));
+        assert!(matches!(after_error(true, false, &too_large), AfterError::Stop(_)));
+    }
+
+    #[test]
+    fn handle_is_registered_before_the_event_loop_runs() {
+        let (manager, mut events) = MqttManager::new();
+        let server = MqttServer {
+            id: Some(3),
+            host: "127.0.0.1".into(),
+            port: 1,
+            ..Default::default()
+        };
+        manager.connect(&server).unwrap();
+        // "connecting" is never dropped, whatever the loop does meanwhile.
+        assert!(matches!(
+            events.try_recv(),
+            Ok(MqttEvent::Status {
+                server_id: 3,
+                status: ConnectionStatus::Connecting
+            })
+        ));
+        let invalid = MqttServer {
+            id: Some(4),
+            host: "127.0.0.1".into(),
+            port: 0,
+            ..Default::default()
+        };
+        assert!(manager.connect(&invalid).is_err(), "port 0 is rejected");
+        manager.disconnect_all();
     }
 
     #[test]

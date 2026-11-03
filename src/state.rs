@@ -215,6 +215,8 @@ pub enum AppEvent {
     MessagesChanged(i64),
     /// Fill the publish panel (from a template or "copy to publish").
     FillPublish(PublishDraft),
+    /// A server was deleted (a scheduled publish on it stops).
+    ServerDeleted(i64),
     /// The interface language changed: views refresh texts they keep in state
     /// (input placeholders); everything else follows on the next render.
     LanguageChanged,
@@ -829,6 +831,7 @@ impl AppState {
     }
 
     pub fn create_server(&mut self, server: MqttServer, cx: &mut Context<Self>) -> Result<i64, String> {
+        server.validate()?;
         let id = self.storage.create_server(server)?;
         self.reload_servers();
         self.active_server_id = Some(id);
@@ -839,6 +842,7 @@ impl AppState {
 
     pub fn update_server(&mut self, server: MqttServer, cx: &mut Context<Self>) -> Result<(), String> {
         let id = server.id.ok_or("Server ID is required")?;
+        server.validate()?;
         self.storage.update_server(server)?;
         self.reload_servers();
         if self.status(id).is_busy() {
@@ -854,6 +858,7 @@ impl AppState {
         self.messages.remove(&id);
         self.statuses.remove(&id);
         self.reload_servers();
+        cx.emit(AppEvent::ServerDeleted(id));
         if let Some(active) = self.active_server_id {
             cx.emit(AppEvent::MessagesChanged(active));
         }
@@ -891,7 +896,10 @@ impl AppState {
     }
 
     fn on_status(&mut self, server_id: i64, status: ConnectionStatus, cx: &mut Context<Self>) {
-        let name = self.server(server_id).map(|s| s.name.clone()).unwrap_or_default();
+        // Late events of a deleted server (e.g. its "disconnected").
+        let Some(name) = self.server(server_id).map(|s| s.name.clone()) else {
+            return;
+        };
         match &status {
             ConnectionStatus::Connected => {
                 // Re-subscribe every active subscription of this server.
@@ -913,6 +921,16 @@ impl AppState {
                 let address = self.server(server_id).map(|s| s.address()).unwrap_or_default();
                 self.logs.write(LogKind::Mqtt, err, Some(&format!("{name} {address}")));
                 self.toast(ToastKind::Error, friendly_mqtt_error(err), cx);
+            }
+            // Tell once per loss, not for every retry.
+            ConnectionStatus::Reconnecting(err) if self.status(server_id).is_connected() => {
+                let address = self.server(server_id).map(|s| s.address()).unwrap_or_default();
+                self.logs.write(LogKind::Mqtt, err, Some(&format!("{name} {address}")));
+                self.toast(
+                    ToastKind::Warning,
+                    tr!("toast.connection_lost", name = name, error = friendly_mqtt_error(err)),
+                    cx,
+                );
             }
             _ => {}
         }
