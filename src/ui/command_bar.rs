@@ -1,7 +1,7 @@
 //! Bottom bar: quick commands (most used templates) and manager shortcuts.
 
 use super::common::Lucide;
-use super::{script_dialog, template_drawer};
+use super::{env_drawer, script_dialog, template_drawer};
 use crate::backend::models::CommandTemplate;
 use crate::state::AppState;
 use gpui_kit::component::StyledExt as _;
@@ -43,6 +43,7 @@ impl Render for CommandBar {
         let templates = self.templates.clone();
         let templates_state = self.state.clone();
         let scripts_state = self.state.clone();
+        let env_state = self.state.clone();
 
         h_flex()
             .flex_none()
@@ -87,6 +88,18 @@ impl Render for CommandBar {
                             .tooltip(format!("{}  ·  使用 {} 次", t.topic, t.use_count))
                             .on_click(move |_, _, cx| state.update(cx, |state, cx| state.use_template(id, cx)))
                     })),
+            )
+            .child(
+                Button::new("manage-env")
+                    .ghost()
+                    .small()
+                    .icon(Lucide::KeyRound)
+                    .label("环境变量")
+                    .on_click(move |_, window, cx| {
+                        if let Some(id) = env_state.read(cx).active_server_id {
+                            env_drawer::open(env_state.clone(), id, window, cx);
+                        }
+                    }),
             )
             .child(
                 Button::new("manage-templates")

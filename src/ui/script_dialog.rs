@@ -159,11 +159,12 @@ impl ScriptManager {
     fn test_run(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let code = self.code.read(cx).value().to_string();
         let payload = input_value(&self.sample, cx);
+        let env = self.state.read(cx).env_pairs(self.server_id);
         self.testing = true;
         cx.notify();
         let task = cx
             .background_executor()
-            .spawn(async move { script::run_script(&code, &payload, "test/topic") });
+            .spawn(async move { script::run_script(&code, &payload, "test/topic", &env) });
         cx.spawn_in(window, async move |this, cx| {
             let output = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -305,8 +306,12 @@ impl Render for ScriptManager {
         let (e_kind, e_delete, e_save, e_test) = (entity.clone(), entity.clone(), entity.clone(), entity.clone());
         let editing = self.selected.is_some();
         let hint = match self.kind {
-            ScriptType::BeforePublish => "定义 process(payload) 函数，返回处理后的 payload（发送前执行）",
-            ScriptType::AfterReceive => "定义 process(payload, topic) 函数，返回处理后的 payload（接收后执行）",
+            ScriptType::BeforePublish => {
+                "定义 process(payload, topic) 函数，返回处理后的 payload（发送前执行）；env.变量名 读取环境变量"
+            }
+            ScriptType::AfterReceive => {
+                "定义 process(payload, topic) 函数，返回处理后的 payload（接收后执行）；env.变量名 读取环境变量"
+            }
         };
 
         h_flex()
@@ -474,6 +479,15 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("console.log / warn / error", "输出日志（测试运行时可见）"),
             ("atob / btoa", "Base64 编解码（Latin1）"),
             ("JSON, Math, Date, ...", "标准 JavaScript 内置对象"),
+        ],
+    ),
+    (
+        "环境变量",
+        &[
+            ("env.变量名", "获取当前服务器的环境变量值"),
+            ("env.get(\"变量名\")", "获取环境变量值（不存在时为 undefined）"),
+            ("env.replace(text)", "替换文本中的 {{变量名}} 占位符"),
+            ("env.all()", "获取全部环境变量，返回 [{ name, value }] 数组"),
         ],
     ),
     (

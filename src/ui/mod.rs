@@ -3,6 +3,7 @@
 pub mod app_view;
 mod command_bar;
 mod common;
+mod env_drawer;
 mod header;
 mod message_detail;
 mod message_list;

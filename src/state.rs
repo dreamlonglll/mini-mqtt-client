@@ -5,12 +5,12 @@ use crate::backend::config::{self, AppConfig, ThemePreference};
 use crate::backend::errors::friendly_mqtt_error;
 use crate::backend::logger::{LogKind, LogManager};
 use crate::backend::models::{
-    CommandTemplate, MqttServer, PayloadFormat, Script, ScriptType, Subscription, TemplateDraft,
+    CommandTemplate, EnvVariable, MqttServer, PayloadFormat, Script, ScriptType, Subscription, TemplateDraft,
 };
 use crate::backend::mqtt::{ConnectionStatus, IncomingMessage, MqttEvent, MqttManager};
 use crate::backend::payload::{self, DetectedFormat};
 use crate::backend::storage::Storage;
-use crate::backend::{script, topic};
+use crate::backend::{env, script, topic};
 use chrono::{DateTime, Local};
 use futures::StreamExt;
 use gpui_kit::component::{Theme, ThemeMode};
@@ -127,6 +127,12 @@ impl ServerMessages {
             }
         }
     }
+}
+
+/// "After receive" scripts of a server and the variables they see.
+struct ReceiveScripts {
+    chain: Vec<(String, String)>,
+    env: Vec<(String, String)>,
 }
 
 /// A received message after "after receive" scripts ran.
@@ -346,11 +352,15 @@ impl AppState {
         let mut server_ids: Vec<i64> = messages.iter().map(|m| m.server_id).collect();
         server_ids.sort_unstable();
         server_ids.dedup();
-        let chains: Arc<HashMap<i64, Vec<(String, String)>>> = Arc::new(this.read_with(cx, |state, _| {
+        let chains: Arc<HashMap<i64, ReceiveScripts>> = Arc::new(this.read_with(cx, |state, _| {
             server_ids
                 .iter()
                 .map(|id| (*id, state.script_chain(*id, ScriptType::AfterReceive)))
                 .filter(|(_, chain)| !chain.is_empty())
+                .map(|(id, chain)| {
+                    let env = state.storage.env_pairs(id);
+                    (id, ReceiveScripts { chain, env })
+                })
                 .collect()
         })?);
 
@@ -385,11 +395,8 @@ impl AppState {
         this.update(cx, |state, cx| state.push_received(processed, cx))
     }
 
-    fn run_receive_scripts(
-        chains: &HashMap<i64, Vec<(String, String)>>,
-        incoming: IncomingMessage,
-    ) -> ProcessedMessage {
-        let Some(chain) = chains.get(&incoming.server_id) else {
+    fn run_receive_scripts(chains: &HashMap<i64, ReceiveScripts>, incoming: IncomingMessage) -> ProcessedMessage {
+        let Some(scripts) = chains.get(&incoming.server_id) else {
             return ProcessedMessage {
                 incoming,
                 payload: None,
@@ -397,7 +404,7 @@ impl AppState {
             };
         };
         let text = payload::bytes_to_text(&incoming.payload);
-        match script::run_chain(chain, &text, &incoming.topic) {
+        match script::run_chain(&scripts.chain, &text, &incoming.topic, &scripts.env) {
             // Unchanged output: keep the original bytes, so binary payloads
             // are not mangled by the lossy UTF-8 round trip.
             Ok(processed) if processed == text => ProcessedMessage {
@@ -725,9 +732,18 @@ impl AppState {
     // ----------------------------------------------------------------------
     // Publishing
 
-    /// Validate, run "before publish" scripts (off the UI thread), encode and
-    /// publish. Resolves once the message was handed to the client.
+    /// Substitute `{{NAME}}` variables, validate, run "before publish" scripts
+    /// (off the UI thread), encode and publish. Resolves once the message was
+    /// handed to the client. Manual, template and scheduled publishing all
+    /// go through here.
     pub fn publish(&mut self, server_id: i64, draft: PublishDraft, cx: &mut Context<Self>) -> Task<Result<(), String>> {
+        let env = self.storage.env_pairs(server_id);
+        let raw_payload = draft.payload.clone();
+        let draft = PublishDraft {
+            topic: env::replace(&draft.topic, &env),
+            payload: env::replace(&draft.payload, &env),
+            ..draft
+        };
         if let Err(err) = topic::validate_publish_topic(&draft.topic) {
             return Task::ready(Err(err));
         }
@@ -741,27 +757,29 @@ impl AppState {
         if scripts.is_empty() {
             // No scripts: publish right away, without an executor round trip.
             let payload = draft.payload.clone();
-            return Task::ready(self.finish_publish(server_id, draft, Ok(payload), cx));
+            return Task::ready(self.finish_publish(server_id, draft, raw_payload, Ok(payload), cx));
         }
         cx.spawn(async move |this, cx| {
-            let processed = if scripts.is_empty() {
-                Ok(draft.payload.clone())
-            } else {
-                let (payload, topic) = (draft.payload.clone(), draft.topic.clone());
-                cx.background_executor()
-                    .spawn(async move { script::run_chain(&scripts, &payload, &topic) })
-                    .await
-                    .map_err(|e| e.to_string())
-            };
-            this.update(cx, |state, cx| state.finish_publish(server_id, draft, processed, cx))
-                .map_err(|e| e.to_string())?
+            let (payload, topic) = (draft.payload.clone(), draft.topic.clone());
+            let processed = cx
+                .background_executor()
+                .spawn(async move { script::run_chain(&scripts, &payload, &topic, &env) })
+                .await
+                .map_err(|e| e.to_string());
+            this.update(cx, |state, cx| {
+                state.finish_publish(server_id, draft, raw_payload, processed, cx)
+            })
+            .map_err(|e| e.to_string())?
         })
     }
 
+    /// `raw_payload` is the payload as typed (before variable substitution),
+    /// recorded when a script fails.
     fn finish_publish(
         &mut self,
         server_id: i64,
         draft: PublishDraft,
+        raw_payload: String,
         processed: Result<String, String>,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
@@ -775,7 +793,7 @@ impl AppState {
                     server_id,
                     Direction::Publish,
                     draft.topic.clone(),
-                    draft.payload.into_bytes(),
+                    raw_payload.into_bytes(),
                     draft.qos,
                     draft.retain,
                     Local::now(),
@@ -827,7 +845,8 @@ impl AppState {
         qos: u8,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        let topic_filter = topic_filter.trim().to_string();
+        // Variables are substituted once, before the subscription is stored.
+        let topic_filter = env::replace(topic_filter.trim(), &self.storage.env_pairs(server_id));
         topic::validate_subscribe_topic(&topic_filter)?;
         self.storage
             .create_subscription(server_id, topic_filter.clone(), qos as i32, None)?;
@@ -1010,6 +1029,53 @@ impl AppState {
             self.toast(ToastKind::Error, err, cx);
         }
         cx.notify();
+    }
+
+    // ----------------------------------------------------------------------
+    // Environment variables
+
+    pub fn env_variables(&self, server_id: i64) -> Vec<EnvVariable> {
+        self.storage.env_variables(server_id)
+    }
+
+    pub fn env_pairs(&self, server_id: i64) -> Vec<(String, String)> {
+        self.storage.env_pairs(server_id)
+    }
+
+    /// Create (`id` = None) or update an environment variable.
+    pub fn save_env_variable(
+        &mut self,
+        server_id: i64,
+        id: Option<i64>,
+        name: String,
+        value: String,
+        description: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Err("请输入变量名".into());
+        }
+        if !env::is_valid_name(&name) {
+            return Err("变量名格式不正确：以字母开头，只能包含字母、数字、下划线".into());
+        }
+        if value.is_empty() {
+            return Err("请输入变量值".into());
+        }
+        match id {
+            Some(id) => self.storage.update_env_variable(id, name, value, description)?,
+            None => {
+                self.storage.create_env_variable(server_id, name, value, description)?;
+            }
+        }
+        cx.notify();
+        Ok(())
+    }
+
+    pub fn delete_env_variable(&mut self, id: i64, cx: &mut Context<Self>) -> Result<(), String> {
+        self.storage.delete_env_variable(id)?;
+        cx.notify();
+        Ok(())
     }
 
     // ----------------------------------------------------------------------

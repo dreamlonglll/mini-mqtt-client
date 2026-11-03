@@ -505,6 +505,101 @@ impl Storage {
         self.data.write().scripts.retain(|s| s.id != Some(id));
         self.save()
     }
+
+    // ===== Environment variables =====
+
+    pub fn env_variables(&self, server_id: i64) -> Vec<EnvVariable> {
+        self.data
+            .read()
+            .env_variables
+            .iter()
+            .filter(|e| e.server_id == server_id)
+            .cloned()
+            .collect()
+    }
+
+    /// `(name, value)` pairs of a server, for `{{NAME}}` substitution.
+    pub fn env_pairs(&self, server_id: i64) -> Vec<(String, String)> {
+        self.data
+            .read()
+            .env_variables
+            .iter()
+            .filter(|e| e.server_id == server_id)
+            .map(|e| (e.name.clone(), e.value.clone()))
+            .collect()
+    }
+
+    pub fn create_env_variable(
+        &self,
+        server_id: i64,
+        name: String,
+        value: String,
+        description: Option<String>,
+    ) -> Result<i64, String> {
+        let id = {
+            let mut data = self.data.write();
+            if data
+                .env_variables
+                .iter()
+                .any(|e| e.server_id == server_id && e.name == name)
+            {
+                return Err("变量名已存在".into());
+            }
+            data.next_env_variable_id += 1;
+            let id = data.next_env_variable_id;
+            let ts = now();
+            data.env_variables.push(EnvVariable {
+                id: Some(id),
+                server_id,
+                name,
+                value,
+                description,
+                created_at: Some(ts.clone()),
+                updated_at: Some(ts),
+                extra: Extra::new(),
+            });
+            id
+        };
+        self.save()?;
+        Ok(id)
+    }
+
+    pub fn update_env_variable(
+        &self,
+        id: i64,
+        name: String,
+        value: String,
+        description: Option<String>,
+    ) -> Result<(), String> {
+        {
+            let mut data = self.data.write();
+            let server_id = data
+                .env_variables
+                .iter()
+                .find(|e| e.id == Some(id))
+                .map(|e| e.server_id)
+                .ok_or("环境变量不存在")?;
+            if data
+                .env_variables
+                .iter()
+                .any(|e| e.server_id == server_id && e.name == name && e.id != Some(id))
+            {
+                return Err("变量名已存在".into());
+            }
+            if let Some(e) = data.env_variables.iter_mut().find(|e| e.id == Some(id)) {
+                e.name = name;
+                e.value = value;
+                e.description = description;
+                e.updated_at = Some(now());
+            }
+        }
+        self.save()
+    }
+
+    pub fn delete_env_variable(&self, id: i64) -> Result<(), String> {
+        self.data.write().env_variables.retain(|e| e.id != Some(id));
+        self.save()
+    }
 }
 
 #[cfg(test)]
@@ -565,6 +660,51 @@ mod tests {
 
         reopened.delete_server(id).unwrap();
         assert!(reopened.templates(id).is_empty());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn env_variables_are_per_server_and_unique_by_name() {
+        let (storage, dir) = temp_storage("env");
+        let a = storage.create_server(MqttServer::default()).unwrap();
+        let b = storage.create_server(MqttServer::default()).unwrap();
+        let id = storage
+            .create_env_variable(a, "HOST".into(), "a.local".into(), Some("desc".into()))
+            .unwrap();
+        assert!(storage.create_env_variable(a, "HOST".into(), "x".into(), None).is_err());
+        storage
+            .create_env_variable(b, "HOST".into(), "b.local".into(), None)
+            .unwrap();
+        let other = storage.create_env_variable(a, "PORT".into(), "1".into(), None).unwrap();
+        assert_eq!(
+            storage.env_pairs(a),
+            vec![("HOST".into(), "a.local".into()), ("PORT".into(), "1".into())]
+        );
+        assert_eq!(storage.env_pairs(b), vec![("HOST".into(), "b.local".into())]);
+
+        assert!(
+            storage
+                .update_env_variable(other, "HOST".into(), "1".into(), None)
+                .is_err(),
+            "rename onto an existing name"
+        );
+        storage
+            .update_env_variable(id, "HOST".into(), "new".into(), None)
+            .unwrap();
+        assert!(storage.update_env_variable(999, "X".into(), "1".into(), None).is_err());
+        let reopened = Storage::open(storage.file_path()).unwrap();
+        let vars = reopened.env_variables(a);
+        assert_eq!(vars[0].value, "new");
+        assert_eq!(vars[0].description, None, "description can be cleared");
+
+        reopened.delete_env_variable(other).unwrap();
+        assert_eq!(reopened.env_variables(a).len(), 1);
+        reopened.delete_server(a).unwrap();
+        assert!(
+            reopened.env_variables(a).is_empty(),
+            "deleting a server deletes its variables"
+        );
+        assert_eq!(reopened.env_variables(b).len(), 1);
         let _ = fs::remove_dir_all(dir);
     }
 

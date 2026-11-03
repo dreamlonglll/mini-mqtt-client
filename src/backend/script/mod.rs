@@ -4,10 +4,12 @@
 //! `process(payload, topic)` (sync or async); its return value replaces the
 //! payload. Objects are JSON-serialized, `undefined`/`null` keep the input.
 //! Without a `process` function the script body itself runs and the payload
-//! is passed through.
+//! is passed through. The server's environment variables are available as
+//! `env.NAME`, `env.get(name)`, `env.replace(text)` and `env.all()`.
 
 pub mod crypto;
 
+use super::env::{self, EnvVars};
 use boa_engine::object::ObjectInitializer;
 use boa_engine::object::builtins::{JsPromise, JsUint8Array};
 use boa_engine::property::Attribute;
@@ -20,6 +22,8 @@ const RECURSION_LIMIT: usize = 400;
 
 thread_local! {
     static CONSOLE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Environment variables of the running script (for `env.*`).
+    static ENV: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Result of a single script run, including `console.*` output.
@@ -43,10 +47,15 @@ impl std::fmt::Display for ScriptChainError {
 }
 
 /// Run `(name, code)` scripts in order, feeding each output into the next.
-pub fn run_chain(scripts: &[(String, String)], payload: &str, topic: &str) -> Result<String, ScriptChainError> {
+pub fn run_chain(
+    scripts: &[(String, String)],
+    payload: &str,
+    topic: &str,
+    env: &EnvVars,
+) -> Result<String, ScriptChainError> {
     let mut current = payload.to_string();
     for (name, code) in scripts {
-        current = run_script(code, &current, topic)
+        current = run_script(code, &current, topic, env)
             .result
             .map_err(|message| ScriptChainError {
                 script_name: name.clone(),
@@ -72,18 +81,20 @@ fn wrap(code: &str) -> String {
     )
 }
 
-pub fn run_script(code: &str, payload: &str, topic: &str) -> ScriptOutput {
+pub fn run_script(code: &str, payload: &str, topic: &str, env: &EnvVars) -> ScriptOutput {
     CONSOLE.with(|c| c.borrow_mut().clear());
-    let result = execute(code, payload, topic);
+    ENV.with(|e| *e.borrow_mut() = env.to_vec());
+    let result = execute(code, payload, topic, env);
+    ENV.with(|e| e.borrow_mut().clear());
     let console = CONSOLE.with(|c| std::mem::take(&mut *c.borrow_mut()));
     ScriptOutput { result, console }
 }
 
-fn execute(code: &str, payload: &str, topic: &str) -> Result<String, String> {
+fn execute(code: &str, payload: &str, topic: &str, env: &EnvVars) -> Result<String, String> {
     let mut ctx = Context::default();
     ctx.runtime_limits_mut().set_loop_iteration_limit(LOOP_ITERATION_LIMIT);
     ctx.runtime_limits_mut().set_recursion_limit(RECURSION_LIMIT);
-    install_globals(&mut ctx, payload, topic).map_err(|e| e.to_string())?;
+    install_globals(&mut ctx, payload, topic, env).map_err(|e| e.to_string())?;
 
     let value = ctx
         .eval(Source::from_bytes(wrap(code).as_bytes()))
@@ -429,6 +440,38 @@ fn console_error(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<JsValu
     console_line("error", a, c)
 }
 
+// ---------------------------------------------------------------------------
+// env.* functions (variables are read from the thread-local `ENV`)
+
+fn env_get(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let name = arg_string(args, 0, ctx)?;
+    Ok(ENV.with(|e| {
+        e.borrow()
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| str_value(v))
+            .unwrap_or_default()
+    }))
+}
+
+fn env_replace(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let text = arg_string(args, 0, ctx)?;
+    Ok(str_value(ENV.with(|e| env::replace(&text, &e.borrow()))))
+}
+
+fn env_all(_: &JsValue, _: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let vars = ENV.with(|e| e.borrow().clone());
+    let array = boa_engine::object::builtins::JsArray::new(ctx);
+    for (name, value) in vars {
+        let entry = ObjectInitializer::new(ctx)
+            .property(js_string!("name"), str_value(&name), Attribute::all())
+            .property(js_string!("value"), str_value(&value), Attribute::all())
+            .build();
+        array.push(entry, ctx)?;
+    }
+    Ok(array.into())
+}
+
 type NativeFn = fn(&JsValue, &[JsValue], &mut Context) -> JsResult<JsValue>;
 
 /// Names and arities of the `crypto` object, also used by the help dialog.
@@ -458,7 +501,7 @@ pub const CRYPTO_FUNCTIONS: &[(&str, usize, NativeFn)] = &[
     ("crc32", 1, crc32),
 ];
 
-fn install_globals(ctx: &mut Context, payload: &str, topic: &str) -> JsResult<()> {
+fn install_globals(ctx: &mut Context, payload: &str, topic: &str, env: &EnvVars) -> JsResult<()> {
     let mut crypto_obj = ObjectInitializer::new(ctx);
     for (name, len, f) in CRYPTO_FUNCTIONS {
         crypto_obj.function(NativeFunction::from_fn_ptr(*f), JsString::from(*name), *len);
@@ -473,8 +516,21 @@ fn install_globals(ctx: &mut Context, payload: &str, topic: &str) -> JsResult<()
         .function(NativeFunction::from_fn_ptr(console_error), js_string!("error"), 0)
         .build();
 
+    // `env.NAME` for every variable; the methods win over equally named
+    // variables (as before).
+    let mut env_obj = ObjectInitializer::new(ctx);
+    for (name, value) in env {
+        env_obj.property(JsString::from(name.as_str()), str_value(value), Attribute::all());
+    }
+    let env_obj = env_obj
+        .function(NativeFunction::from_fn_ptr(env_get), js_string!("get"), 1)
+        .function(NativeFunction::from_fn_ptr(env_replace), js_string!("replace"), 1)
+        .function(NativeFunction::from_fn_ptr(env_all), js_string!("all"), 0)
+        .build();
+
     let attr = Attribute::WRITABLE | Attribute::CONFIGURABLE;
     ctx.register_global_property(js_string!("crypto"), crypto_obj, attr)?;
+    ctx.register_global_property(js_string!("env"), env_obj, attr)?;
     ctx.register_global_property(js_string!("console"), console, attr)?;
     ctx.register_global_property(js_string!("payload"), str_value(payload), attr)?;
     ctx.register_global_property(js_string!("topic"), str_value(topic), attr)?;
@@ -488,7 +544,7 @@ mod tests {
     use super::*;
 
     fn run(code: &str, payload: &str) -> Result<String, String> {
-        run_script(code, payload, "t/1").result
+        run_script(code, payload, "t/1", &[]).result
     }
 
     #[test]
@@ -560,16 +616,64 @@ mod tests {
 
     #[test]
     fn console_is_captured_and_chain_runs_in_order() {
-        let out = run_script("console.log('a', {b: 1}); function process(p){ return p; }", "x", "");
+        let out = run_script(
+            "console.log('a', {b: 1}); function process(p){ return p; }",
+            "x",
+            "",
+            &[],
+        );
         assert_eq!(out.console, vec![r#"a {"b":1}"#.to_string()]);
 
         let chain = vec![
             ("one".to_string(), "function process(p){ return p + '1'; }".to_string()),
             ("two".to_string(), "function process(p){ return p + '2'; }".to_string()),
         ];
-        assert_eq!(run_chain(&chain, "x", "").unwrap(), "x12");
+        assert_eq!(run_chain(&chain, "x", "", &[]).unwrap(), "x12");
         let bad = vec![("bad".to_string(), "function process(){ throw 'nope'; }".to_string())];
-        let e = run_chain(&bad, "x", "").unwrap_err();
+        let e = run_chain(&bad, "x", "", &[]).unwrap_err();
         assert_eq!(e.script_name, "bad");
+    }
+
+    #[test]
+    fn env_is_exposed_to_scripts() {
+        let env = vec![
+            ("DEVICE_ID".to_string(), "dev-1".to_string()),
+            ("KEY".to_string(), "k".to_string()),
+            ("get".to_string(), "shadowed".to_string()),
+        ];
+        let run_env = |code: &str, payload: &str| run_script(code, payload, "t/1", &env).result.unwrap();
+        assert_eq!(
+            run_env("function process(p){ return env.DEVICE_ID + ':' + p; }", "x"),
+            "dev-1:x"
+        );
+        assert_eq!(
+            run_env("function process(){ return env.get('KEY') + env.get('NOPE'); }", ""),
+            "kundefined"
+        );
+        assert_eq!(
+            run_env("function process(p){ return env.replace(p); }", "{{DEVICE_ID}}/{{X}}"),
+            "dev-1/{{X}}"
+        );
+        assert_eq!(
+            run_env(
+                "function process(){ return env.all().map(v => v.name + '=' + v.value).join(','); }",
+                ""
+            ),
+            "DEVICE_ID=dev-1,KEY=k,get=shadowed"
+        );
+        assert_eq!(run_env("function process(){ return typeof env.get; }", ""), "function");
+        // Without variables `env` still exists.
+        assert_eq!(
+            run(
+                "function process(){ return env.all().length + (env.X === undefined ? 'u' : ''); }",
+                ""
+            ),
+            Ok("0u".into())
+        );
+        // Variables do not leak into the next run on the same thread.
+        assert_eq!(
+            run("function process(){ return String(env.get('KEY')); }", ""),
+            Ok("undefined".into())
+        );
     }
 }

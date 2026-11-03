@@ -32,6 +32,8 @@ gpui_kit::assets::icon_assets!(
         Eraser,
         Terminal,
         Binary,
+        KeyRound,
+        Variable,
     ]
 );
 
