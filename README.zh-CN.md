@@ -62,13 +62,21 @@
 
 ## 安装
 
-前往 [Releases](../../releases) 页面下载对应平台的压缩包：
+前往 [Releases](../../releases) 页面下载对应平台的安装包（`<版本>` 为版本号，如 `2.0.0`）：
 
-| 平台 | 文件 |
-|------|------|
-| Windows | `mini-mqtt-client-windows-x64.zip`（解压即用） |
-| macOS | `mini-mqtt-client-macos-universal.zip`（`Mini MQTT Client.app`） |
-| Linux | `mini-mqtt-client-linux-x64.tar.gz` |
+| 平台 | 文件 | 说明 |
+|------|------|------|
+| Windows | `mini-mqtt-client_<版本>_x64-setup.exe` | 安装包，可直接覆盖升级 1.x |
+| Windows | `mini-mqtt-client_<版本>_x64-portable.zip` | 便携版，解压即用 |
+| macOS | `mini-mqtt-client_<版本>_universal.dmg` | Apple Silicon / Intel 通用，拖入「应用程序」即可 |
+| Linux | `mini-mqtt-client_<版本>_x86_64.AppImage` | `chmod +x` 后直接运行 |
+| Linux | `mini-mqtt-client_<版本>_linux-x86_64.tar.gz` | 可执行文件 + `.desktop` + 图标 |
+
+`SHA256SUMS.txt` 列出了所有文件的校验和，下载后可用 `sha256sum -c SHA256SUMS.txt --ignore-missing` 校验。
+
+- **Windows**：安装包会认出已安装的旧版（含 1.x 的 Tauri 版 `.exe` 安装包）并先卸载它，数据不受影响。1.x 用 `.msi` 安装的，请先在「设置 → 应用」中卸载旧版。
+- **macOS**：应用只做了 ad-hoc 签名、没有公证，首次打开时请在 Finder 中右键点击应用选择「打开」；如提示"已损坏"，执行 `xattr -dr com.apple.quarantine "/Applications/Mini MQTT Client.app"`。
+- **Linux**：需要 glibc 2.35 及以上（Ubuntu 22.04+ 等）和可用的 Vulkan 驱动。
 
 ## 从源码构建
 
@@ -157,8 +165,13 @@ mini-mqtt-client/
 │   │   └── script/          # JS 脚本引擎与 crypto API
 │   └── ui/                  # GPUI 视图与对话框
 ├── assets/app-icon/         # 应用图标
+├── scripts/                 # 打包脚本（Windows 安装器、macOS .app / dmg、Linux AppImage）
+├── e2e/                     # 端到端测试
+├── perf/                    # 压力 / 性能测试工具
 ├── docs/                    # 文档与截图
-└── .github/workflows/       # CI / Release
+└── .github/
+    ├── workflows/           # CI / 发布 / 缓存预热
+    └── release-notes/       # 发布说明，每个版本一个 <tag>.md
 ```
 
 ## 许可证

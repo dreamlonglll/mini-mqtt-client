@@ -62,13 +62,21 @@ A lightweight, good-looking MQTT debugging client. It is a native desktop app bu
 
 ## Installation
 
-Download the package for your platform from the [Releases](../../releases) page:
+Download the package for your platform from the [Releases](../../releases) page (`<version>` is the version number, e.g. `2.0.0`):
 
-| Platform | File |
-|----------|------|
-| Windows | `mini-mqtt-client-windows-x64.zip` (unzip and run) |
-| macOS | `mini-mqtt-client-macos-universal.zip` (`Mini MQTT Client.app`) |
-| Linux | `mini-mqtt-client-linux-x64.tar.gz` |
+| Platform | File | Notes |
+|----------|------|-------|
+| Windows | `mini-mqtt-client_<version>_x64-setup.exe` | Installer; upgrades 1.x in place |
+| Windows | `mini-mqtt-client_<version>_x64-portable.zip` | Portable, unzip and run |
+| macOS | `mini-mqtt-client_<version>_universal.dmg` | Apple Silicon / Intel; drag into Applications |
+| Linux | `mini-mqtt-client_<version>_x86_64.AppImage` | `chmod +x` and run |
+| Linux | `mini-mqtt-client_<version>_linux-x86_64.tar.gz` | Executable + `.desktop` file + icon |
+
+`SHA256SUMS.txt` lists the checksums of all files; verify your download with `sha256sum -c SHA256SUMS.txt --ignore-missing`.
+
+- **Windows**: the installer detects an installed older version (including the 1.x Tauri `.exe` installer) and uninstalls it first; your data is kept. If you installed 1.x from the `.msi`, uninstall it from Settings → Apps first.
+- **macOS**: the app is only ad-hoc signed and not notarized. On first launch, right-click the app in Finder and choose "Open"; if macOS says it is damaged, run `xattr -dr com.apple.quarantine "/Applications/Mini MQTT Client.app"`.
+- **Linux**: requires glibc 2.35 or newer (Ubuntu 22.04+ and similar) and a working Vulkan driver.
 
 ## Building from source
 
@@ -157,8 +165,13 @@ mini-mqtt-client/
 │   │   └── script/          # JS script engine and crypto API
 │   └── ui/                  # GPUI views and dialogs
 ├── assets/app-icon/         # Application icons
+├── scripts/                 # Packaging scripts (Windows installer, macOS .app / dmg, Linux AppImage)
+├── e2e/                     # End-to-end tests
+├── perf/                    # Stress / performance test tools
 ├── docs/                    # Documentation and screenshots
-└── .github/workflows/       # CI / Release
+└── .github/
+    ├── workflows/           # CI / Release / cache warm-up
+    └── release-notes/       # Release notes, one <tag>.md per version
 ```
 
 ## License

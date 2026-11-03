@@ -1,0 +1,205 @@
+name: CI
+
+# 日常检查：push 到 main、PR、手动触发。发版走 release.yml（推 v* tag），release 缓存由 cache-warm.yml 预热。
+# - lint-test（Linux）：fmt、clippy、单元测试 + 连本地 mosquitto 的集成测试（--include-ignored）
+# - e2e（Linux）：Xvfb 里跑真实应用，经 AT-SPI 操作界面（e2e/run.sh），报告作为产物上传
+# - windows：clippy、单元测试、release 构建，上传 exe 作试用产物（debug 构建隐藏不了控制台窗口，试用请用这里的 release 产物）
+# - macos：mac 专属代码唯一的编译门（Linux / Windows 上编不了 mac 目标）；另出一份 universal .app（ad-hoc 签名，
+#   与 release.yml 的 dmg 里是同一个 bundle.sh 的产物）作为试用产物
+# 只改文档 / 发布说明时不跑。
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/release-notes/**'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/release-notes/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一分支 / PR 新提交进来时取消还在跑的旧检查（main 上的每次 push 都跑完）
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  LINUX_DEPS: >-
+    libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev
+    libx11-xcb-dev libxcb1-dev libfontconfig1-dev libfreetype6-dev
+
+jobs:
+  lint-test:
+    name: Lint & Test (Linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $LINUX_DEPS mosquitto
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Start local MQTT broker (TCP 1883 + WebSocket 8083)
+        run: |
+          sudo systemctl stop mosquitto || true
+          cat > "$RUNNER_TEMP/mosquitto.conf" <<'EOF'
+          listener 1883 127.0.0.1
+          protocol mqtt
+          listener 8083 127.0.0.1
+          protocol websockets
+          allow_anonymous true
+          EOF
+          mosquitto -c "$RUNNER_TEMP/mosquitto.conf" -d
+          sleep 1
+
+      - name: Run tests (including live broker integration test)
+        run: cargo test --locked -- --include-ignored
+
+  e2e:
+    name: E2E (real app on Xvfb)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $LINUX_DEPS \
+            xvfb mosquitto mosquitto-clients xdotool xclip x11-apps imagemagick openssl \
+            dbus at-spi2-core python3-pyatspi python3-yaml mesa-vulkan-drivers fonts-noto-cjk \
+            desktop-file-utils
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --locked
+
+      - name: Run end-to-end tests
+        run: ./e2e/run.sh
+
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            target/e2e/report.md
+            target/e2e/report.json
+            target/e2e/*.txt
+            target/e2e/*.log
+            target/e2e/shots/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # 打包脚本平时就跑一遍（.desktop 校验、AppImage 软链与回读），免得发版时才发现坏了。
+      # 用 strip 过的 debug 构建代替 release，省一次 release 编译；产物不上传
+      - name: Linux packaging smoke test
+        run: |
+          cp target/debug/mini-mqtt-client "$RUNNER_TEMP/mini-mqtt-client"
+          strip "$RUNNER_TEMP/mini-mqtt-client"
+          bash scripts/linux/package.sh "$RUNNER_TEMP/mini-mqtt-client" "$RUNNER_TEMP/pkg"
+
+  windows:
+    name: Clippy / Test / Release build (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
+      - name: Release build
+        run: cargo build --release --locked
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-mqtt-client-windows-x64
+          path: target/release/mini-mqtt-client.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: Clippy / Test / Universal bundle (macOS)
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
+      # arm64 runner 上一次构建两个架构（x86_64 交叉编译），bundle.sh 用 lipo 合并成 universal
+      - name: Release build (universal)
+        run: cargo build --release --locked --target aarch64-apple-darwin --target x86_64-apple-darwin
+
+      - name: Bundle .app
+        run: |
+          bash scripts/macos/bundle.sh \
+            target/aarch64-apple-darwin/release/mini-mqtt-client \
+            target/x86_64-apple-darwin/release/mini-mqtt-client dist
+          # upload-artifact 会丢掉可执行位与软链，先用 ditto 打成 zip（保留签名与扩展属性）
+          ditto -c -k --keepParent "dist/Mini MQTT Client.app" dist/mini-mqtt-client-macos-universal.zip
+          ls -la dist
+
+      - name: Upload universal bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-mqtt-client-macos-universal
+          path: dist/mini-mqtt-client-macos-universal.zip
+          if-no-files-found: error
+          retention-days: 7

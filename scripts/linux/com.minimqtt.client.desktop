@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Mini MQTT Client
+GenericName=MQTT Client
+GenericName[zh_CN]=MQTT 客户端
+Comment=Lightweight MQTT debugging client
+Comment[zh_CN]=轻量级 MQTT 调试客户端
+Exec=mini-mqtt-client
+Icon=mini-mqtt-client
+Terminal=false
+Categories=Development;Network;
+Keywords=MQTT;IoT;broker;publish;subscribe;
+StartupWMClass=com.minimqtt.client

@@ -91,3 +91,29 @@ cargo clippy && cargo fmt       # 提交前检查
 2. GPUI Kit API 以 `~/.cargo/registry/src/*/gpui-component-0.8.*` 和 `gpui-base-0.8.*` 源码为准；常用 trait：`ActiveTheme`、`Sizable`、`StyledExt`、`Disableable`、`ButtonVariants`、`WindowExt`。
 3. Linux 构建依赖：`libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig1-dev libfreetype6-dev`。
 4. Windows release 构建隐藏控制台窗口（`windows_subsystem = "windows"`），图标由 `build.rs` 通过 winresource 嵌入。
+5. 仓库里有一个误建的、名为 `main` 的 tag（指向 2af22f5，旧版早期的提交）。`git log main..x`、`git diff main` 这类写法会按 tag 解析、结果是错的；比较与推送时写全名：`refs/heads/main`、`git push origin refs/heads/main`。
+
+## CI / 发布
+
+| Workflow | 触发 | 作用 |
+|----------|------|------|
+| `.github/workflows/ci.yml` | push 到 main、PR（只改文档不跑） | Linux：fmt、clippy、单元 + 集成测试（mosquitto）、e2e、Linux 打包冒烟；Windows：clippy、测试、release 构建；macOS：clippy、测试、universal `.app` |
+| `.github/workflows/release.yml` | 推 `v*` tag；手动触发 = 给已有 release 补建某平台 | 建 draft release → 三平台构建上传 → 算 `SHA256SUMS.txt` → 转正 |
+| `.github/workflows/cache-warm.yml` | main 上 `Cargo.toml` / `Cargo.lock` 变化、每周一次 | 在 main 作用域预热 release 用的 Rust 缓存（tag 运行只读） |
+
+发布产物（打包脚本在 `scripts/`）：
+
+| 平台 | 产物 | 脚本 |
+|------|------|------|
+| Windows | `mini-mqtt-client_<版本>_x64-setup.exe`、`_x64-portable.zip` | `scripts/windows-installer.nsi`（NSIS，**UTF-8 带 BOM**；安装身份沿用 1.x Tauri 版，原地升级） |
+| macOS | `mini-mqtt-client_<版本>_universal.dmg` | `scripts/macos/bundle.sh`（ad-hoc 签名，bundle id `com.minimqtt.client`）、`scripts/macos/make-dmg.sh` |
+| Linux | `mini-mqtt-client_<版本>_x86_64.AppImage`、`_linux-x86_64.tar.gz` | `scripts/linux/package.sh`（AppDir 根上全用相对软链，`.DirIcon` 断链会被 AppImage 目录收录测试判 FATAL） |
+
+Windows / Linux 构建失败时 release 不公开；macOS 失败不挡发布，事后用手动触发（`platforms=macos`）补建 dmg。
+
+发版步骤：
+
+1. 改 `Cargo.toml` 的 `version`（唯一的版本号来源），运行 `cargo check` 同步 `Cargo.lock`，与发布说明一起单独提交 `chore: 发布 vX.Y.Z`。
+2. 发布说明写在 `.github/release-notes/vX.Y.Z.md`（随 tag 的代码一起，release.yml 直接取用；没有就按提交标题生成一份占位，需事后 `gh release edit vX.Y.Z --notes-file <文件>` 补写）。
+3. 打 tag 并推送：`git tag vX.Y.Z && git push origin refs/heads/main refs/tags/vX.Y.Z`。tag 必须等于 `v<Cargo.toml 版本>`，否则 create-release 直接失败；tag 含 `-`（如 `v2.1.0-beta.1`）自动标为 pre-release。
+4. `gh run watch <run-id> --exit-status` 等待；失败的平台修好原因后在该次运行上 Re-run failed jobs。
