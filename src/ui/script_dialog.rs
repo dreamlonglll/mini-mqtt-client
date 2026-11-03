@@ -2,6 +2,7 @@
 
 use super::common::{IconName, Lucide, card, chip, confirm, empty_state, form_row, input_value, notify, opt_value};
 use crate::backend::models::{Script, ScriptType};
+use crate::backend::payload;
 use crate::backend::script::{self, ScriptOutput};
 use crate::state::{AppState, ToastKind};
 use gpui_kit::component::StyledExt as _;
@@ -28,6 +29,16 @@ fn default_code(kind: ScriptType) -> String {
             tr!("script.default_after")
         ),
     }
+}
+
+/// Bytes returned by a test run, as HEX; only the start, the panel is small.
+fn binary_result(bytes: &[u8]) -> String {
+    const SHOWN: usize = 1024;
+    let mut hex = payload::to_hex_spaced(&bytes[..bytes.len().min(SHOWN)]);
+    if bytes.len() > SHOWN {
+        hex.push_str(" …");
+    }
+    tr!("script.binary_result", len = bytes.len(), hex = hex).to_string()
 }
 
 struct ScriptManager {
@@ -167,9 +178,10 @@ impl ScriptManager {
         let env = self.state.read(cx).env_pairs(self.server_id);
         self.testing = true;
         cx.notify();
-        let task = cx
-            .background_executor()
-            .spawn(async move { script::run_script(&code, &payload, "test/topic", &env) });
+        let task = cx.background_executor().spawn(async move {
+            let payload = script::Payload::Text(payload.to_string());
+            script::run_script(&code, &payload, script::TextForm::Utf8, "test/topic", &env)
+        });
         cx.spawn_in(window, async move |this, cx| {
             let output = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -331,7 +343,8 @@ impl ScriptManager {
         let theme = cx.theme();
         let output = self.output.as_ref()?;
         let (color, title, body) = match &output.result {
-            Ok(result) => (theme.success, tr!("script.run_ok"), result.clone()),
+            Ok(script::Payload::Text(text)) => (theme.success, tr!("script.run_ok"), text.clone()),
+            Ok(script::Payload::Bytes(bytes)) => (theme.success, tr!("script.run_ok"), binary_result(bytes)),
             Err(err) => (theme.danger, tr!("script.run_failed"), err.clone()),
         };
         Some(
@@ -573,6 +586,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
         &[
             ("process(payload, topic)", "process"),
             ("payload / topic", "globals"),
+            ("payloadBytes", "payload_bytes"),
             ("console.log / warn / error", "console"),
             ("atob / btoa", "atob"),
             ("JSON, Math, Date, ...", "builtins"),
@@ -594,6 +608,15 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("crypto.bytesToString(bytes)", "bytes_to_string"),
             ("crypto.bytesToBase64(bytes) / base64ToBytes(str)", "base64"),
             ("crypto.bytesToHex(bytes) / hexToBytes(hex)", "hex"),
+        ],
+    ),
+    (
+        "compress",
+        &[
+            ("zlib.gzip(data, level?) / gunzip(data)", "gzip"),
+            ("zlib.deflate(data, level?) / inflate(data)", "zlib_deflate"),
+            ("zlib.deflateRaw(data, level?) / inflateRaw(data)", "deflate_raw"),
+            ("zlib.unzip(data)", "unzip"),
         ],
     ),
     (
@@ -639,6 +662,12 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("crypto.xor(data, key)", "xor"),
         ],
     ),
+];
+
+/// Code examples at the end of the function help.
+const EXAMPLES: &[&str] = &[
+    "async function process(payload) {\n  const key = \"8568230E4BBAF3A979B6F510A38717D5\";\n  return await crypto.aesGcmEncryptHex(payload, key);\n}",
+    "// gzip\nfunction process(payload) {\n  return crypto.bytesToString(zlib.gunzip(payloadBytes));\n}",
 ];
 
 fn help_text(key: &str) -> SharedString {
@@ -710,7 +739,12 @@ fn open_help(window: &mut Window, cx: &mut App) {
                     .max_h(px(520.))
                     .overflow_y_scrollbar()
                     .gap_4()
-                    .child(div().text_xs().text_color(theme.muted_foreground).child(tr!("script.copy_hint")))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(tr!("script.copy_hint")),
+                    )
                     .children(HELP.iter().map(|(section, items)| {
                         v_flex()
                             .gap_1()
@@ -735,17 +769,15 @@ fn open_help(window: &mut Window, cx: &mut App) {
                         v_flex()
                             .gap_1()
                             .child(div().text_sm().font_semibold().child(tr!("script.example")))
-                            .child(
+                            .children(EXAMPLES.iter().map(|code| {
                                 div()
                                     .p_2()
                                     .rounded(theme.radius)
                                     .bg(theme.muted)
                                     .text_xs()
                                     .font_family(theme.mono_font_family.clone())
-                                    .child(
-                                        "async function process(payload) {\n  const key = \"8568230E4BBAF3A979B6F510A38717D5\";\n  return await crypto.aesGcmEncryptHex(payload, key);\n}",
-                                    ),
-                            ),
+                                    .child(*code)
+                            })),
                     ),
             )
             .footer(DialogFooter::new().child(super::common::close_button(tr!("script.got_it"), true)))

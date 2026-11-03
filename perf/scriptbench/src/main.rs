@@ -23,13 +23,23 @@ const TAG: &str = "async function process(payload, topic) {\n  try { const o = J
 const PASS: &str = "function process(payload, topic) { return payload; }";
 const ENV: &str = "function process(payload, topic) { return env.replace('{{dev}}:' + env.get('k5') + ':') + payload; }";
 const CRYPTO: &str = "function process(payload, topic) { return crypto.sha256(payload) + crypto.crc32(payload); }";
+const GUNZIP: &str = "function process(payload, topic) { return crypto.bytesToString(zlib.gunzip(payloadBytes)); }";
 
 fn bench(name: &str, code: &str, payload: &str, n: usize, vars: &[(String, String)]) {
+    bench_bytes(name, code, payload.as_bytes(), n, vars);
+}
+
+/// Received messages reach the chain as bytes, as in process_incoming.
+fn bench_bytes(name: &str, code: &str, payload: &[u8], n: usize, vars: &[(String, String)]) {
     let scripts = vec![(name.to_string(), code.to_string())];
-    script::run_chain(&scripts, payload, "perf/a", vars).unwrap();
+    let run = || {
+        let input = script::Payload::Bytes(payload.to_vec());
+        script::run_chain(&scripts, input, script::TextForm::Utf8, "perf/a", vars).unwrap()
+    };
+    run();
     let t = Instant::now();
     for _ in 0..n {
-        let _ = script::run_chain(&scripts, payload, "perf/a", vars).unwrap();
+        let _ = run();
     }
     let per = t.elapsed().as_secs_f64() / n as f64;
     println!(
@@ -53,6 +63,8 @@ fn main() {
     bench("env.replace/get (21 vars)", ENV, small, 2000, &vars);
     bench("crypto sha256+crc32", CRYPTO, small, 2000, &none);
     bench("tag-json 100KB", TAG, &big, 100, &none);
+    let gz = script::zlib::compress(big.as_bytes(), script::zlib::Format::Gzip, 6).unwrap();
+    bench_bytes("zlib.gunzip 100KB", GUNZIP, &gz, 100, &none);
     // Context creation alone
     let t = Instant::now();
     for _ in 0..2000 {

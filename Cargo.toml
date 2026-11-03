@@ -43,6 +43,8 @@ base64 = "0.22"
 crc32fast = "1"
 rand = "0.8"
 hex = "0.4"
+# gzip / zlib for scripts; pure Rust backend, already in the tree via GPUI.
+flate2 = "1"
 
 # Localisation: rust-i18n is what GPUI Kit's components use, so one locale
 # switch covers the app and the components; sys-locale reads the OS language.

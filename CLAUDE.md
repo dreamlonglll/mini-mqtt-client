@@ -39,7 +39,7 @@ src/
 │   ├── payload.rs         # 格式识别、HEX 编解码、JSON 格式化、换行标记
 │   ├── topic.rs           # 发布/订阅 Topic 校验、订阅通配符匹配
 │   ├── errors.rs          # MQTT 错误 → 友好提示（mqtt_errors.* 文案键）
-│   └── script/            # run_script / run_chain / validate + crypto.* / env.* 原生实现
+│   └── script/            # run_script / run_chain / validate + crypto.* / zlib.* / env.* 原生实现
 └── ui/
     ├── app_view.rs        # 根视图：侧边栏 | 头部 + 消息列表 + 发布面板 + 快捷命令栏
     ├── sidebar.rs         # 版本号 / 更新标记、可折叠的服务器与订阅列表、主题切换
@@ -75,7 +75,7 @@ cargo clippy && cargo fmt       # 提交前检查
 
 1. **状态**：`AppState` 是唯一的业务状态 Entity；视图通过 `cx.observe(&state, ..)` 刷新，通过 `AppEvent` 订阅特定事件（`Toast`、`MessagesChanged(server_id)`、`FillPublish`、`ServerDeleted`、`LanguageChanged`）。新增消息只发 `MessagesChanged`，不调用 `notify`，避免整窗重绘。
 2. **MQTT**：`MqttManager` 在自有 tokio 运行时中跑事件循环，UI 侧用 `try_publish/try_subscribe` 非阻塞调用。每个连接带 generation，旧连接的事件会被丢弃；句柄先登记再启动事件循环。连上后意外断开进入 `Reconnecting` 并退避重连（0.5 s 起翻倍，最长 10 s）；首次连接失败、CONNACK 拒绝、包超过 64 MB 直接报错停止。每次 `Connected` 后由 `AppState` 自动订阅已启用的订阅。
-3. **脚本**：脚本在 `background_executor` 上执行（Boa Context 每次新建）；接收消息按到达顺序串行处理。脚本约定：定义 `process(payload, topic)`，返回值替换 payload（对象自动 JSON 序列化，undefined 保持原样）。`env` 对象的数据经线程局部变量交给原生函数。
+3. **脚本**：脚本在 `background_executor` 上执行（Boa Context 每次新建）；接收消息按到达顺序串行处理。脚本约定：定义 `process(payload, topic)`，返回值替换 payload（对象自动 JSON 序列化，`Uint8Array` 按原始字节，undefined 保持原样）。脚本链在 `script::Payload`（`Text` / `Bytes`）上运行：`payload` 是文本视图（字节按 UTF-8 宽松解码），`payloadBytes` 是字节视图；HEX 格式发布时用 `TextForm::Hex`，文本视图是 HEX。返回的字符串与输入的 `payload` 相同时保留输入原样，只读脚本不会破坏二进制消息。脚本返回字节时，发布直接发送这些字节，不再按发布格式编码。`env` 对象的数据经线程局部变量交给原生函数。
 4. **环境变量**：`{{变量名}}` 只由 `backend/env.rs::replace` 替换：发布（手动、模板、定时都走 `AppState::publish`）先替换 Topic / Payload 再校验、执行脚本；订阅在入库前替换；模板存原文、发送时替换。
 5. **对话框**：通过 `window.open_dialog` / `open_sheet_at` 打开；对话框内容是预先 `cx.new` 的视图实体（builder 可能被多次调用，不要在 builder 里创建实体）。确认按钮用 `DialogAction` 触发 `on_ok`（返回 `false` 可阻止关闭）。
 6. **无障碍 / E2E**：E2E 测试通过 AT-SPI 按无障碍名称（中文文案）定位控件，`e2e/run.sh` 以 `MINI_MQTT_LANG=zh-CN` 固定中文界面。纯图标按钮必须设置 `accessibility_label`，列表行/状态用 `.role(..).aria_label(..)` 暴露文本（`Role::Label` 的名称取自 value，需要文字时用 `Role::Status`）。不要使用 GPUI Kit 的 `NumberInput`（会重复声明焦点，debug 下触发断言），改用 `common::number_field`。
@@ -98,6 +98,8 @@ cargo clippy && cargo fmt       # 提交前检查
 - 环境变量：`env.变量名`、`env.get(name)`（不存在为 undefined）、`env.replace(text)`（替换 `{{变量名}}`）、`env.all()`（`[{ name, value }]`）；同名时方法优先
 
 密文格式为 `iv || ciphertext(+tag)`；GCM IV 12 字节，CBC IV 16 字节（PKCS#7）。
+
+压缩用 `zlib` 对象（命名同 Node.js，参数可为字符串或字节，返回 Uint8Array）：`gzip(data, level?)` / `gunzip`、`deflate` / `inflate`（zlib 格式）、`deflateRaw` / `inflateRaw`、`unzip`（按头部识别 gzip / zlib）。level 取 0~9，默认 6；解压结果上限 64 MB，截断的数据会报错。二进制消息从全局 `payloadBytes` 读取，例如 `crypto.bytesToString(zlib.gunzip(payloadBytes))`。
 
 ## 开发注意事项
 

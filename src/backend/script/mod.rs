@@ -1,19 +1,25 @@
 //! JavaScript pre-processing scripts, executed with the pure-Rust Boa engine.
 //!
-//! Contract (unchanged from the previous version): a script may define
+//! Contract (as in the previous version): a script may define
 //! `process(payload, topic)` (sync or async); its return value replaces the
 //! payload. Objects are JSON-serialized, `undefined`/`null` keep the input.
 //! Without a `process` function the script body itself runs and the payload
 //! is passed through. The server's environment variables are available as
 //! `env.NAME`, `env.get(name)`, `env.replace(text)` and `env.all()`.
+//!
+//! New in this version: `payloadBytes` holds the payload's bytes (binary
+//! messages are not readable from the lossy `payload` string), returning a
+//! `Uint8Array` makes the payload those bytes, and `zlib.*` compresses.
 
 pub mod crypto;
+pub mod zlib;
 
 use super::env::{self, EnvVars};
 use boa_engine::object::ObjectInitializer;
-use boa_engine::object::builtins::{JsPromise, JsUint8Array};
+use boa_engine::object::builtins::{JsArrayBuffer, JsPromise, JsUint8Array};
 use boa_engine::property::Attribute;
 use boa_engine::{Context, JsError, JsNativeError, JsResult, JsString, JsValue, NativeFunction, Source, js_string};
+use std::borrow::Cow;
 use std::cell::RefCell;
 
 /// Guards against runaway scripts (`while (true) {}`) freezing a worker.
@@ -26,10 +32,49 @@ thread_local! {
     static ENV: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
 }
 
+/// A payload going through scripts: text, or bytes (a received message, or
+/// what a script returned as a `Uint8Array`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Payload {
+    Text(String),
+    Bytes(Vec<u8>),
+}
+
+/// How a payload's text stands for its bytes: UTF-8, or HEX for a message
+/// published in HEX format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextForm {
+    Utf8,
+    Hex,
+}
+
+impl Payload {
+    /// The `payload` string of a script.
+    fn text(&self, form: TextForm) -> Cow<'_, str> {
+        match (self, form) {
+            (Payload::Text(text), _) => Cow::Borrowed(text),
+            (Payload::Bytes(bytes), TextForm::Utf8) => String::from_utf8_lossy(bytes),
+            (Payload::Bytes(bytes), TextForm::Hex) => Cow::Owned(crypto::hex_encode(bytes)),
+        }
+    }
+
+    /// The `payloadBytes` of a script. HEX text that an earlier script broke
+    /// counts as its UTF-8 bytes.
+    fn bytes(&self, form: TextForm) -> Cow<'_, [u8]> {
+        match (self, form) {
+            (Payload::Bytes(bytes), _) => Cow::Borrowed(bytes),
+            (Payload::Text(text), TextForm::Utf8) => Cow::Borrowed(text.as_bytes()),
+            (Payload::Text(text), TextForm::Hex) => crypto::hex_decode(text)
+                .map(Cow::Owned)
+                .unwrap_or(Cow::Borrowed(text.as_bytes())),
+        }
+    }
+}
+
 /// Result of a single script run, including `console.*` output.
 #[derive(Debug, Clone)]
 pub struct ScriptOutput {
-    pub result: Result<String, String>,
+    pub result: Result<Payload, String>,
     pub console: Vec<String>,
 }
 
@@ -53,13 +98,14 @@ impl std::fmt::Display for ScriptChainError {
 /// Run `(name, code)` scripts in order, feeding each output into the next.
 pub fn run_chain(
     scripts: &[(String, String)],
-    payload: &str,
+    payload: Payload,
+    form: TextForm,
     topic: &str,
     env: &EnvVars,
-) -> Result<String, ScriptChainError> {
-    let mut current = payload.to_string();
+) -> Result<Payload, ScriptChainError> {
+    let mut current = payload;
     for (name, code) in scripts {
-        current = run_script(code, &current, topic, env)
+        current = run_script(code, &current, form, topic, env)
             .result
             .map_err(|message| ScriptChainError {
                 script_name: name.clone(),
@@ -85,20 +131,21 @@ fn wrap(code: &str) -> String {
     )
 }
 
-pub fn run_script(code: &str, payload: &str, topic: &str, env: &EnvVars) -> ScriptOutput {
+pub fn run_script(code: &str, payload: &Payload, form: TextForm, topic: &str, env: &EnvVars) -> ScriptOutput {
     CONSOLE.with(|c| c.borrow_mut().clear());
     ENV.with(|e| *e.borrow_mut() = env.to_vec());
-    let result = execute(code, payload, topic, env);
+    let result = execute(code, payload, form, topic, env);
     ENV.with(|e| e.borrow_mut().clear());
     let console = CONSOLE.with(|c| std::mem::take(&mut *c.borrow_mut()));
     ScriptOutput { result, console }
 }
 
-fn execute(code: &str, payload: &str, topic: &str, env: &EnvVars) -> Result<String, String> {
+fn execute(code: &str, payload: &Payload, form: TextForm, topic: &str, env: &EnvVars) -> Result<Payload, String> {
     let mut ctx = Context::default();
     ctx.runtime_limits_mut().set_loop_iteration_limit(LOOP_ITERATION_LIMIT);
     ctx.runtime_limits_mut().set_recursion_limit(RECURSION_LIMIT);
-    install_globals(&mut ctx, payload, topic, env).map_err(|e| e.to_string())?;
+    let text = payload.text(form);
+    install_globals(&mut ctx, &text, &payload.bytes(form), topic, env).map_err(|e| e.to_string())?;
 
     let value = ctx
         .eval(Source::from_bytes(wrap(code).as_bytes()))
@@ -110,7 +157,7 @@ fn execute(code: &str, payload: &str, topic: &str, env: &EnvVars) -> Result<Stri
         .and_then(|obj| JsPromise::from_object(obj).ok())
         .ok_or_else(|| tr!("script.no_promise").to_string())?;
     match promise.state() {
-        boa_engine::builtins::promise::PromiseState::Fulfilled(v) => value_to_payload(&v, payload, &mut ctx),
+        boa_engine::builtins::promise::PromiseState::Fulfilled(v) => value_to_payload(&v, payload, &text, &mut ctx),
         boa_engine::builtins::promise::PromiseState::Rejected(reason) => Err(reason
             .to_string(&mut ctx)
             .map(|s| s.to_std_string_escaped())
@@ -134,30 +181,36 @@ fn describe_error(err: JsError, ctx: &mut Context) -> String {
         .unwrap_or_else(|_| err.to_string())
 }
 
-fn value_to_payload(value: &JsValue, original: &str, ctx: &mut Context) -> Result<String, String> {
+/// Returning the `payload` string unchanged keeps the input as it was, so a
+/// script that only reads a binary message does not mangle its bytes.
+fn value_to_payload(value: &JsValue, input: &Payload, input_text: &str, ctx: &mut Context) -> Result<Payload, String> {
     if value.is_null_or_undefined() {
-        return Ok(original.to_string());
+        return Ok(input.clone());
     }
-    if let Some(s) = value.as_string() {
-        return Ok(s.to_std_string_escaped());
-    }
-    if value.is_object() {
-        if let Some(obj) = value.as_object()
-            && let Ok(arr) = JsUint8Array::from_object(obj)
-        {
-            let bytes: Vec<u8> = arr.iter(ctx).collect();
-            return Ok(String::from_utf8_lossy(&bytes).into_owned());
+    let text = if let Some(s) = value.as_string() {
+        s.to_std_string_escaped()
+    } else if let Some(obj) = value.as_object() {
+        if let Ok(arr) = JsUint8Array::from_object(obj) {
+            return uint8_bytes(&arr, ctx)
+                .map(Payload::Bytes)
+                .map_err(|e| describe_error(e, ctx));
         }
-        return match value.to_json(ctx) {
-            Ok(Some(json)) => Ok(json.to_string()),
-            Ok(None) => Ok(original.to_string()),
-            Err(e) => Err(tr!("script.not_serializable", error = describe_error(e, ctx)).to_string()),
-        };
-    }
-    value
-        .to_string(ctx)
-        .map(|s| s.to_std_string_escaped())
-        .map_err(|e| describe_error(e, ctx))
+        match value.to_json(ctx) {
+            Ok(Some(json)) => json.to_string(),
+            Ok(None) => return Ok(input.clone()),
+            Err(e) => return Err(tr!("script.not_serializable", error = describe_error(e, ctx)).to_string()),
+        }
+    } else {
+        value
+            .to_string(ctx)
+            .map(|s| s.to_std_string_escaped())
+            .map_err(|e| describe_error(e, ctx))?
+    };
+    Ok(if text == input_text {
+        input.clone()
+    } else {
+        Payload::Text(text)
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +249,7 @@ fn arg_bytes(args: &[JsValue], i: usize, ctx: &mut Context) -> JsResult<Vec<u8>>
     }
     if let Some(obj) = value.as_object() {
         if let Ok(arr) = JsUint8Array::from_object(obj.clone()) {
-            return Ok(arr.iter(ctx).collect());
+            return uint8_bytes(&arr, ctx);
         }
         let len = obj.get(js_string!("length"), ctx)?.to_length(ctx)?;
         let mut bytes = Vec::with_capacity(len as usize);
@@ -210,6 +263,22 @@ fn arg_bytes(args: &[JsValue], i: usize, ctx: &mut Context) -> JsResult<Vec<u8>>
         return Ok(Vec::new());
     }
     Ok(value.to_string(ctx)?.to_std_string_escaped().into_bytes())
+}
+
+/// Copied from the backing buffer in one go: `JsUint8Array::iter` reads
+/// element by element through property lookups, slow for large payloads.
+fn uint8_bytes(arr: &JsUint8Array, ctx: &mut Context) -> JsResult<Vec<u8>> {
+    let (offset, len) = (arr.byte_offset(ctx)?, arr.byte_length(ctx)?);
+    let buffer = arr.buffer(ctx)?;
+    let buffer = buffer
+        .as_object()
+        .and_then(|o| JsArrayBuffer::from_object(o.clone()).ok());
+    let bytes = buffer
+        .as_ref()
+        .and_then(|b| b.data())
+        .and_then(|data| data.get(offset..offset + len).map(<[u8]>::to_vec));
+    // A SharedArrayBuffer is not a JsArrayBuffer: take the slow path.
+    Ok(bytes.unwrap_or_else(|| arr.iter(ctx).collect()))
 }
 
 fn bytes_value(bytes: Vec<u8>, ctx: &mut Context) -> JsResult<JsValue> {
@@ -384,6 +453,57 @@ fn aes_cbc_decrypt_hex(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<
 }
 
 // ---------------------------------------------------------------------------
+// zlib.* functions
+
+/// Optional compression level, 0 to 9 (default 6, as in Node.js).
+fn arg_level(args: &[JsValue], i: usize, ctx: &mut Context) -> JsResult<u32> {
+    match args.get(i) {
+        Some(v) if !v.is_null_or_undefined() => {
+            let n = v.to_number(ctx)?;
+            if n.fract() != 0.0 || !(0.0..=9.0).contains(&n) {
+                return Err(err(tr!("zlib.invalid_level")));
+            }
+            Ok(n as u32)
+        }
+        _ => Ok(6),
+    }
+}
+
+fn compress(args: &[JsValue], ctx: &mut Context, format: zlib::Format) -> JsResult<JsValue> {
+    let data = arg_bytes(args, 0, ctx)?;
+    let level = arg_level(args, 1, ctx)?;
+    bytes_value(to_js(zlib::compress(&data, format, level))?, ctx)
+}
+
+fn decompress(args: &[JsValue], ctx: &mut Context, format: Option<zlib::Format>) -> JsResult<JsValue> {
+    let data = arg_bytes(args, 0, ctx)?;
+    let format = format.unwrap_or_else(|| zlib::Format::detect(&data));
+    bytes_value(to_js(zlib::decompress(&data, format))?, ctx)
+}
+
+fn gzip(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<JsValue> {
+    compress(a, c, zlib::Format::Gzip)
+}
+fn gunzip(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<JsValue> {
+    decompress(a, c, Some(zlib::Format::Gzip))
+}
+fn deflate(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<JsValue> {
+    compress(a, c, zlib::Format::Zlib)
+}
+fn inflate(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<JsValue> {
+    decompress(a, c, Some(zlib::Format::Zlib))
+}
+fn deflate_raw(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<JsValue> {
+    compress(a, c, zlib::Format::Raw)
+}
+fn inflate_raw(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<JsValue> {
+    decompress(a, c, Some(zlib::Format::Raw))
+}
+fn unzip(_: &JsValue, a: &[JsValue], c: &mut Context) -> JsResult<JsValue> {
+    decompress(a, c, None)
+}
+
+// ---------------------------------------------------------------------------
 // atob / btoa / console
 
 fn btoa(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
@@ -503,12 +623,29 @@ pub const CRYPTO_FUNCTIONS: &[(&str, usize, NativeFn)] = &[
     ("crc32", 1, crc32),
 ];
 
-fn install_globals(ctx: &mut Context, payload: &str, topic: &str, env: &EnvVars) -> JsResult<()> {
+/// Names and arities of the `zlib` object (the names of Node.js' `zlib`).
+const ZLIB_FUNCTIONS: &[(&str, usize, NativeFn)] = &[
+    ("gzip", 2, gzip),
+    ("gunzip", 1, gunzip),
+    ("deflate", 2, deflate),
+    ("inflate", 1, inflate),
+    ("deflateRaw", 2, deflate_raw),
+    ("inflateRaw", 1, inflate_raw),
+    ("unzip", 1, unzip),
+];
+
+fn install_globals(ctx: &mut Context, payload: &str, bytes: &[u8], topic: &str, env: &EnvVars) -> JsResult<()> {
     let mut crypto_obj = ObjectInitializer::new(ctx);
     for (name, len, f) in CRYPTO_FUNCTIONS {
         crypto_obj.function(NativeFunction::from_fn_ptr(*f), JsString::from(*name), *len);
     }
     let crypto_obj = crypto_obj.build();
+
+    let mut zlib_obj = ObjectInitializer::new(ctx);
+    for (name, len, f) in ZLIB_FUNCTIONS {
+        zlib_obj.function(NativeFunction::from_fn_ptr(*f), JsString::from(*name), *len);
+    }
+    let zlib_obj = zlib_obj.build();
 
     let console = ObjectInitializer::new(ctx)
         .function(NativeFunction::from_fn_ptr(console_log), js_string!("log"), 0)
@@ -531,10 +668,13 @@ fn install_globals(ctx: &mut Context, payload: &str, topic: &str, env: &EnvVars)
         .build();
 
     let attr = Attribute::WRITABLE | Attribute::CONFIGURABLE;
+    let payload_bytes = bytes_value(bytes.to_vec(), ctx)?;
     ctx.register_global_property(js_string!("crypto"), crypto_obj, attr)?;
+    ctx.register_global_property(js_string!("zlib"), zlib_obj, attr)?;
     ctx.register_global_property(js_string!("env"), env_obj, attr)?;
     ctx.register_global_property(js_string!("console"), console, attr)?;
     ctx.register_global_property(js_string!("payload"), str_value(payload), attr)?;
+    ctx.register_global_property(js_string!("payloadBytes"), payload_bytes, attr)?;
     ctx.register_global_property(js_string!("topic"), str_value(topic), attr)?;
     ctx.register_global_builtin_callable(js_string!("atob"), 1, NativeFunction::from_fn_ptr(atob))?;
     ctx.register_global_builtin_callable(js_string!("btoa"), 1, NativeFunction::from_fn_ptr(btoa))?;
@@ -546,7 +686,16 @@ mod tests {
     use super::*;
 
     fn run(code: &str, payload: &str) -> Result<String, String> {
-        run_script(code, payload, "t/1", &[]).result
+        run_script(code, &Payload::Text(payload.into()), TextForm::Utf8, "t/1", &[])
+            .result
+            .map(text)
+    }
+
+    fn text(payload: Payload) -> String {
+        match payload {
+            Payload::Text(text) => text,
+            Payload::Bytes(bytes) => panic!("expected text, got bytes {bytes:?}"),
+        }
     }
 
     #[test]
@@ -620,20 +769,125 @@ mod tests {
     fn console_is_captured_and_chain_runs_in_order() {
         let out = run_script(
             "console.log('a', {b: 1}); function process(p){ return p; }",
-            "x",
+            &Payload::Text("x".into()),
+            TextForm::Utf8,
             "",
             &[],
         );
         assert_eq!(out.console, vec![r#"a {"b":1}"#.to_string()]);
 
+        let x = || Payload::Text("x".into());
         let chain = vec![
             ("one".to_string(), "function process(p){ return p + '1'; }".to_string()),
             ("two".to_string(), "function process(p){ return p + '2'; }".to_string()),
         ];
-        assert_eq!(run_chain(&chain, "x", "", &[]).unwrap(), "x12");
+        assert_eq!(
+            run_chain(&chain, x(), TextForm::Utf8, "", &[]).unwrap(),
+            Payload::Text("x12".into())
+        );
         let bad = vec![("bad".to_string(), "function process(){ throw 'nope'; }".to_string())];
-        let e = run_chain(&bad, "x", "", &[]).unwrap_err();
+        let e = run_chain(&bad, x(), TextForm::Utf8, "", &[]).unwrap_err();
         assert_eq!(e.script_name, "bad");
+    }
+
+    const GUNZIP: &str = "function process(){ return crypto.bytesToString(zlib.gunzip(payloadBytes)); }";
+
+    #[test]
+    fn binary_payloads_reach_scripts_as_bytes() {
+        let json = r#"{"temp":21.5,"msg":"你好"}"#;
+        let gz = zlib::compress(json.as_bytes(), zlib::Format::Gzip, 6).unwrap();
+        let received = Payload::Bytes(gz.clone());
+        let run_bytes = |code: &str, payload: &Payload| run_script(code, payload, TextForm::Utf8, "t/1", &[]).result;
+
+        // The case of issue #1: a gzip-compressed message, decoded on receipt.
+        assert_eq!(run_bytes(GUNZIP, &received), Ok(Payload::Text(json.into())));
+        // Reading the (lossy) payload string without changing it keeps the bytes.
+        assert_eq!(
+            run_bytes("function process(p){ return p; }", &received),
+            Ok(received.clone())
+        );
+        assert_eq!(
+            run_bytes("console.log(payload.length);", &received),
+            Ok(received.clone())
+        );
+        let chain = vec![
+            ("log".to_string(), "function process(p){ return p; }".to_string()),
+            ("gunzip".to_string(), GUNZIP.to_string()),
+        ];
+        assert_eq!(
+            run_chain(&chain, received.clone(), TextForm::Utf8, "", &[]).unwrap(),
+            Payload::Text(json.into())
+        );
+
+        // A returned Uint8Array is the payload's new bytes, views included.
+        let bytes = Payload::Bytes(vec![1, 2, 3, 4]);
+        assert_eq!(
+            run_bytes("function process(){ return payloadBytes.subarray(1, 3); }", &bytes),
+            Ok(Payload::Bytes(vec![2, 3]))
+        );
+        assert_eq!(
+            run_bytes(
+                "function process(){ return crypto.bytesToHex(payloadBytes.subarray(1)); }",
+                &bytes
+            ),
+            Ok(Payload::Text("020304".into()))
+        );
+        let packed = run_bytes(
+            "function process(p){ return zlib.gzip(p); }",
+            &Payload::Text(json.into()),
+        );
+        let Ok(Payload::Bytes(packed)) = packed else {
+            panic!("{packed:?}")
+        };
+        assert_eq!(zlib::decompress(&packed, zlib::Format::Gzip).unwrap(), json.as_bytes());
+
+        // Text payloads have their UTF-8 bytes.
+        assert_eq!(
+            run("function process(){ return payloadBytes.length; }", "你好"),
+            Ok("6".into())
+        );
+    }
+
+    #[test]
+    fn hex_payloads_are_bytes_in_hex_form() {
+        let gz = zlib::compress(b"hi", zlib::Format::Gzip, 6).unwrap();
+        let typed = Payload::Text(gz.iter().map(|b| format!("{b:02X} ")).collect());
+        let out = run_script(GUNZIP, &typed, TextForm::Hex, "", &[]).result;
+        assert_eq!(out, Ok(Payload::Text("hi".into())));
+        // Bytes left by an earlier script read as HEX in the next one.
+        let out = run_script(
+            "function process(p){ return p.toUpperCase(); }",
+            &Payload::Bytes(vec![0xab, 0x01]),
+            TextForm::Hex,
+            "",
+            &[],
+        );
+        assert_eq!(out.result, Ok(Payload::Text("AB01".into())));
+    }
+
+    #[test]
+    fn zlib_api_works_from_js() {
+        let code = r#"
+            function process(p) {
+                const pairs = [[zlib.gzip, zlib.gunzip], [zlib.deflate, zlib.inflate], [zlib.deflateRaw, zlib.inflateRaw]];
+                const out = [];
+                for (const [pack, unpack] of pairs) {
+                    out.push(crypto.bytesToString(unpack(pack(p))));
+                    out.push(crypto.bytesToString(unpack(pack(crypto.stringToBytes(p), 9))));
+                }
+                out.push(crypto.bytesToString(zlib.unzip(zlib.gzip(p))));
+                out.push(crypto.bytesToString(zlib.unzip(zlib.deflate(p, 0))));
+                return out.join('|');
+            }"#;
+        assert_eq!(run(code, "压缩 mqtt").unwrap(), ["压缩 mqtt"; 8].join("|"));
+        assert!(run("function process(){ return zlib.gunzip(payloadBytes); }", "plain").is_err());
+        assert!(run("function process(){ return zlib.inflate(zlib.gzip('x')); }", "").is_err());
+        for level in ["10", "-1", "1.5", "'x'"] {
+            assert!(
+                run(&format!("function process(p){{ return zlib.gzip(p, {level}); }}"), "x").is_err(),
+                "level {level}"
+            );
+        }
     }
 
     #[test]
@@ -643,7 +897,13 @@ mod tests {
             ("KEY".to_string(), "k".to_string()),
             ("get".to_string(), "shadowed".to_string()),
         ];
-        let run_env = |code: &str, payload: &str| run_script(code, payload, "t/1", &env).result.unwrap();
+        let run_env = |code: &str, payload: &str| {
+            text(
+                run_script(code, &Payload::Text(payload.into()), TextForm::Utf8, "t/1", &env)
+                    .result
+                    .unwrap(),
+            )
+        };
         assert_eq!(
             run_env("function process(p){ return env.DEVICE_ID + ':' + p; }", "x"),
             "dev-1:x"

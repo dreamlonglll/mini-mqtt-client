@@ -459,18 +459,29 @@ impl AppState {
                 error: None,
             };
         };
-        let text = payload::bytes_to_text(&incoming.payload);
-        match script::run_chain(&scripts.chain, &text, &incoming.topic, &scripts.env) {
-            // Unchanged output: keep the original bytes, so binary payloads
-            // are not mangled by the lossy UTF-8 round trip.
-            Ok(processed) if processed == text => ProcessedMessage {
+        let input = script::Payload::Bytes(incoming.payload.clone());
+        match script::run_chain(
+            &scripts.chain,
+            input,
+            script::TextForm::Utf8,
+            &incoming.topic,
+            &scripts.env,
+        ) {
+            // Unchanged output (scripts keep the input when they return the
+            // payload as it was): keep the original bytes.
+            Ok(script::Payload::Bytes(bytes)) if bytes == incoming.payload => ProcessedMessage {
                 incoming,
                 payload: None,
                 error: None,
             },
-            Ok(processed) => ProcessedMessage {
+            Ok(script::Payload::Bytes(bytes)) => ProcessedMessage {
                 incoming,
-                payload: Some(processed.into_bytes()),
+                payload: Some(bytes),
+                error: None,
+            },
+            Ok(script::Payload::Text(text)) => ProcessedMessage {
+                incoming,
+                payload: Some(text.into_bytes()),
                 error: None,
             },
             Err(err) => ProcessedMessage {
@@ -965,14 +976,19 @@ impl AppState {
         let scripts = self.script_chain(server_id, ScriptType::BeforePublish);
         if scripts.is_empty() {
             // No scripts: publish right away, without an executor round trip.
-            let payload = draft.payload.clone();
+            let payload = script::Payload::Text(draft.payload.clone());
             return Task::ready(self.finish_publish(server_id, draft, raw_payload, Ok(payload), cx));
         }
+        // Scripts see a HEX payload as typed and its bytes as `payloadBytes`.
+        let form = match draft.format {
+            PayloadFormat::Hex => script::TextForm::Hex,
+            _ => script::TextForm::Utf8,
+        };
         cx.spawn(async move |this, cx| {
-            let (payload, topic) = (draft.payload.clone(), draft.topic.clone());
+            let (payload, topic) = (script::Payload::Text(draft.payload.clone()), draft.topic.clone());
             let processed = cx
                 .background_executor()
-                .spawn(async move { script::run_chain(&scripts, &payload, &topic, &env) })
+                .spawn(async move { script::run_chain(&scripts, payload, form, &topic, &env) })
                 .await
                 .map_err(|e| e.to_string());
             this.update(cx, |state, cx| {
@@ -989,7 +1005,7 @@ impl AppState {
         server_id: i64,
         draft: PublishDraft,
         raw_payload: String,
-        processed: Result<String, String>,
+        processed: Result<script::Payload, String>,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         let processed = match processed {
@@ -1025,8 +1041,19 @@ impl AppState {
                 return Err(err);
             }
         };
-        let bytes = payload::encode_payload(&processed, draft.format)
-            .map_err(|e| tr!("publish.encode_failed", format = draft.format.label(), error = e).to_string())?;
+        let (bytes, format) = match processed {
+            script::Payload::Text(text) => {
+                let bytes = payload::encode_payload(&text, draft.format)
+                    .map_err(|e| tr!("publish.encode_failed", format = draft.format.label(), error = e).to_string())?;
+                let format = published_format(draft.format, &bytes);
+                (bytes, format)
+            }
+            // Bytes a script returned are sent as they are, whatever the format.
+            script::Payload::Bytes(bytes) => {
+                let format = payload::detect_format(&bytes);
+                (bytes, format)
+            }
+        };
         if let Err(err) = self
             .mqtt
             .publish(server_id, &draft.topic, bytes.clone(), draft.qos, draft.retain)
@@ -1035,7 +1062,6 @@ impl AppState {
                 .write(LogKind::Mqtt, &tr!("publish.failed", error = err), Some(&draft.topic));
             return Err(friendly_mqtt_error(&err));
         }
-        let format = published_format(draft.format, &bytes);
         self.push_message(
             server_id,
             Direction::Publish,
@@ -1372,7 +1398,11 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: that would bring GPUI's `test` attribute into scope.
-    use super::{DetectedFormat, Direction, Message, PayloadFormat, published_format};
+    use super::{
+        AppState, DetectedFormat, Direction, HashMap, IncomingMessage, Message, PayloadFormat, ReceiveScripts,
+        published_format,
+    };
+    use crate::backend::script::zlib;
 
     fn message(payload: &[u8], format: Option<DetectedFormat>) -> Message {
         Message::new(
@@ -1411,5 +1441,39 @@ mod tests {
         let m = message(b"Hello", Some(DetectedFormat::Binary));
         assert_eq!(m.format, DetectedFormat::Binary);
         assert!(m.search_text.contains("48 65 6c 6c 6f"));
+    }
+
+    #[test]
+    fn receive_scripts_see_the_raw_bytes() {
+        let run = |code: &str, payload: Vec<u8>| {
+            let scripts = ReceiveScripts {
+                chain: vec![("s".to_string(), code.to_string())],
+                env: Vec::new(),
+            };
+            let incoming = IncomingMessage {
+                server_id: 1,
+                topic: "dev/1".into(),
+                payload,
+                qos: 0,
+                retain: false,
+                timestamp: chrono::Local::now(),
+            };
+            let out = AppState::run_receive_scripts(&HashMap::from([(1, scripts)]), incoming);
+            assert_eq!(out.error, None);
+            out.payload
+        };
+        let json = br#"{"temp":21.5}"#;
+        let gz = zlib::compress(json, zlib::Format::Gzip, 6).unwrap();
+        let gunzip = "function process(){ return crypto.bytesToString(zlib.gunzip(payloadBytes)); }";
+        assert_eq!(run(gunzip, gz.clone()), Some(json.to_vec()));
+        // A script that only looks at a binary message leaves it untouched.
+        assert_eq!(
+            run("function process(p){ console.log(p); return p; }", gz.clone()),
+            None
+        );
+        assert_eq!(
+            run("function process(){ return payloadBytes.subarray(0, 2); }", gz),
+            Some(vec![0x1f, 0x8b])
+        );
     }
 }

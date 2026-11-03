@@ -675,6 +675,9 @@ script:
   before_publish_short:
     zh-CN: "发送前"
     en: "Before publish"
+  binary_result:
+    zh-CN: "二进制 %{len} 字节: %{hex}"
+    en: "Binary, %{len} bytes: %{hex}"
   btoa_latin1:
     zh-CN: "btoa: 字符串包含 Latin1 范围之外的字符"
     en: "btoa: the string contains characters outside of Latin1"
@@ -760,12 +763,18 @@ script:
     cbc_encrypt_short:
       zh-CN: "AES-CBC 加密"
       en: "AES-CBC encryption"
+    compress:
+      zh-CN: "压缩（data 为字符串或字节，返回 Uint8Array）"
+      en: "Compression (data is a string or bytes, returns a Uint8Array)"
     console:
       zh-CN: "输出日志（测试运行时可见）"
       en: "Log output (shown by a test run)"
     crc32:
       zh-CN: "CRC32，返回 8 位 hex"
       en: "CRC32 as 8 hex digits"
+    deflate_raw:
+      zh-CN: "raw deflate 压缩 / 解压（无头部与校验）"
+      en: "Raw deflate compress / decompress (no header or checksum)"
     encoding:
       zh-CN: "编码转换"
       en: "Encoding"
@@ -805,6 +814,9 @@ script:
     globals:
       zh-CN: "全局变量：原始消息内容（字符串）与主题"
       en: "Globals: the original payload (string) and the topic"
+    gzip:
+      zh-CN: "gzip 压缩 / 解压；level 0~9，默认 6"
+      en: "gzip compress / decompress; level 0-9, 6 by default"
     hash:
       zh-CN: "哈希"
       en: "Hashes"
@@ -820,9 +832,12 @@ script:
     other:
       zh-CN: "其他"
       en: "Other"
+    payload_bytes:
+      zh-CN: "全局变量：消息的原始字节（Uint8Array），二进制消息从这里读取"
+      en: "Global: the payload's raw bytes (Uint8Array); read binary messages from here"
     process:
-      zh-CN: "返回值替换 payload；可为 async。返回对象时自动 JSON.stringify，返回 undefined 保持原样"
-      en: "The return value replaces the payload; may be async. Objects are JSON.stringify'd, undefined keeps the payload"
+      zh-CN: "返回值替换 payload；可为 async。返回对象时自动 JSON.stringify，返回 Uint8Array 时按原始字节发送 / 保存，返回 undefined 保持原样"
+      en: "The return value replaces the payload; may be async. Objects are JSON.stringify'd, a Uint8Array is sent / kept as raw bytes, undefined keeps the payload"
     random_bytes:
       zh-CN: "随机字节 Uint8Array"
       en: "Random bytes as Uint8Array"
@@ -835,9 +850,15 @@ script:
     string_to_bytes:
       zh-CN: "字符串 → Uint8Array (UTF-8)"
       en: "String → Uint8Array (UTF-8)"
+    unzip:
+      zh-CN: "解压 gzip 或 zlib（按头部自动识别）"
+      en: "Decompress gzip or zlib (told apart by the header)"
     xor:
       zh-CN: "XOR 加解密（对称）"
       en: "XOR encryption (symmetric)"
+    zlib_deflate:
+      zh-CN: "zlib 格式压缩 / 解压"
+      en: "zlib format compress / decompress"
   hint_after:
     zh-CN: "定义 process(payload, topic) 函数，返回处理后的 payload（接收后执行）；env.变量名 读取环境变量"
     en: "Define process(payload, topic) and return the processed payload (runs after receiving); env.NAME reads a variable"
@@ -1554,3 +1575,16 @@ update:
   up_to_date:
     zh-CN: "已是最新版本"
     en: "You are up to date"
+zlib:
+  compress_failed:
+    zh-CN: "%{format} 压缩失败: %{error}"
+    en: "%{format} compression failed: %{error}"
+  decompress_failed:
+    zh-CN: "%{format} 解压失败: %{error}"
+    en: "%{format} decompression failed: %{error}"
+  invalid_level:
+    zh-CN: "压缩级别必须是 0~9 的整数"
+    en: "The compression level must be an integer from 0 to 9"
+  too_large:
+    zh-CN: "解压后的数据超过 %{limit}"
+    en: "The decompressed data exceeds %{limit}"
