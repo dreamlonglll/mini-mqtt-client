@@ -14,22 +14,28 @@
 - 多服务器配置管理（新增 / 编辑 / 复制 / 删除）
 - 支持 **MQTT 3.1.1 和 5.0** 协议
 - 支持 `mqtt://`、`mqtts://`（TLS/SSL）、`ws://`、`wss://` 四种传输方式
-- TLS 支持自定义 CA 证书与客户端双向认证（PEM），不填 CA 时使用系统根证书
+- TLS 支持自定义 CA 证书（与系统根证书一并信任）与客户端双向认证（PEM），支持带密码的加密 PKCS#8 私钥
 - 多个服务器可同时保持连接，实时连接状态显示
-- 连接成功后自动订阅已启用的 Topic
+- 连接成功后自动订阅已启用的 Topic；连接意外断开后自动退避重连并恢复订阅
 - Keep Alive / Clean Session 配置，Client ID 可自动生成
 
 ![服务器配置](docs/screenshots/server-config.png)
 
 ### 消息发布与订阅
-- 多 Topic 订阅，支持通配符 `+` / `#`（带格式校验），可单独启用 / 停用
+- 多 Topic 订阅，支持通配符 `+` / `#`（带格式校验），可单独启用 / 停用 / 编辑
+- 订阅可设置颜色标记，消息列表中对应订阅收到的消息按颜色高亮
 - QoS 0/1/2、Retain 消息
 - 发布格式 JSON / TEXT / HEX，JSON 一键格式化
-- 消息列表：实时滚动、虚拟列表（每个服务器保留最近 1000 条）、按方向过滤、关键词搜索
-- 自动识别 JSON / TEXT / BIN，消息详情支持文本、JSON 美化、HEX Dump 三种视图
-- 一键复制内容或复制到发布面板
+- 消息列表：实时滚动、虚拟列表（每个服务器默认保留最近 1000 条，可在设置中调整为 100–10000）、按方向过滤、关键词搜索（二进制消息可按 HEX 字节搜索）
+- 自动识别 JSON / TEXT / BIN（发布的消息按发送时选择的格式展示），消息详情支持文本（用 ↵ 标出换行）、JSON 美化、HEX Dump 三种视图
+- 一键复制内容（二进制消息复制为 HEX）或复制到发布面板
 
 ![消息详情](docs/screenshots/messages.png)
+
+### 环境变量
+- 按服务器管理变量（名称、值、描述），从底部栏「环境变量」打开管理抽屉
+- 在订阅 Topic、发布的 Topic / Payload、命令模板和定时发布中用 `{{变量名}}` 引用
+- 脚本中通过 `env.变量名`、`env.get(name)`、`env.replace(text)`、`env.all()` 访问
 
 ### 命令模板
 - 保存常用命令为模板，支持分类、搜索
@@ -49,13 +55,15 @@
 - 内置 JavaScript 引擎（[Boa](https://boajs.dev/)，纯 Rust 实现），支持 `async/await`
 - 发送前处理（如加密、封包）与接收后处理（如解密、解析）
 - 内置加密工具库：AES-GCM / AES-CBC、SHA-1 / SHA-256 / MD5、HMAC-SHA256、CRC32、Base64 / Hex 等
-- 代码编辑器带语法高亮，可直接 **测试运行** 并查看 `console.log` 输出
+- 代码编辑器带语法高亮，可直接 **测试运行** 并查看 `console.log` 输出；可从 `.js` / `.txt` 文件导入脚本
 - 死循环保护：超出运行限制的脚本会被中止而不会卡住界面
 
 ![预处理脚本](docs/screenshots/scripts.png)
 
 ### 其他
-- 浅色 / 深色 / 跟随系统主题
+- 简体中文 / English 界面，默认跟随系统语言，可在设置中随时切换
+- 启动几秒后自动检查 GitHub 上的新版本（设置中也可手动检查），侧边栏显示版本号并标出可用更新
+- 浅色 / 深色 / 跟随系统主题；服务器与订阅列表可折叠
 - 自定义数据存储位置（可迁移现有数据）
 - 错误日志记录与查看（含崩溃信息）
 - 消息时间精确到毫秒
@@ -123,7 +131,9 @@ cargo test -- --ignored
 | macOS | `~/Library/Application Support/com.minimqtt.client` |
 | Linux | `~/.local/share/com.minimqtt.client` |
 
-目录下包含 `data.yaml`（数据）、`config.yaml`（自定义数据路径、主题）和 `logs/`（错误日志）。也可通过环境变量 `MINI_MQTT_DATA_DIR` 指定其他目录。
+目录下包含 `data.yaml`（数据）、`config.yaml`（自定义数据路径、主题、界面语言、消息列表上限）和 `logs/`（错误日志）。旧版写入 `data.yaml` 的内容都会保留，包括环境变量、订阅颜色和私钥密码；本版本不认识的字段也会原样写回，保存时不会丢数据。也可通过环境变量 `MINI_MQTT_DATA_DIR` 指定其他目录。
+
+调试与测试用的环境变量：`MINI_MQTT_DATA_DIR`（数据目录）、`MINI_MQTT_LANG=zh-CN|en-US|auto`（启动时的界面语言，优先于设置）、`MINI_MQTT_NO_UPDATE_CHECK=1`（启动时不检查更新）。
 
 与旧版相比的行为变化：
 - 协议版本 / TLS / WebSocket 设置现在真正生效（旧版后端始终以 MQTT 3.1.1 + TCP 连接）
@@ -132,8 +142,13 @@ cargo test -- --ignored
 - `md5` / `crc32` 按 UTF-8 字节计算，结果与常见工具一致
 - 接收后脚本未修改内容时保留原始字节，二进制消息不再被 UTF-8 转换破坏
 - 消息列表为内存中的实时视图，不再把每条发布记录写入 `data.yaml`
-- 消息列表每个服务器最多保留 1000 条且 payload 合计不超过 128 MiB；消息过多来不及处理时丢弃最早的消息并提示
-- 消息搜索匹配 Topic 与内容的前 4 KB；超大消息详情只渲染开头部分，「复制内容」仍复制完整内容
+- 消息列表每个服务器默认最多保留 1000 条（设置中可调为 100–10000）且 payload 合计不超过 128 MiB；消息过多来不及处理时丢弃最早的消息并提示
+- 消息搜索匹配 Topic 与内容的前 4 KB（二进制消息另加前 1 KB 的 HEX）；超大消息详情只渲染开头部分，「复制内容」仍复制完整内容
+- 旧版的主题、界面语言与消息列表上限存在 WebView 的 localStorage 中，新版无法读取：升级后首次按「跟随系统」与 1000 条启动，重新设置后保存在 `config.yaml`
+- 首次连接失败立即报错（旧版会退避重试最多 5 次）；连上之后意外断开仍会自动重连
+- 二进制消息的格式标签仍为「BIN」；JSON 详情为格式化视图，↵ 换行标记只在文本视图中显示
+- 删除订阅立即生效，不再弹确认框
+- 客户端证书与私钥只填了一个时直接报错（旧版会静默忽略）
 
 ## 技术栈
 
@@ -152,11 +167,15 @@ mini-mqtt-client/
 ├── src/
 │   ├── main.rs              # 入口：初始化 GPUI Kit、打开窗口
 │   ├── assets.rs            # 图标资源（Lucide）
+│   ├── i18n.rs              # 界面语言（跟随系统 / 中文 / 英文）
 │   ├── state.rs             # AppState：连接状态、消息流、业务操作
 │   ├── backend/             # 与 UI 无关的逻辑
 │   │   ├── models.rs        # 数据模型（与旧版 data.yaml 兼容）
 │   │   ├── storage.rs       # YAML 存储
 │   │   ├── config.rs        # 数据目录、config.yaml
+│   │   ├── env.rs           # {{变量名}} 环境变量替换
+│   │   ├── update.rs        # 检查更新（HTTPS 请求 GitHub Releases）
+│   │   ├── color.rs         # 订阅颜色标记
 │   │   ├── logger.rs        # 错误日志
 │   │   ├── mqtt.rs          # MQTT 连接管理（v3.1.1/v5、TLS、WS）
 │   │   ├── payload.rs       # 格式识别、HEX、JSON
@@ -164,6 +183,7 @@ mini-mqtt-client/
 │   │   ├── errors.rs        # 友好的错误提示
 │   │   └── script/          # JS 脚本引擎与 crypto API
 │   └── ui/                  # GPUI 视图与对话框
+├── locales/app.yml          # 界面文案（简体中文与英文）
 ├── assets/app-icon/         # 应用图标
 ├── scripts/                 # 打包脚本（Windows 安装器、macOS .app / dmg、Linux AppImage）
 ├── e2e/                     # 端到端测试

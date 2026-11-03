@@ -14,22 +14,28 @@ A lightweight, good-looking MQTT debugging client. It is a native desktop app bu
 - Manage multiple server configurations (add / edit / duplicate / delete)
 - **MQTT 3.1.1 and 5.0**
 - Four transports: `mqtt://`, `mqtts://` (TLS/SSL), `ws://` and `wss://`
-- TLS with a custom CA certificate and mutual (client certificate) authentication in PEM format; the system root certificates are used when no CA is given
+- TLS with a custom CA certificate (trusted in addition to the system root certificates) and mutual (client certificate) authentication in PEM format; encrypted PKCS#8 client keys with a password
 - Keep several servers connected at the same time, with live connection status
-- Enabled topics are subscribed automatically once connected
+- Enabled topics are subscribed automatically once connected; a lost connection is re-established automatically (with back-off) and the subscriptions are restored
 - Keep Alive / Clean Session settings; the Client ID can be generated automatically
 
 ![Server configuration](docs/screenshots/server-config.png)
 
 ### Publishing and subscribing
-- Subscribe to multiple topics with `+` / `#` wildcards (validated), each can be enabled or disabled on its own
+- Subscribe to multiple topics with `+` / `#` wildcards (validated), each can be enabled, disabled or edited on its own
+- Colour marks for subscriptions: received messages of a coloured subscription are highlighted in the list
 - QoS 0/1/2 and retained messages
 - Publish as JSON / TEXT / HEX, with one-click JSON formatting
-- Message list: live scrolling, virtualized list (the latest 1000 messages per server), filter by direction, keyword search
-- JSON / TEXT / BIN is detected automatically; message details offer text, pretty-printed JSON and HEX dump views
-- Copy a message's content, or copy it into the publish panel, in one click
+- Message list: live scrolling, virtualized list (the latest 1000 messages per server by default, adjustable from 100 to 10000), filter by direction, keyword search (binary messages can also be found by their HEX bytes)
+- JSON / TEXT / BIN is detected automatically (published messages keep the format they were sent as); message details offer text (with line breaks marked as ↵), pretty-printed JSON and HEX dump views
+- Copy a message's content (binary messages as HEX), or copy it into the publish panel, in one click
 
 ![Message details](docs/screenshots/messages.png)
+
+### Environment variables
+- Variables per server (name, value, description), managed from the "Environment Variables" drawer in the bottom bar
+- `{{NAME}}` is replaced in subscription topics, published topics / payloads, command templates and scheduled publishing
+- Scripts read them as `env.NAME`, `env.get(name)`, `env.replace(text)` and `env.all()`
 
 ### Command templates
 - Save frequently used commands as templates, with categories and search
@@ -49,13 +55,15 @@ A lightweight, good-looking MQTT debugging client. It is a native desktop app bu
 - Built-in JavaScript engine ([Boa](https://boajs.dev/), pure Rust) with `async/await`
 - Before-publish processing (e.g. encryption, framing) and after-receive processing (e.g. decryption, parsing)
 - Built-in crypto helpers: AES-GCM / AES-CBC, SHA-1 / SHA-256 / MD5, HMAC-SHA256, CRC32, Base64 / Hex and more
-- Code editor with syntax highlighting; **test-run** a script right away and see its `console.log` output
+- Code editor with syntax highlighting; **test-run** a script right away and see its `console.log` output; import a script from a `.js` / `.txt` file
 - Infinite-loop protection: a script that exceeds its run limit is aborted instead of freezing the UI
 
 ![Pre-processing scripts](docs/screenshots/scripts.png)
 
 ### Other
-- Light / dark / follow-system theme
+- English and Simplified Chinese interface: follows the system language by default and can be switched at any time in the settings
+- Checks GitHub for a new release a few seconds after start-up (and on demand in the settings); the sidebar shows the version and marks an available update
+- Light / dark / follow-system theme; collapsible server and subscription lists
 - Custom data location (existing data can be migrated)
 - Error log recording and viewer (including crash information)
 - Message timestamps with millisecond precision
@@ -123,7 +131,9 @@ The new version uses the same data directory and file format as the previous (Ta
 | macOS | `~/Library/Application Support/com.minimqtt.client` |
 | Linux | `~/.local/share/com.minimqtt.client` |
 
-The directory contains `data.yaml` (data), `config.yaml` (custom data path, theme) and `logs/` (error logs). You can also point the app at another directory with the `MINI_MQTT_DATA_DIR` environment variable.
+The directory contains `data.yaml` (data), `config.yaml` (custom data path, theme, language, message list limit) and `logs/` (error logs). Everything the previous version stored in `data.yaml` is kept, including environment variables, subscription colours and client key passwords; keys this version does not know are written back unchanged, so saving never drops data. You can also point the app at another directory with the `MINI_MQTT_DATA_DIR` environment variable.
+
+Environment variables for debugging and testing: `MINI_MQTT_DATA_DIR` (data directory), `MINI_MQTT_LANG=zh-CN|en-US|auto` (interface language at start-up, overrides the setting), `MINI_MQTT_NO_UPDATE_CHECK=1` (no update check at start-up).
 
 Behaviour changes compared with the previous version:
 - Protocol version / TLS / WebSocket settings now actually take effect (the old backend always connected with MQTT 3.1.1 over TCP)
@@ -132,8 +142,13 @@ Behaviour changes compared with the previous version:
 - `md5` / `crc32` hash the UTF-8 bytes, so results match common tools
 - When an after-receive script does not change the content, the original bytes are kept and binary messages are no longer corrupted by UTF-8 conversion
 - The message list is an in-memory live view; publish records are no longer written to `data.yaml`
-- The message list keeps at most 1000 messages per server with at most 128 MiB of payload in total; when messages arrive faster than they can be processed, the oldest are dropped and you are notified
-- Message search matches the topic and the first 4 KB of the content; details of very large messages render only the beginning, while "Copy content" still copies everything
+- The message list keeps at most 1000 messages per server by default (100–10000 in the settings) with at most 128 MiB of payload in total; when messages arrive faster than they can be processed, the oldest are dropped and you are notified
+- Message search matches the topic and the first 4 KB of the content (plus the first 1 KB as HEX for binary messages); details of very large messages render only the beginning, while "Copy content" still copies everything
+- Theme, language and message list limit were stored in the old WebView's local storage, which this version cannot read: after upgrading they start at "follow system" / 1000 once and are then kept in `config.yaml`
+- A first connection that fails is reported right away (the old version retried up to 5 times); a connection that drops later is still re-established automatically
+- The message format label for binary data is still "BIN"; the JSON detail view is pretty-printed, so the ↵ line-break marks appear in the text view only
+- Deleting a subscription takes effect immediately, without a confirmation dialog
+- Entering only one of client certificate and client key is reported as an error instead of being ignored
 
 ## Tech stack
 
@@ -152,11 +167,15 @@ mini-mqtt-client/
 ├── src/
 │   ├── main.rs              # Entry point: initialise GPUI Kit, open the window
 │   ├── assets.rs            # Icon assets (Lucide)
+│   ├── i18n.rs              # Interface language (follow system / Chinese / English)
 │   ├── state.rs             # AppState: connection status, message stream, operations
 │   ├── backend/             # UI-independent logic
 │   │   ├── models.rs        # Data models (compatible with the old data.yaml)
 │   │   ├── storage.rs       # YAML storage
 │   │   ├── config.rs        # Data directory, config.yaml
+│   │   ├── env.rs           # {{NAME}} environment variable substitution
+│   │   ├── update.rs        # Update check (GitHub releases over HTTPS)
+│   │   ├── color.rs         # Subscription colour marks
 │   │   ├── logger.rs        # Error log
 │   │   ├── mqtt.rs          # MQTT connection management (v3.1.1/v5, TLS, WS)
 │   │   ├── payload.rs       # Format detection, HEX, JSON
@@ -164,6 +183,7 @@ mini-mqtt-client/
 │   │   ├── errors.rs        # Friendly error messages
 │   │   └── script/          # JS script engine and crypto API
 │   └── ui/                  # GPUI views and dialogs
+├── locales/app.yml          # Interface texts (Simplified Chinese and English)
 ├── assets/app-icon/         # Application icons
 ├── scripts/                 # Packaging scripts (Windows installer, macOS .app / dmg, Linux AppImage)
 ├── e2e/                     # End-to-end tests
