@@ -40,9 +40,13 @@ pub fn hex_encode(bytes: &[u8]) -> String {
     hex::encode(bytes)
 }
 
+/// Whitespace is ignored and every group may carry a `0x` prefix, the same
+/// rules as for HEX payloads (`48 65`, `0x48 0x65`, `4865`).
 pub fn hex_decode(input: &str) -> Result<Vec<u8>, String> {
-    let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
-    let cleaned = cleaned.strip_prefix("0x").unwrap_or(&cleaned);
+    let cleaned: String = input
+        .split_whitespace()
+        .map(|part| part.trim_start_matches("0x").trim_start_matches("0X"))
+        .collect();
     hex::decode(cleaned).map_err(|e| tr!("crypto.invalid_hex", error = e, input = truncate(input)).to_string())
 }
 
@@ -227,6 +231,15 @@ mod tests {
             hex::encode(&out[12..]),
             "0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf"
         );
+    }
+
+    #[test]
+    fn hex_decoding_matches_hex_payload_rules() {
+        assert_eq!(hex_decode("48 65").unwrap(), b"He");
+        assert_eq!(hex_decode("0x48 0X65").unwrap(), b"He");
+        assert_eq!(hex_decode("4865").unwrap(), b"He");
+        assert!(hex_decode("486").is_err());
+        assert!(hex_decode("zz").is_err());
     }
 
     #[test]
