@@ -180,6 +180,53 @@ impl ScriptManager {
         .detach();
     }
 
+    /// Replace the editor's code with a `.js` / `.txt` file, after a warning
+    /// about running code from elsewhere.
+    fn import_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let entity = cx.entity();
+        confirm(
+            window,
+            cx,
+            tr!("script.import_title"),
+            tr!("script.import_warning"),
+            tr!("script.import_confirm"),
+            move |window, cx| {
+                let paths = cx.prompt_for_paths(PathPromptOptions {
+                    files: true,
+                    directories: false,
+                    multiple: false,
+                    prompt: Some(tr!("script.import_prompt")),
+                });
+                let entity = entity.clone();
+                window
+                    .spawn(cx, async move |cx| {
+                        let Ok(Ok(Some(paths))) = paths.await else {
+                            return;
+                        };
+                        let Some(path) = paths.into_iter().next() else {
+                            return;
+                        };
+                        let result = read_script_file(&path);
+                        let _ = entity.update_in(cx, |this, window, cx| match result {
+                            Ok(code) => {
+                                this.code.update(cx, |s, cx| s.set_value(code, window, cx));
+                                this.output = None;
+                                notify(
+                                    window,
+                                    cx,
+                                    ToastKind::Success,
+                                    tr!("script.imported", file = path.display()),
+                                );
+                                cx.notify();
+                            }
+                            Err(err) => notify(window, cx, ToastKind::Error, err),
+                        });
+                    })
+                    .detach();
+            },
+        );
+    }
+
     fn render_list(&self, scripts: &[Script], cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let entity = cx.entity();
@@ -316,7 +363,13 @@ impl Render for ScriptManager {
         let theme = cx.theme().clone();
         let scripts = self.state.read(cx).scripts(self.server_id);
         let entity = cx.entity();
-        let (e_kind, e_delete, e_save, e_test) = (entity.clone(), entity.clone(), entity.clone(), entity.clone());
+        let (e_kind, e_delete, e_save, e_test, e_import) = (
+            entity.clone(),
+            entity.clone(),
+            entity.clone(),
+            entity.clone(),
+            entity.clone(),
+        );
         let editing = self.selected.is_some();
         let hint = match self.kind {
             ScriptType::BeforePublish => tr!("script.hint_before"),
@@ -451,6 +504,16 @@ impl Render for ScriptManager {
                             .border_t_1()
                             .border_color(theme.border)
                             .child(
+                                Button::new("script-import")
+                                    .outline()
+                                    .icon(Lucide::FileInput)
+                                    .label(tr!("script.import"))
+                                    .on_click(move |_, window, cx| {
+                                        e_import.update(cx, |this, cx| this.import_file(window, cx))
+                                    }),
+                            )
+                            .child(div().flex_1())
+                            .child(
                                 Button::new("script-help")
                                     .outline()
                                     .icon(IconName::BookOpen)
@@ -478,6 +541,27 @@ pub fn open(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &m
             .child(manager.clone())
             .footer(DialogFooter::new().child(super::common::close_button(tr!("common.close"), false)))
     });
+}
+
+/// Largest script file accepted by "Import".
+const MAX_IMPORT_BYTES: u64 = 1024 * 1024;
+
+fn read_script_file(path: &std::path::Path) -> Result<String, String> {
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if !matches!(ext.as_str(), "js" | "mjs" | "txt") {
+        return Err(tr!("script.import_wrong_type").into());
+    }
+    let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
+    if size > MAX_IMPORT_BYTES {
+        return Err(tr!("script.import_too_large").into());
+    }
+    let bytes = std::fs::read(path).map_err(|e| tr!("script.import_failed", error = e).to_string())?;
+    let text = String::from_utf8(bytes).map_err(|_| tr!("script.import_not_utf8").to_string())?;
+    // Drop a UTF-8 byte order mark written by some Windows editors.
+    Ok(text.strip_prefix('\u{feff}').map(str::to_string).unwrap_or(text))
 }
 
 /// `(section key, [(signature, description key)])` of the function help;
@@ -616,7 +700,23 @@ fn open_help(window: &mut Window, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: that would bring GPUI's `test` attribute into scope.
-    use super::HELP;
+    use super::{HELP, read_script_file};
+
+    #[test]
+    fn script_files_are_read_as_utf8_text() {
+        let dir = std::env::temp_dir().join(format!("mini-mqtt-test-import-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let js = dir.join("a.JS");
+        std::fs::write(&js, "\u{feff}function process(p) { return p; }").unwrap();
+        assert_eq!(read_script_file(&js).unwrap(), "function process(p) { return p; }");
+        let exe = dir.join("a.exe");
+        std::fs::write(&exe, "x").unwrap();
+        assert!(read_script_file(&exe).is_err());
+        let bin = dir.join("b.txt");
+        std::fs::write(&bin, [0xff, 0xfe, 0x00]).unwrap();
+        assert!(read_script_file(&bin).is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn help_texts_exist_in_both_languages() {
