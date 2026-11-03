@@ -348,10 +348,16 @@ mod tests {
         assert!(parse_response(b"garbage").is_err());
     }
 
-    /// Talks to GitHub. Run with `cargo test -- --ignored latest_release_from_github`.
+    /// Talks to GitHub. Run with
+    /// `MINI_MQTT_TEST_GITHUB=1 cargo test -- --ignored latest_release_from_github`
+    /// (without the variable it does nothing, so CI runs of `--include-ignored`
+    /// do not depend on GitHub's rate limit).
     #[test]
     #[ignore]
     fn latest_release_from_github() {
+        if std::env::var_os("MINI_MQTT_TEST_GITHUB").is_none() {
+            return;
+        }
         let info = check().expect("update check");
         assert!(!info.latest.is_empty());
         println!("latest release: {} (update: {})", info.latest, info.has_update);
