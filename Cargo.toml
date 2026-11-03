@@ -1,6 +1,6 @@
 [package]
 name = "mini-mqtt-client"
-version = "2.0.0-pre"
+version = "2.0.0-pre.2"
 edition = "2024"
 rust-version = "1.92"
 description = "A lightweight MQTT debugging client built with Rust + GPUI Kit"
