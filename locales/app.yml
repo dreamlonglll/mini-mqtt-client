@@ -687,6 +687,12 @@ script:
   code_required:
     zh-CN: "请输入脚本代码"
     en: "Enter the script code"
+  copy_function:
+    zh-CN: "复制 %{code}"
+    en: "Copy %{code}"
+  copy_hint:
+    zh-CN: "点击函数即可复制到剪贴板"
+    en: "Click a function to copy it to the clipboard"
   default_after:
     zh-CN: "在这里处理接收到的消息"
     en: "Process the received message here"

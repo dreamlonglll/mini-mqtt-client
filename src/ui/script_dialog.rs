@@ -11,6 +11,7 @@ use gpui_kit::component::input::{Editor, EditorState, Input, InputState};
 use gpui_kit::component::radio::{Radio, RadioGroup};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{prelude::*, *};
 
@@ -644,6 +645,59 @@ fn help_text(key: &str) -> SharedString {
     tr!(format!("script.help.{key}"))
 }
 
+/// The functions in a help signature and the code each one copies:
+/// `a.f(x) / g(y)` lists two functions of `a`, so `g(y)` copies as `a.g(y)`.
+/// `None` for a list of built-in objects, which is not code.
+fn copy_targets(sig: &str) -> Option<Vec<(&str, String)>> {
+    if sig.ends_with("...") {
+        return None;
+    }
+    let callee = |part: &str| part.split('(').next().unwrap_or(part).to_string();
+    let first = callee(sig.split(" / ").next().unwrap_or(sig));
+    let object = first.rfind('.').map_or("", |dot| &first[..=dot]);
+    Some(
+        sig.split(" / ")
+            .map(|part| {
+                let code = if callee(part).contains('.') {
+                    part.to_string()
+                } else {
+                    format!("{object}{part}")
+                };
+                (part, code)
+            })
+            .collect(),
+    )
+}
+
+/// A help signature whose functions copy their code when clicked.
+fn help_signature(sig: &'static str, muted: Hsla) -> AnyElement {
+    let Some(parts) = copy_targets(sig) else {
+        return div().child(sig).into_any_element();
+    };
+    let mut row = h_flex().flex_wrap();
+    for (ix, (text, code)) in parts.into_iter().enumerate() {
+        if ix > 0 {
+            row = row.child(div().px_1().text_color(muted).child("/"));
+        }
+        let label = tr!("script.copy_function", code = code);
+        row = row.child(
+            div()
+                .id(code.clone())
+                .role(Role::Button)
+                .aria_label(label.clone())
+                .cursor_pointer()
+                .hover(|st| st.underline())
+                .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
+                .on_click(move |_, window, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(code.clone()));
+                    notify(window, cx, ToastKind::Success, tr!("common.copied"));
+                })
+                .child(text),
+        );
+    }
+    row.into_any_element()
+}
+
 fn open_help(window: &mut Window, cx: &mut App) {
     window.open_dialog(cx, |dialog, _, cx| {
         let theme = cx.theme().clone();
@@ -656,6 +710,7 @@ fn open_help(window: &mut Window, cx: &mut App) {
                     .max_h(px(520.))
                     .overflow_y_scrollbar()
                     .gap_4()
+                    .child(div().text_xs().text_color(theme.muted_foreground).child(tr!("script.copy_hint")))
                     .children(HELP.iter().map(|(section, items)| {
                         v_flex()
                             .gap_1()
@@ -671,7 +726,7 @@ fn open_help(window: &mut Window, cx: &mut App) {
                                             .flex_none()
                                             .font_family(theme.mono_font_family.clone())
                                             .text_color(theme.primary)
-                                            .child(*sig),
+                                            .child(help_signature(sig, theme.muted_foreground)),
                                     )
                                     .child(div().flex_1().text_color(theme.muted_foreground).child(help_text(desc)))
                             }))
@@ -700,7 +755,7 @@ fn open_help(window: &mut Window, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: that would bring GPUI's `test` attribute into scope.
-    use super::{HELP, read_script_file};
+    use super::{HELP, copy_targets, read_script_file};
 
     #[test]
     fn script_files_are_read_as_utf8_text() {
@@ -729,5 +784,37 @@ mod tests {
                 assert_ne!(rust_i18n::t!(&id, locale = locale), id, "{id} missing for {locale}");
             }
         }
+    }
+
+    #[test]
+    fn help_functions_copy_complete_calls() {
+        let codes = |sig| -> Vec<String> { copy_targets(sig).unwrap().into_iter().map(|(_, code)| code).collect() };
+        assert_eq!(
+            codes("crypto.bytesToBase64(bytes) / base64ToBytes(str)"),
+            ["crypto.bytesToBase64(bytes)", "crypto.base64ToBytes(str)"]
+        );
+        assert_eq!(
+            codes("console.log / warn / error"),
+            ["console.log", "console.warn", "console.error"]
+        );
+        assert_eq!(codes("payload / topic"), ["payload", "topic"]);
+        assert_eq!(codes("env.get(\"NAME\")"), ["env.get(\"NAME\")"]);
+        assert_eq!(
+            codes("await crypto.hmacSha256(key, data)"),
+            ["await crypto.hmacSha256(key, data)"]
+        );
+        assert!(copy_targets("JSON, Math, Date, ...").is_none());
+
+        // The copied code is the element id of its button, all in one dialog.
+        let mut all: Vec<String> = HELP
+            .iter()
+            .flat_map(|(_, items)| items.iter())
+            .filter_map(|(sig, _)| copy_targets(sig))
+            .flat_map(|parts| parts.into_iter().map(|(_, code)| code))
+            .collect();
+        let count = all.len();
+        all.sort();
+        all.dedup();
+        assert_eq!(all.len(), count, "duplicate help functions");
     }
 }
