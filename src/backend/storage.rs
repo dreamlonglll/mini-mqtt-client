@@ -270,6 +270,43 @@ impl Storage {
         self.save()
     }
 
+    /// Change topic, QoS and colour of a subscription; returns the stored result.
+    pub fn update_subscription(
+        &self,
+        id: i64,
+        topic: String,
+        qos: i32,
+        color: Option<String>,
+    ) -> Result<Subscription, String> {
+        let sub = {
+            let mut data = self.data.write();
+            let server_id = data
+                .subscriptions
+                .iter()
+                .find(|s| s.id == Some(id))
+                .map(|s| s.server_id)
+                .ok_or_else(|| tr!("storage.subscription_not_found").to_string())?;
+            if data
+                .subscriptions
+                .iter()
+                .any(|s| s.server_id == server_id && s.topic == topic && s.id != Some(id))
+            {
+                return Err(tr!("storage.subscription_exists", topic = topic).to_string());
+            }
+            let sub = data
+                .subscriptions
+                .iter_mut()
+                .find(|s| s.id == Some(id))
+                .ok_or_else(|| tr!("storage.subscription_not_found").to_string())?;
+            sub.topic = topic;
+            sub.qos = qos;
+            sub.color = color;
+            sub.clone()
+        };
+        self.save()?;
+        Ok(sub)
+    }
+
     pub fn delete_subscription(&self, id: i64) -> Result<(), String> {
         self.data.write().subscriptions.retain(|s| s.id != Some(id));
         self.save()
@@ -672,6 +709,34 @@ mod tests {
 
         reopened.delete_server(id).unwrap();
         assert!(reopened.templates(id).is_empty());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn subscriptions_can_be_edited() {
+        let (storage, dir) = temp_storage("sub-edit");
+        let server = storage.create_server(MqttServer::default()).unwrap();
+        let a = storage.create_subscription(server, "a/#".into(), 0, None).unwrap();
+        storage.create_subscription(server, "b/#".into(), 0, None).unwrap();
+        let id = a.id.unwrap();
+        let updated = storage
+            .update_subscription(id, "a/+/x".into(), 2, Some("#409EFF".into()))
+            .unwrap();
+        assert_eq!((updated.topic.as_str(), updated.qos), ("a/+/x", 2));
+        assert!(
+            storage.update_subscription(id, "b/#".into(), 0, None).is_err(),
+            "duplicate topic"
+        );
+        assert!(storage.update_subscription(999, "c".into(), 0, None).is_err());
+        let reopened = Storage::open(storage.file_path()).unwrap();
+        let sub = reopened
+            .subscriptions(server)
+            .into_iter()
+            .find(|s| s.id == Some(id))
+            .unwrap();
+        assert_eq!(sub.color.as_deref(), Some("#409EFF"));
+        reopened.update_subscription(id, "a/+/x".into(), 2, None).unwrap();
+        assert_eq!(reopened.subscriptions(server)[0].color, None, "colour can be removed");
         let _ = fs::remove_dir_all(dir);
     }
 

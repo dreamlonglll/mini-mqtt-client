@@ -13,6 +13,12 @@ use gpui_kit::{prelude::*, *};
 pub use gpui_kit::assets::IconName as Lucide;
 pub use gpui_kit::component::IconName;
 
+/// A stored colour mark (`#RRGGBB`, `rgba(..)`...) as a GPUI colour.
+pub fn color_from(value: &str) -> Option<Hsla> {
+    let [r, g, b, a] = crate::backend::color::parse_color(value)?;
+    Some(Rgba { r, g, b, a }.into())
+}
+
 pub fn status_color(status: &ConnectionStatus, cx: &App) -> Hsla {
     let theme = cx.theme();
     match status {

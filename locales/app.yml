@@ -1135,6 +1135,9 @@ sidebar:
   delete_subscription_of:
     zh-CN: "删除订阅 %{topic}"
     en: "Delete subscription %{topic}"
+  edit_subscription_of:
+    zh-CN: "编辑订阅 %{topic}"
+    en: "Edit subscription %{topic}"
   enable_subscription:
     zh-CN: "启用订阅 %{topic}"
     en: "Enable subscription %{topic}"
@@ -1210,6 +1213,21 @@ subscription:
   added:
     zh-CN: "订阅已添加"
     en: "Subscription added"
+  color:
+    zh-CN: "颜色标记"
+    en: "Color"
+  color_named:
+    zh-CN: "颜色 %{color}"
+    en: "Color %{color}"
+  edit_title:
+    zh-CN: "编辑订阅"
+    en: "Edit Subscription"
+  invalid_qos:
+    zh-CN: "QoS 必须为 0、1 或 2"
+    en: "QoS must be 0, 1 or 2"
+  no_color:
+    zh-CN: "无颜色"
+    en: "No color"
   qos:
     zh-CN: "订阅 QoS"
     en: "Subscription QoS"
@@ -1222,6 +1240,9 @@ subscription:
   topic_placeholder:
     zh-CN: "例如: device/+/status 或 test/#"
     en: "e.g. device/+/status or test/#"
+  updated:
+    zh-CN: "订阅已更新"
+    en: "Subscription updated"
   wildcard_hint:
     zh-CN: "支持通配符：+ 匹配单个层级（如 sensor/+/temp），# 匹配多个层级（如 device/#）；可用 {{变量名}} 引用环境变量"
     en: "Wildcards: + matches one level (e.g. sensor/+/temp), # matches all remaining levels (e.g. device/#). {{NAME}} inserts an environment variable"

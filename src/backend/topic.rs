@@ -39,9 +39,53 @@ pub fn validate_subscribe_topic(topic: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether `topic` matches the subscription `filter` (`+` = one level,
+/// `#` = all remaining levels, including none).
+pub fn matches_filter(filter: &str, topic: &str) -> bool {
+    if filter == topic {
+        return true;
+    }
+    let mut levels = topic.split('/');
+    for part in filter.split('/') {
+        if part == "#" {
+            return true;
+        }
+        match levels.next() {
+            Some(level) if part == "+" || part == level => {}
+            _ => return false,
+        }
+    }
+    levels.next().is_none()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filter_matching() {
+        for (filter, topic) in [
+            ("a/b", "a/b"),
+            ("a/+", "a/b"),
+            ("a/+/c", "a/x/c"),
+            ("a/#", "a/b/c"),
+            ("a/#", "a"),
+            ("#", "anything/at/all"),
+            ("+/+", "a/b"),
+            ("a/+", "a/"),
+        ] {
+            assert!(matches_filter(filter, topic), "{filter} should match {topic}");
+        }
+        for (filter, topic) in [
+            ("a/b", "a/c"),
+            ("a/+", "a/b/c"),
+            ("a/+", "a"),
+            ("a/b/c", "a/b"),
+            ("+", "a/b"),
+        ] {
+            assert!(!matches_filter(filter, topic), "{filter} should not match {topic}");
+        }
+    }
 
     #[test]
     fn publish_rules() {

@@ -1,5 +1,6 @@
 //! UI-independent application logic: storage, MQTT, scripts.
 
+pub mod color;
 pub mod config;
 pub mod env;
 pub mod errors;

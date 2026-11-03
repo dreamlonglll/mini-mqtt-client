@@ -1,6 +1,6 @@
 //! Left sidebar: servers, subscriptions, theme toggle and settings.
 
-use super::common::{IconName, Lucide, ask, chip, confirm, status_dot};
+use super::common::{IconName, Lucide, ask, chip, color_from, confirm, status_dot};
 use super::{server_dialog, settings_dialog, subscription_dialog};
 use crate::backend::models::{MqttServer, Subscription as TopicSubscription};
 use crate::backend::update;
@@ -9,6 +9,7 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::component::{Disableable as _, StyledExt as _};
 use gpui_kit::{prelude::*, *};
@@ -234,8 +235,12 @@ impl SidebarView {
         let theme = cx.theme();
         let toggle_state = self.state.clone();
         let delete_state = self.state.clone();
+        let edit_state = self.state.clone();
         let toggle_sub = sub.clone();
         let delete_sub = sub.clone();
+        let edit_sub = sub.clone();
+        let mark = sub.color.as_deref().and_then(color_from);
+        let full_topic: SharedString = sub.topic.clone().into();
         let qos_color = if sub.is_active {
             theme.primary
         } else {
@@ -273,8 +278,12 @@ impl SidebarView {
                         toggle_state.update(cx, |state, cx| state.toggle_subscription(&toggle_sub, checked, cx))
                     }),
             )
+            .when_some(mark, |this, mark| {
+                this.child(div().flex_none().size(px(8.)).rounded_full().bg(mark))
+            })
             .child(
                 div()
+                    .id(("sub-topic", id))
                     .flex_1()
                     .min_w_0()
                     .truncate()
@@ -285,21 +294,43 @@ impl SidebarView {
                     } else {
                         theme.muted_foreground
                     })
+                    // Long topics are cut off; hovering shows the whole one.
+                    .tooltip(move |window, cx| Tooltip::new(full_topic.clone()).build(window, cx))
                     .child(sub.topic.clone()),
             )
             .child(chip(format!("Q{}", sub.qos), qos_color, cx))
             .child(
-                div().invisible().group_hover("sub-item", |s| s.visible()).child(
-                    Button::new(("sub-delete", id))
-                        .accessibility_label(tr!("sidebar.delete_subscription_of", topic = sub.topic))
-                        .ghost()
-                        .xsmall()
-                        .icon(Lucide::Trash)
-                        .tooltip(tr!("sidebar.delete_subscription"))
-                        .on_click(move |_, _, cx| {
-                            delete_state.update(cx, |state, cx| state.remove_subscription(&delete_sub, cx))
-                        }),
-                ),
+                h_flex()
+                    .invisible()
+                    .group_hover("sub-item", |s| s.visible())
+                    .child(
+                        Button::new(("sub-edit", id))
+                            .accessibility_label(tr!("sidebar.edit_subscription_of", topic = sub.topic))
+                            .ghost()
+                            .xsmall()
+                            .icon(Lucide::SquarePen)
+                            .tooltip(tr!("subscription.edit_title"))
+                            .on_click(move |_, window, cx| {
+                                subscription_dialog::open(
+                                    edit_state.clone(),
+                                    edit_sub.server_id,
+                                    Some(edit_sub.clone()),
+                                    window,
+                                    cx,
+                                )
+                            }),
+                    )
+                    .child(
+                        Button::new(("sub-delete", id))
+                            .accessibility_label(tr!("sidebar.delete_subscription_of", topic = sub.topic))
+                            .ghost()
+                            .xsmall()
+                            .icon(Lucide::Trash)
+                            .tooltip(tr!("sidebar.delete_subscription"))
+                            .on_click(move |_, _, cx| {
+                                delete_state.update(cx, |state, cx| state.remove_subscription(&delete_sub, cx))
+                            }),
+                    ),
             )
     }
 }
@@ -365,7 +396,7 @@ impl Render for SidebarView {
                         active_id.is_some(),
                         move |_, window, cx| {
                             if let Some(server_id) = add_sub_state.read(cx).active_server_id {
-                                subscription_dialog::open(add_sub_state.clone(), server_id, window, cx);
+                                subscription_dialog::open(add_sub_state.clone(), server_id, None, window, cx);
                             }
                         },
                         cx,

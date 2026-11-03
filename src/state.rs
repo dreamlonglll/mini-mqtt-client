@@ -953,22 +953,60 @@ impl AppState {
         self.storage.subscriptions(server_id)
     }
 
+    /// Substitute variables (once, before the filter is stored) and validate.
+    fn prepare_subscription(&self, server_id: i64, topic_filter: &str, qos: u8) -> Result<String, String> {
+        if qos > 2 {
+            return Err(tr!("subscription.invalid_qos").into());
+        }
+        let topic_filter = env::replace(topic_filter.trim(), &self.storage.env_pairs(server_id));
+        topic::validate_subscribe_topic(&topic_filter)?;
+        Ok(topic_filter)
+    }
+
     pub fn add_subscription(
         &mut self,
         server_id: i64,
         topic_filter: String,
         qos: u8,
+        color: Option<String>,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        // Variables are substituted once, before the subscription is stored.
-        let topic_filter = env::replace(topic_filter.trim(), &self.storage.env_pairs(server_id));
-        topic::validate_subscribe_topic(&topic_filter)?;
+        let topic_filter = self.prepare_subscription(server_id, &topic_filter, qos)?;
         self.storage
-            .create_subscription(server_id, topic_filter.clone(), qos as i32, None)?;
+            .create_subscription(server_id, topic_filter.clone(), qos as i32, color)?;
         if self.mqtt.is_connected(server_id) {
             self.mqtt.subscribe(server_id, &topic_filter, qos)?;
         }
         cx.notify();
+        Ok(())
+    }
+
+    /// Change topic / QoS / colour. An active subscription of a connected
+    /// server is moved to the new topic (or re-subscribed with the new QoS).
+    pub fn update_subscription(
+        &mut self,
+        sub: &Subscription,
+        topic_filter: String,
+        qos: u8,
+        color: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let id = sub
+            .id
+            .ok_or_else(|| tr!("storage.subscription_not_found").to_string())?;
+        let topic_filter = self.prepare_subscription(sub.server_id, &topic_filter, qos)?;
+        let updated = self
+            .storage
+            .update_subscription(id, topic_filter.clone(), qos as i32, color)?;
+        cx.notify();
+        if updated.is_active && self.mqtt.is_connected(sub.server_id) {
+            if sub.topic != topic_filter {
+                let _ = self.mqtt.unsubscribe(sub.server_id, &sub.topic);
+                self.mqtt.subscribe(sub.server_id, &topic_filter, qos)?;
+            } else if sub.qos != qos as i32 {
+                self.mqtt.subscribe(sub.server_id, &topic_filter, qos)?;
+            }
+        }
         Ok(())
     }
 

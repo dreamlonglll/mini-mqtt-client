@@ -1,8 +1,9 @@
 //! Live message stream of the active server.
 
-use super::common::{IconName, Lucide, card, card_header, chip, confirm, empty_state, segmented};
+use super::common::{IconName, Lucide, card, card_header, chip, color_from, confirm, empty_state, segmented};
 use super::message_detail;
 use crate::backend::payload::{self, DetectedFormat};
+use crate::backend::topic;
 use crate::state::{AppEvent, AppState, Direction, Message};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -27,6 +28,8 @@ pub struct MessageListView {
     visible: Vec<Message>,
     total: usize,
     server_id: Option<i64>,
+    /// Colour marks of the active server's subscriptions: `(filter, colour)`.
+    marks: Vec<(String, Hsla)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -62,6 +65,7 @@ impl MessageListView {
             visible: Vec::new(),
             total: 0,
             server_id: None,
+            marks: Vec::new(),
             _subscriptions: subscriptions,
         };
         this.refresh(cx);
@@ -122,6 +126,24 @@ impl MessageListView {
         cx.notify();
     }
 
+    /// Colour of the subscription a received message came through: an exact
+    /// filter first, then the first matching wildcard filter.
+    fn mark_for(&self, message: &Message) -> Option<Hsla> {
+        if message.direction != Direction::Receive {
+            return None;
+        }
+        let topic = message.topic.as_ref();
+        self.marks
+            .iter()
+            .find(|(filter, _)| filter == topic)
+            .or_else(|| {
+                self.marks
+                    .iter()
+                    .find(|(filter, _)| topic::matches_filter(filter, topic))
+            })
+            .map(|(_, color)| *color)
+    }
+
     fn render_message(&self, ix: usize, cx: &App) -> AnyElement {
         let Some(message) = self.visible.get(ix).cloned() else {
             return div().into_any_element();
@@ -148,6 +170,7 @@ impl MessageListView {
             _ => payload::truncate(&message.preview, 600).into(),
         };
         let state = self.state.clone();
+        let mark = self.mark_for(&message);
         let detail = message.clone();
 
         div()
@@ -201,6 +224,9 @@ impl MessageListView {
                                     .child(Icon::new(dir_icon).xsmall())
                                     .child(dir_label),
                             )
+                            .when_some(mark, |this, mark| {
+                                this.child(div().flex_none().size(px(8.)).rounded_full().bg(mark))
+                            })
                             .child(
                                 div()
                                     .flex_1()
@@ -208,6 +234,7 @@ impl MessageListView {
                                     .truncate()
                                     .text_sm()
                                     .font_family(theme.mono_font_family.clone())
+                                    .when_some(mark, |this, mark| this.text_color(mark))
                                     .child(message.topic.clone()),
                             )
                             .child(chip(message.format.label(), format_color, cx))
@@ -253,6 +280,16 @@ impl MessageListView {
 
 impl Render for MessageListView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.marks = {
+            let state = self.state.read(cx);
+            state
+                .active_server_id
+                .map(|id| state.subscriptions(id))
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|s| Some((s.topic, s.color.as_deref().and_then(color_from)?)))
+                .collect()
+        };
         let theme = cx.theme().clone();
         let filter_ix = match self.filter {
             Filter::All => 0,
