@@ -321,7 +321,9 @@ class App:
 
     def set_clipboard(self, text: str):
         subprocess.run(["xclip", "-selection", "clipboard", "-i"], input=text.encode(), env=self.env, check=True)
-        time.sleep(0.15)
+        # xclip claims the selection from a forked child after the command returns; on a busy
+        # runner that can come after the application's next copy and overwrite it.
+        wait_until(lambda: self.clipboard() == text, 4, interval=0.05, desc="xclip to own the clipboard")
 
     def clipboard(self) -> str:
         r = subprocess.run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, env=self.env)
@@ -341,14 +343,26 @@ class App:
             self.key("BackSpace")
         return node
 
+    READ_SENTINEL = "\x00e2e-sentinel"
+
     def read(self, target, **kw) -> str:
-        """Read a text field like a user would: select all and copy."""
+        """Read a text field like a user would: select all and copy.
+
+        The application copies when it gets to the keys: wait for the clipboard to change rather
+        than for a fixed time, and press them again if nothing arrived (an empty field reads "")."""
         self.click(target, **kw)
-        self.set_clipboard("\x00e2e-sentinel")
-        self.key("ctrl+a", "ctrl+c", settle=0.3)
-        value = self.clipboard()
+        value = ""
+        for _ in range(2):
+            self.set_clipboard(self.READ_SENTINEL)
+            self.key("ctrl+a", "ctrl+c", settle=0)
+            try:
+                value = wait_until(lambda: (v := self.clipboard()) != self.READ_SENTINEL and v, 2.5, interval=0.1,
+                                   desc="the copied text")
+                break
+            except E2EError:
+                pass
         self.key("End")
-        return "" if value == "\x00e2e-sentinel" else value
+        return value
 
     def escape_all(self, times: int = 3):
         for _ in range(times):

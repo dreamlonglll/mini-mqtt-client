@@ -85,7 +85,6 @@ MK_LBUTTON, MK_RBUTTON = 0x0001, 0x0002
 SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE = 0x0001, 0x0004, 0x0010
 SMTO_NORMAL, CF_UNICODETEXT, GMEM_MOVEABLE = 0x0000, 13, 0x0002
 CREATE_NO_WINDOW = 0x08000000
-READ_SENTINEL = "e2e-clipboard-sentinel"  # CF_UNICODETEXT ends at NUL: no "\x00" as on X
 
 KEYS = {
     "escape": 0x1B, "return": 0x0D, "enter": 0x0D, "tab": 0x09, "backspace": 0x08, "delete": 0x2E,
@@ -178,6 +177,10 @@ class Node(driver.Node):
 
 
 class App(driver.App):
+    # CF_UNICODETEXT ends at the first NUL. The desktop's clipboard is shared: a program reading it
+    # (clipboard history, ...) can make a copy fail, which read() covers by pressing the keys again.
+    READ_SENTINEL = "e2e-clipboard-sentinel"
+
     def __init__(self, binary: Path, data_dir: Path, display: str, shots_dir: Path, log_path: Path):
         self.binary, self.data_dir, self.display = binary, data_dir, display
         self.shots_dir, self.log_path = shots_dir, log_path
@@ -405,19 +408,6 @@ class App(driver.App):
             self._post(WM_CHAR, int.from_bytes(units[i:i + 2], "little"), 1)
         self._drain()
         time.sleep(0.15)
-
-    def read(self, target, **kw) -> str:
-        """Select all and copy, like on X; but the clipboard here is the desktop's, and a program
-        reading it (clipboard history, ...) can make the application's copy fail: try again."""
-        for _ in range(3):
-            self.click(target, **kw)
-            self.set_clipboard(READ_SENTINEL)
-            self.key("ctrl+a", "ctrl+c", settle=0.3)
-            value = self.clipboard()
-            self.key("End")
-            if value != READ_SENTINEL:
-                return value
-        return ""
 
     @contextmanager
     def _clipboard_open(self):
