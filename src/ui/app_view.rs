@@ -39,6 +39,11 @@ impl AppView {
                     notify(window, cx, *kind, message.clone());
                 }
             }),
+            // "Follow system" keeps following when the OS switches theme.
+            cx.observe_window_appearance(window, |this, window, cx| {
+                this.state
+                    .update(cx, |state, cx| state.system_appearance_changed(window, cx))
+            }),
         ];
 
         Self {

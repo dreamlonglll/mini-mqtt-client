@@ -1,7 +1,8 @@
 //! System settings: theme, language, data location, logs.
 
-use super::common::{IconName, Lucide, chip, confirm, notify, section_label};
+use super::common::{IconName, Lucide, chip, confirm, input_value, notify, number_field, number_state, section_label};
 use crate::backend::config::ThemePreference;
+use crate::backend::config::{MAX_MESSAGE_LIMIT, MIN_MESSAGE_LIMIT};
 use crate::backend::update;
 use crate::i18n::Language;
 use crate::state::{AppEvent, AppState, ToastKind};
@@ -9,6 +10,7 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::input::{Editor, EditorState};
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::radio::{Radio, RadioGroup};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{prelude::*, *};
@@ -19,12 +21,15 @@ struct SettingsView {
     pending_path: Option<PathBuf>,
     migrate: bool,
     logs: Entity<EditorState>,
+    message_limit: Entity<InputState>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl SettingsView {
     fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let logs = cx.new(|cx| EditorState::new(window, cx).line_number(false).soft_wrap(true));
+        let limit = state.read(cx).message_limit() as i64;
+        let message_limit = number_state(window, cx, limit);
         let subscriptions = vec![
             cx.observe(&state, |_, _, cx| cx.notify()),
             // The "no errors" placeholder text lives in the editor.
@@ -33,12 +38,26 @@ impl SettingsView {
                     this.reload_logs(window, cx);
                 }
             }),
+            // Applied when the field is left or Enter is pressed (not on every
+            // keystroke: typing "1000" passes through "100"), and right away
+            // for the -/+ buttons.
+            cx.subscribe_in(&message_limit, window, |this, input, event: &InputEvent, window, cx| {
+                let apply = match event {
+                    InputEvent::Blur | InputEvent::PressEnter { .. } => true,
+                    InputEvent::Change => !input.read(cx).focus_handle(cx).is_focused(window),
+                    _ => false,
+                };
+                if apply {
+                    this.apply_message_limit(window, cx);
+                }
+            }),
         ];
         let mut this = Self {
             state,
             pending_path: None,
             migrate: true,
             logs,
+            message_limit,
             _subscriptions: subscriptions,
         };
         this.reload_logs(window, cx);
@@ -53,6 +72,20 @@ impl SettingsView {
             lines.join("\n")
         };
         self.logs.update(cx, |s, cx| s.set_value(text, window, cx));
+    }
+
+    fn apply_message_limit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let typed: Option<usize> = input_value(&self.message_limit, cx).trim().parse().ok();
+        let state = self.state.clone();
+        if let Some(limit) = typed {
+            state.update(cx, |state, cx| state.set_message_limit(limit, cx));
+        }
+        // Show the value in effect (clamped, or restored after bad input).
+        let effective = state.read(cx).message_limit().to_string();
+        if input_value(&self.message_limit, cx) != effective {
+            self.message_limit
+                .update(cx, |s, cx| s.set_value(effective, window, cx));
+        }
     }
 
     fn choose_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -249,6 +282,29 @@ impl Render for SettingsView {
                             .child(Radio::new("language-system").label(tr!("settings.follow_system")))
                             .child(Radio::new("language-zh").label("简体中文"))
                             .child(Radio::new("language-en").label("English")),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_2()
+                    .child(section_label(tr!("settings.message_limit"), cx))
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .child(div().w(px(170.)).child(number_field(
+                                "message-limit",
+                                &tr!("settings.message_limit"),
+                                &self.message_limit,
+                                100,
+                                MIN_MESSAGE_LIMIT as i64,
+                                MAX_MESSAGE_LIMIT as i64,
+                            )))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(tr!("settings.message_limit_hint")),
+                            ),
                     ),
             )
             .child(

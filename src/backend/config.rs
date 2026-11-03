@@ -10,6 +10,16 @@ use std::path::{Path, PathBuf};
 /// directory (and `data.yaml` in it) is picked up automatically.
 pub const APP_IDENTIFIER: &str = "com.minimqtt.client";
 
+/// Messages kept per server in the live list (the previous version's
+/// "message list limit" setting: default 1000, 100–10000).
+pub const DEFAULT_MESSAGE_LIMIT: usize = 1000;
+pub const MIN_MESSAGE_LIMIT: usize = 100;
+pub const MAX_MESSAGE_LIMIT: usize = 10_000;
+
+fn default_message_limit() -> usize {
+    DEFAULT_MESSAGE_LIMIT
+}
+
 /// Platform data directory of the application, e.g.
 /// `%APPDATA%\com.minimqtt.client` on Windows.
 pub fn app_data_dir() -> PathBuf {
@@ -53,7 +63,7 @@ impl From<ThemePreference> for String {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_path: Option<String>,
@@ -62,9 +72,24 @@ pub struct AppConfig {
     /// Interface language: `auto` (follow the system), `zh-CN` or `en-US`.
     #[serde(default)]
     pub language: Language,
+    /// Messages kept per server (clamped to 100–10000 when used).
+    #[serde(default = "default_message_limit")]
+    pub message_limit: usize,
     /// Keys this version does not model, written back unchanged.
     #[serde(flatten)]
     pub extra: serde_yaml::Mapping,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            data_path: None,
+            theme: ThemePreference::default(),
+            language: Language::default(),
+            message_limit: DEFAULT_MESSAGE_LIMIT,
+            extra: serde_yaml::Mapping::new(),
+        }
+    }
 }
 
 impl AppConfig {
@@ -131,6 +156,8 @@ mod tests {
         assert_eq!(config.data_path.as_deref(), Some("/tmp/x/data.yaml"));
         assert_eq!(config.theme, ThemePreference::System);
         assert_eq!(config.language, Language::System);
+        assert_eq!(config.message_limit, DEFAULT_MESSAGE_LIMIT);
+        assert_eq!(AppConfig::default().message_limit, DEFAULT_MESSAGE_LIMIT);
     }
 
     #[test]

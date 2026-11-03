@@ -1,7 +1,7 @@
 //! Application state shared by all views (the role Pinia stores played in the
 //! Vue version). Owns storage, the MQTT manager and the live message lists.
 
-use crate::backend::config::{self, AppConfig, ThemePreference};
+use crate::backend::config::{self, AppConfig, MAX_MESSAGE_LIMIT, MIN_MESSAGE_LIMIT, ThemePreference};
 use crate::backend::errors::friendly_mqtt_error;
 use crate::backend::logger::{LogKind, LogManager};
 use crate::backend::models::{
@@ -21,9 +21,8 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// Live messages kept per server (same limit as before)...
-pub const MAX_MESSAGES: usize = 1000;
-/// ...and at most this many payload bytes per server, so large payloads
+/// Live messages are kept per server up to the configured count (1000 by
+/// default) and at most this many payload bytes, so large payloads
 /// cannot exhaust memory (the newest message is always kept).
 pub const MAX_MESSAGE_BYTES: usize = 128 * 1024 * 1024;
 /// Text kept for the list preview and search; the detail view decodes the
@@ -140,10 +139,15 @@ impl ServerMessages {
         self.list.len()
     }
 
-    fn push_front(&mut self, message: Message) {
+    fn push_front(&mut self, message: Message, limit: usize) {
         self.bytes += message.payload.len();
         self.list.push_front(message);
-        while self.list.len() > MAX_MESSAGES || (self.bytes > MAX_MESSAGE_BYTES && self.list.len() > 1) {
+        self.trim(limit);
+    }
+
+    /// Drop the oldest messages beyond `limit` (or the byte budget).
+    fn trim(&mut self, limit: usize) {
+        while self.list.len() > limit || (self.bytes > MAX_MESSAGE_BYTES && self.list.len() > 1) {
             if let Some(old) = self.list.pop_back() {
                 self.bytes -= old.payload.len();
             }
@@ -616,7 +620,8 @@ impl AppState {
             script_error,
             format,
         );
-        self.messages.entry(server_id).or_default().push_front(message);
+        let limit = self.message_limit();
+        self.messages.entry(server_id).or_default().push_front(message, limit);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -756,6 +761,44 @@ impl AppState {
         cx.emit(AppEvent::LanguageChanged);
         cx.refresh_windows();
         cx.notify();
+    }
+
+    /// Messages kept per server.
+    pub fn message_limit(&self) -> usize {
+        self.config.message_limit.clamp(MIN_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT)
+    }
+
+    pub fn set_message_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
+        let limit = limit.clamp(MIN_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT);
+        if limit == self.config.message_limit {
+            return;
+        }
+        self.config.message_limit = limit;
+        if let Err(err) = self.config.save(&self.app_dir) {
+            self.toast(ToastKind::Error, err, cx);
+        }
+        let mut trimmed = Vec::new();
+        for (server_id, list) in self.messages.iter_mut() {
+            if list.len() > limit {
+                list.trim(limit);
+                trimmed.push(*server_id);
+            }
+        }
+        for server_id in trimmed {
+            cx.emit(AppEvent::MessagesChanged(server_id));
+        }
+        cx.notify();
+    }
+
+    /// The window switched between light and dark: follow it when the theme
+    /// is set to "follow system".
+    pub fn system_appearance_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.config.theme == ThemePreference::System {
+            Theme::sync_system_appearance(Some(window), cx);
+            apply_brand_colors(cx);
+            cx.refresh_windows();
+            cx.notify();
+        }
     }
 
     pub fn toggle_dark(&mut self, cx: &mut Context<Self>) {
