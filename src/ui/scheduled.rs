@@ -18,6 +18,7 @@ use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::component::{Disableable as _, StyledExt as _};
 use gpui_kit::{prelude::*, *};
 use std::collections::VecDeque;
+use std::ops::Range;
 use std::time::Duration;
 
 const MAX_LOGS: usize = 200;
@@ -227,10 +228,52 @@ fn now() -> String {
     chrono::Local::now().format("%H:%M:%S%.3f").to_string()
 }
 
+/// Log lines `range` (newest first), one line each so the list can treat
+/// them as rows of equal height.
+fn render_log_lines(logs: &VecDeque<LogLine>, range: Range<usize>, cx: &App) -> Vec<AnyElement> {
+    let theme = cx.theme();
+    logs.range(range.start.min(logs.len())..range.end.min(logs.len()))
+        .map(|line| {
+            // List rows are laid out on their own: stretch them to the list width.
+            h_flex()
+                .w_full()
+                .gap_2()
+                .pb_0p5()
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(theme.muted_foreground)
+                        .child(line.time.clone()),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(if line.ok { theme.success } else { theme.danger })
+                        .child(if line.ok { "✓" } else { "✗" }),
+                )
+                .child(div().flex_none().whitespace_nowrap().child(line.topic.clone()))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(theme.muted_foreground)
+                        .child(line.detail.clone()),
+                )
+                .into_any_element()
+        })
+        .collect()
+}
+
 struct ScheduleDialog {
     state: Entity<AppState>,
     scheduler: Entity<Scheduler>,
     server_id: i64,
+    /// The server's templates, reloaded when the state changes (not on every
+    /// frame: a running job re-renders the dialog after each send).
+    templates: Vec<CommandTemplate>,
+    /// The command list and the log only render the rows in view.
+    templates_scroll: UniformListScrollHandle,
+    logs_scroll: UniformListScrollHandle,
     /// Selected template ids, in click order.
     selected: Vec<i64>,
     interval: Entity<InputState>,
@@ -242,8 +285,9 @@ struct ScheduleDialog {
 }
 
 impl ScheduleDialog {
-    fn templates(&self, cx: &App) -> Vec<CommandTemplate> {
-        self.state.read(cx).templates(self.server_id)
+    fn reload(&mut self, cx: &mut Context<Self>) {
+        self.templates = self.state.read(cx).templates(self.server_id);
+        cx.notify();
     }
 
     fn toggle(&mut self, id: i64, cx: &mut Context<Self>) {
@@ -256,11 +300,10 @@ impl ScheduleDialog {
     }
 
     fn start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let templates = self.templates(cx);
         let mut commands: Vec<CommandTemplate> = self
             .selected
             .iter()
-            .filter_map(|id| templates.iter().find(|t| t.id == Some(*id)).cloned())
+            .filter_map(|id| self.templates.iter().find(|t| t.id == Some(*id)).cloned())
             .collect();
         if commands.is_empty() {
             notify(window, cx, ToastKind::Warning, tr!("scheduled.select_one"));
@@ -285,9 +328,79 @@ impl ScheduleDialog {
             .update(cx, |s, cx| s.start(server_id, commands, config, cx));
     }
 
+    /// Rows `range` of the command list (all rows have the same height: one
+    /// line of name and one of topic / payload).
+    fn render_template_rows(&self, range: Range<usize>, entity: &Entity<Self>, cx: &App) -> Vec<AnyElement> {
+        let theme = cx.theme();
+        self.templates[range.start.min(self.templates.len())..range.end.min(self.templates.len())]
+            .iter()
+            .map(|t| {
+                let id = t.id.unwrap_or_default();
+                let order = self.selected.iter().position(|x| *x == id);
+                let entity = entity.clone();
+                let format_color = match t.format() {
+                    PayloadFormat::Json => theme.primary,
+                    PayloadFormat::Hex => theme.warning,
+                    PayloadFormat::Text => theme.muted_foreground,
+                };
+                h_flex()
+                    .id(("schedule-tpl", id as u64))
+                    .w_full()
+                    .role(Role::ListItem)
+                    .aria_label(match order {
+                        Some(ix) => format!(
+                            "{} {} {} #{}",
+                            tr!("scheduled.command"),
+                            t.name,
+                            tr!("scheduled.chosen"),
+                            ix + 1
+                        ),
+                        None => format!("{} {}", tr!("scheduled.command"), t.name),
+                    })
+                    .px_4()
+                    .py_2()
+                    .gap_3()
+                    .cursor_pointer()
+                    .border_b_1()
+                    .border_color(theme.border.opacity(0.5))
+                    .when(order.is_some(), |this| this.bg(theme.accent.opacity(0.6)))
+                    .on_click(move |_, _, cx| entity.update(cx, |this, cx| this.toggle(id, cx)))
+                    .child(Checkbox::new(("schedule-check", id as u64)).checked(order.is_some()))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_0p5()
+                            // Single lines: the list relies on every row having the same height.
+                            .child(div().text_sm().font_medium().truncate().child(t.name.clone()))
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .whitespace_nowrap()
+                                            .font_family(theme.mono_font_family.clone())
+                                            .child(t.topic.clone()),
+                                    )
+                                    .child(div().min_w_0().truncate().child(payload::truncate(&t.payload, 50))),
+                            ),
+                    )
+                    .child(chip(t.format().label(), format_color, cx))
+                    .child(chip(format!("QoS {}", t.qos), theme.primary, cx))
+                    .when_some(order, |this, ix| {
+                        this.child(chip(format!("#{}", ix + 1), theme.success, cx))
+                    })
+                    .into_any_element()
+            })
+            .collect()
+    }
+
     fn render_config(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
-        let templates = self.templates(cx);
+        let templates = &self.templates;
         let entity = cx.entity();
         let all_selected = !templates.is_empty() && self.selected.len() == templates.len();
         let all_ids: Vec<i64> = templates.iter().filter_map(|t| t.id).collect();
@@ -330,80 +443,28 @@ impl ScheduleDialog {
                                     ),
                             ),
                     )
-                    .child(
-                        v_flex()
-                            .id("schedule-templates")
-                            .max_h(px(240.))
-                            .overflow_y_scrollbar()
-                            .when(templates.is_empty(), |this| {
-                                this.child(div().h(px(140.)).child(empty_state(
-                                    IconName::Inbox,
-                                    tr!("scheduled.no_templates"),
-                                    cx,
-                                )))
-                            })
-                            .children(templates.iter().map(|t| {
-                                let id = t.id.unwrap_or_default();
-                                let order = self.selected.iter().position(|x| *x == id);
-                                let entity = entity.clone();
-                                let format_color = match t.format() {
-                                    PayloadFormat::Json => theme.primary,
-                                    PayloadFormat::Hex => theme.warning,
-                                    PayloadFormat::Text => theme.muted_foreground,
-                                };
-                                h_flex()
-                                    .id(("schedule-tpl", id as u64))
-                                    .role(Role::ListItem)
-                                    .aria_label(match order {
-                                        Some(ix) => format!(
-                                            "{} {} {} #{}",
-                                            tr!("scheduled.command"),
-                                            t.name,
-                                            tr!("scheduled.chosen"),
-                                            ix + 1
-                                        ),
-                                        None => format!("{} {}", tr!("scheduled.command"), t.name),
-                                    })
-                                    .px_4()
-                                    .py_2()
-                                    .gap_3()
-                                    .cursor_pointer()
-                                    .border_b_1()
-                                    .border_color(theme.border.opacity(0.5))
-                                    .when(order.is_some(), |this| this.bg(theme.accent.opacity(0.6)))
-                                    .on_click(move |_, _, cx| entity.update(cx, |this, cx| this.toggle(id, cx)))
-                                    .child(Checkbox::new(("schedule-check", id as u64)).checked(order.is_some()))
-                                    .child(
-                                        v_flex()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .gap_0p5()
-                                            .child(div().text_sm().font_medium().child(t.name.clone()))
-                                            .child(
-                                                h_flex()
-                                                    .gap_2()
-                                                    .text_xs()
-                                                    .text_color(theme.muted_foreground)
-                                                    .child(
-                                                        div()
-                                                            .font_family(theme.mono_font_family.clone())
-                                                            .child(t.topic.clone()),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .min_w_0()
-                                                            .truncate()
-                                                            .child(payload::truncate(&t.payload, 50)),
-                                                    ),
-                                            ),
-                                    )
-                                    .child(chip(t.format().label(), format_color, cx))
-                                    .child(chip(format!("QoS {}", t.qos), theme.primary, cx))
-                                    .when_some(order, |this, ix| {
-                                        this.child(chip(format!("#{}", ix + 1), theme.success, cx))
-                                    })
-                            })),
-                    ),
+                    .child(if templates.is_empty() {
+                        div()
+                            .h(px(140.))
+                            .child(empty_state(IconName::Inbox, tr!("scheduled.no_templates"), cx))
+                            .into_any_element()
+                    } else {
+                        let view = entity.downgrade();
+                        div()
+                            .relative()
+                            .child(
+                                uniform_list("schedule-templates", templates.len(), move |range, _window, cx| {
+                                    view.upgrade()
+                                        .map(|view| view.read(cx).render_template_rows(range, &view, cx))
+                                        .unwrap_or_default()
+                                })
+                                .track_scroll(&self.templates_scroll)
+                                .with_sizing_behavior(ListSizingBehavior::Infer)
+                                .max_h(px(240.)),
+                            )
+                            .vertical_scrollbar(&self.templates_scroll)
+                            .into_any_element()
+                    }),
             )
             .child(
                 card(cx)
@@ -549,6 +610,7 @@ impl ScheduleDialog {
         };
         let stop = self.scheduler.clone();
         let back = self.scheduler.clone();
+        let logs = self.scheduler.clone();
 
         v_flex()
             .id("schedule-progress")
@@ -600,38 +662,20 @@ impl ScheduleDialog {
             )
             .child(
                 card(cx).child(
-                    v_flex()
-                        .id("schedule-logs")
+                    div()
+                        .relative()
                         .h(px(300.))
                         .p_2()
-                        .gap_0p5()
-                        .overflow_y_scrollbar()
                         .text_xs()
                         .font_family(theme.mono_font_family.clone())
-                        .children(s.logs.iter().map(|line| {
-                            h_flex()
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .flex_none()
-                                        .text_color(theme.muted_foreground)
-                                        .child(line.time.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .flex_none()
-                                        .text_color(if line.ok { theme.success } else { theme.danger })
-                                        .child(if line.ok { "✓" } else { "✗" }),
-                                )
-                                .child(div().flex_none().child(line.topic.clone()))
-                                .child(
-                                    div()
-                                        .min_w_0()
-                                        .truncate()
-                                        .text_color(theme.muted_foreground)
-                                        .child(line.detail.clone()),
-                                )
-                        })),
+                        .child(
+                            uniform_list("schedule-logs", s.logs.len(), move |range, _window, cx| {
+                                render_log_lines(&logs.read(cx).logs, range, cx)
+                            })
+                            .track_scroll(&self.logs_scroll)
+                            .size_full(),
+                        )
+                        .vertical_scrollbar(&self.logs_scroll),
                 ),
             )
             .child(
@@ -693,8 +737,9 @@ pub fn open(scheduler: Entity<Scheduler>, state: Entity<AppState>, server_id: i6
     let view = cx.new(|cx| {
         let subscriptions = vec![
             cx.observe(&scheduler, |_, _, cx| cx.notify()),
-            cx.observe(&state, |_, _, cx| cx.notify()),
+            cx.observe(&state, |this: &mut ScheduleDialog, _, cx| this.reload(cx)),
         ];
+        let templates = state.read(cx).templates(server_id);
         ScheduleDialog {
             interval: number_state(window, cx, 1000),
             round_interval: number_state(window, cx, 0),
@@ -702,6 +747,9 @@ pub fn open(scheduler: Entity<Scheduler>, state: Entity<AppState>, server_id: i6
             state,
             scheduler,
             server_id,
+            templates,
+            templates_scroll: UniformListScrollHandle::new(),
+            logs_scroll: UniformListScrollHandle::new(),
             selected: Vec::new(),
             order_by_name: false,
             infinite: true,
