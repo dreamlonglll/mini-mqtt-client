@@ -67,9 +67,10 @@ cargo test                      # 单元测试
 cargo test -- --ignored         # 集成测试（需本地 Broker：1883 TCP、8083 WebSocket；MQTT_TEST_CA 可测 8883 TLS）
 cargo clippy && cargo fmt       # 提交前检查
 ./e2e/run.sh                    # 端到端测试（Xvfb + mosquitto + AT-SPI，见 e2e/README.md）
+python e2e/run_win.py           # Windows 上的同一套端到端测试（UI Automation + 投递窗口消息）
 ```
 
-调试时可用 `MINI_MQTT_DATA_DIR=<目录>` 指向独立的数据目录，`MINI_MQTT_LANG=zh-CN|en-US|auto` 指定启动语言，`MINI_MQTT_NO_UPDATE_CHECK=1` 关闭启动后的自动检查更新，`RUST_LOG=info` 查看日志。`MINI_MQTT_TEST_GITHUB=1 cargo test -- --ignored latest_release_from_github` 会真实请求一次 GitHub（不设该变量时这个用例什么也不做，CI 的 `--include-ignored` 不受 GitHub 限流影响）。
+调试时可用 `MINI_MQTT_DATA_DIR=<目录>` 指向独立的数据目录，`MINI_MQTT_LANG=zh-CN|en-US|auto` 指定启动语言，`MINI_MQTT_NO_UPDATE_CHECK=1` 关闭启动后的自动检查更新，`MINI_MQTT_REDUCE_MOTION=1` 关闭对话框 / 抽屉等过渡动画（E2E 默认设置），`RUST_LOG=info` 查看日志。`MINI_MQTT_TEST_GITHUB=1 cargo test -- --ignored latest_release_from_github` 会真实请求一次 GitHub（不设该变量时这个用例什么也不做，CI 的 `--include-ignored` 不受 GitHub 限流影响）。
 
 ## 架构要点
 
@@ -78,7 +79,7 @@ cargo clippy && cargo fmt       # 提交前检查
 3. **脚本**：脚本在 `background_executor` 上执行（Boa Context 每次新建）；接收消息按到达顺序串行处理。脚本约定：定义 `process(payload, topic)`，返回值替换 payload（对象自动 JSON 序列化，`Uint8Array` 按原始字节，undefined 保持原样）。脚本链在 `script::Payload`（`Text` / `Bytes`）上运行：`payload` 是文本视图（字节按 UTF-8 宽松解码），`payloadBytes` 是字节视图；HEX 格式发布时用 `TextForm::Hex`，文本视图是 HEX。返回的字符串与输入的 `payload` 相同时保留输入原样，只读脚本不会破坏二进制消息。脚本返回字节时，发布直接发送这些字节，不再按发布格式编码。`env` 对象的数据经线程局部变量交给原生函数。
 4. **环境变量**：`{{变量名}}` 只由 `backend/env.rs::replace` 替换：发布（手动、模板、定时都走 `AppState::publish`）先替换 Topic / Payload 再校验、执行脚本；订阅在入库前替换；模板存原文、发送时替换。
 5. **对话框**：通过 `window.open_dialog` / `open_sheet_at` 打开；对话框内容是预先 `cx.new` 的视图实体（builder 可能被多次调用，不要在 builder 里创建实体）。确认按钮用 `DialogAction` 触发 `on_ok`（返回 `false` 可阻止关闭）。
-6. **无障碍 / E2E**：E2E 测试通过 AT-SPI 按无障碍名称（中文文案）定位控件，`e2e/run.sh` 以 `MINI_MQTT_LANG=zh-CN` 固定中文界面。纯图标按钮必须设置 `accessibility_label`，列表行/状态用 `.role(..).aria_label(..)` 暴露文本（`Role::Label` 的名称取自 value，需要文字时用 `Role::Status`）。不要使用 GPUI Kit 的 `NumberInput`（会重复声明焦点，debug 下触发断言），改用 `common::number_field`。
+6. **无障碍 / E2E**：E2E 测试通过 AT-SPI 按无障碍名称（中文文案）定位控件，`e2e/run.sh` 以 `MINI_MQTT_LANG=zh-CN` 固定中文界面。纯图标按钮必须设置 `accessibility_label`，列表行/状态用 `.role(..).aria_label(..)` 暴露文本（`Role::Label` 的名称取自 value，需要文字时用 `Role::Status`）。不要使用 GPUI Kit 的 `NumberInput`（会重复声明焦点，debug 下触发断言），改用 `common::number_field`。E2E 设 `MINI_MQTT_REDUCE_MOTION=1`：对话框 / 抽屉滑入时无障碍树给的是上一帧的坐标，点击会落到别处（CI 上 T08 等偶发失败的原因）；driver 点击前还会等控件位置稳定，确认框（`alert`）里的按钮用 `find_in` 在框内找。Windows 上 `e2e/run_win.py` 用 `driver_win.py` 跑同一套场景：UI Automation 读树（AccessKit 导出的 ARIA 角色换算成 AT-SPI 角色名），点击 / 按键是投递给窗口的消息，不动真实鼠标和焦点，窗口放在 `E2E_MONITOR` 指定的屏幕（默认最大的那块）。
 7. **主题**：`Theme::change` 之后用 `Theme::update` 覆盖品牌蓝色（`state.rs` 的 `apply_brand_colors`）；「跟随系统」时 `AppView` 监听窗口外观变化实时同步。
 8. **国际化**：界面上的所有文字用 `tr!("键", 参数 = 值)`（返回 `SharedString`，参数占位符为 `%{参数}`）从 `locales/app.yml` 取，新增键必须同时写 `zh-CN` 与 `en`；改中文文案前先查 `e2e/test_app.py` 是否按它定位控件。`i18n.rs` 的测试会检查两种语言的键集与占位符一致、源码里引用的字面量键都存在。语言切换后发 `LanguageChanged`，常驻视图要刷新存在状态里的文字（如输入框占位符）。按动态拼出的键取文（`tr!(format!(..))`）时，要在对应模块补测试确认键存在。
 9. **数据兼容**：每个实体和 `AppData` / `AppConfig` 都有 `#[serde(flatten)] extra`，未建模的字段原样写回；编辑时以已存的对象为底稿（`..base`），不要整体重建。旧版的主题 / 语言 / 消息上限存在 WebView localStorage，读不到。

@@ -8,6 +8,9 @@ are asserted on three independent surfaces:
 * the UI itself (accessible names / states of widgets),
 * the MQTT broker (a mosquitto_sub spy sees exactly what the app published),
 * the files the app persists (data.yaml, config.yaml, logs).
+
+On Windows, driver_win.py replaces the X / AT-SPI parts of `App` with UI
+Automation and window messages; everything else here is shared.
 """
 
 from __future__ import annotations
@@ -23,8 +26,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
-import pyatspi
 import yaml
+
+try:
+    import pyatspi
+except ImportError:  # Windows: driver_win.py provides the accessibility backend
+    pyatspi = None
 
 
 class E2EError(AssertionError):
@@ -203,6 +210,27 @@ class App:
         except E2EError as err:
             raise E2EError(f"{err}\n--- visible nodes ---\n{self.dump()}") from None
 
+    def find_in(self, scope: Query, target: Query, timeout: float = 8.0) -> Node:
+        """The first node matching `target` inside the subtree of the last node matching `scope`."""
+
+        def lookup():
+            nodes = self.nodes()
+            starts = [i for i, n in enumerate(nodes) if scope.matches(n)]
+            if not starts:
+                return None
+            depth = nodes[starts[-1]].depth
+            for n in nodes[starts[-1] + 1:]:
+                if n.depth <= depth:
+                    return None
+                if target.matches(n):
+                    return n
+            return None
+
+        try:
+            return wait_until(lookup, timeout, desc=f"{target!r} in {scope!r}")
+        except E2EError as err:
+            raise E2EError(f"{err}\n--- visible nodes ---\n{self.dump()}") from None
+
     def exists(self, *args, **kw) -> bool:
         return bool(self.find_all(*args, **kw))
 
@@ -252,11 +280,28 @@ class App:
         if self._covered(px_, py_):
             # A user waits for the toast to go away before clicking under it.
             wait_until(lambda: not self._covered(px_, py_), 12, desc=f"toast covering {node} to disappear")
-            x, y, w, h = node.extents()
-        ox, oy = self.window_origin()
-        self.xdo("mousemove", str(ox + x + int(w * dx)), str(oy + y + int(h * dy)), "click", str(button))
+        # Dialogs and drawers slide in: click where the control ends up, not where it was a frame ago.
+        x, y, w, h = self._settled(node)
+        self.click_window(x + int(w * dx), y + int(h * dy), button)
         time.sleep(settle)
         return node
+
+    def _settled(self, node: Node, timeout: float = 4.0):
+        """The node's extents once two readings in a row agree."""
+        last = node.extents()
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(0.08)
+            current = node.extents()
+            if current == last:
+                return current
+            last = current
+        raise E2EError(f"{node} is still moving: {last}")
+
+    def click_window(self, x: int, y: int, button: int = 1):
+        """Click at a point given in window coordinates."""
+        ox, oy = self.window_origin()
+        self.xdo("mousemove", str(ox + x), str(oy + y), "click", str(button))
 
     def hover_away(self):
         ox, oy = self.window_origin()

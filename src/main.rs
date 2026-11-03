@@ -34,6 +34,12 @@ fn main() {
 
     gpui_kit::application().with_assets(assets::AppAssets).run(|cx| {
         gpui_kit::init(cx);
+        // `MINI_MQTT_REDUCE_MOTION=1` (set by the E2E runs) turns transitions off,
+        // so dialogs and drawers are where the accessibility tree says from the
+        // first frame instead of sliding in under the test's clicks.
+        if std::env::var("MINI_MQTT_REDUCE_MOTION").is_ok_and(|v| !v.is_empty() && v != "0") {
+            cx.set_reduce_motion(true);
+        }
 
         #[cfg(target_os = "macos")]
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);

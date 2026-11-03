@@ -34,7 +34,7 @@
 | `E2E_ONLY` | 只运行指定场景，如 `T01,T05` |
 | `E2E_DISPLAY` | 使用的 X display，默认 `:97` |
 
-`run.sh` 固定以 `MINI_MQTT_LANG=zh-CN` 启动应用：场景按中文无障碍名称定位控件，不能随机器语言（CI 上常为 `C` / `en_US`）切到英文界面；同时设置 `MINI_MQTT_NO_UPDATE_CHECK=1`，测试不访问网络检查更新。
+`run.sh` 固定以 `MINI_MQTT_LANG=zh-CN` 启动应用：场景按中文无障碍名称定位控件，不能随机器语言（CI 上常为 `C` / `en_US`）切到英文界面；同时设置 `MINI_MQTT_NO_UPDATE_CHECK=1`，测试不访问网络检查更新；`MINI_MQTT_REDUCE_MOTION=1` 关闭过渡动画：对话框 / 抽屉滑入期间无障碍树给的是上一帧的坐标，点击会落到别的控件上（CI 上的 debug 构建渲染慢，曾让 T08 等场景偶发失败）。driver 点击前也会等控件位置连续两次读数一致。
 
 依赖（Ubuntu/Debian）：
 
@@ -42,6 +42,22 @@
 sudo apt-get install -y xvfb mosquitto mosquitto-clients xdotool xclip x11-apps imagemagick openssl \
   dbus at-spi2-core python3-pyatspi python3-yaml mesa-vulkan-drivers fonts-noto-cjk
 ```
+
+## Windows
+
+```powershell
+python e2e/run_win.py
+```
+
+同一套场景（`test_app.py`），由 `driver_win.py` 驱动：UI Automation 读取无障碍树（AccessKit 导出的 ARIA 角色换算成场景使用的 AT-SPI 角色名），点击、按键和文字输入都是投递给应用窗口的消息（修饰键通过窗口线程的键盘状态施加），不移动真实鼠标、不抢键盘焦点，跑测试时其它屏幕照常使用。应用窗口启动时会在主屏上闪现一下再移到测试屏幕；剪贴板用的是系统剪贴板。
+
+| 变量 | 说明 |
+|------|------|
+| `E2E_MONITOR` | 放置应用窗口的屏幕：`largest`（默认）、`primary` 或从 1 开始的序号 |
+| `E2E_MOSQUITTO_DIR` | mosquitto 所在目录，默认在 PATH、`%ProgramFiles%\mosquitto`、`%LOCALAPPDATA%\Programs\mosquitto` 中查找 |
+| `E2E_OPENSSL_DIR` | openssl 所在目录，默认用 Git for Windows 自带的 |
+
+`E2E_BIN`（默认 `target/debug/mini-mqtt-client.exe`）、`E2E_WORK_DIR`、`E2E_ONLY` 同上。依赖：`pip install comtypes pillow pyyaml`；mosquitto 可以 `winget install EclipseFoundation.Mosquitto`，或用 `winget download` 下载安装包后以 7-Zip 解压到上面的目录（免安装）。
 
 ## 场景
 

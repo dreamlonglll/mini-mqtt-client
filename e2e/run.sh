@@ -28,6 +28,9 @@ export E2E_TLS_PORT="${E2E_TLS_PORT:-18883}"
 # network or on what GitHub currently lists as the latest release.
 export MINI_MQTT_LANG=zh-CN
 export MINI_MQTT_NO_UPDATE_CHECK=1
+# Dialogs and drawers slide in; a click aimed from the accessibility tree can
+# land where the control was a frame ago (the debug build on a CI runner is slow).
+export MINI_MQTT_REDUCE_MOTION=1
 
 missing=()
 for tool in Xvfb mosquitto mosquitto_pub mosquitto_sub xdotool xclip xwd convert openssl dbus-run-session; do

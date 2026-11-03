@@ -15,6 +15,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from driver import App, Broker, E2EError, Query, Spy, check, find_one, load_yaml, wait_until  # noqa: E402
 
+if sys.platform == "win32":
+    from driver_win import App  # noqa: E402,F811
+
 import yaml  # noqa: E402
 
 WORK = Path(os.environ["E2E_WORK"])
@@ -25,6 +28,8 @@ WS = int(os.environ["E2E_WS_PORT"])
 TLS = int(os.environ["E2E_TLS_PORT"])
 CA_PEM = Path(os.environ["E2E_CA"]).read_text()
 ONLY = {t.strip() for t in os.environ.get("E2E_ONLY", "").split(",") if t.strip()}
+# The raw error of a refused connection; Windows words it in the system language.
+REFUSED = re.compile(r"connection refused|\(os error 10061\)", re.IGNORECASE)
 
 broker = Broker("127.0.0.1", TCP)
 app = App(Path(os.environ["E2E_BIN"]), DATA, os.environ["E2E_DISPLAY"], SHOTS, WORK / "app.log")
@@ -155,28 +160,34 @@ def ensure_checked(name: str, value: bool):
 
 
 def confirm(button: str):
-    """Press the OK button of the confirmation dialog (the last one rendered)."""
-    app.click(Query(role="push button", name=button, index=-1))
+    """Press a button of the confirmation (an alert dialog) and wait for it to close.
+
+    Look inside the alert: until it is rendered, the dialog below may have a button of the same name."""
+    app.click(app.find_in(Query(role="alert"), Query(role="push button", name=button)))
+    app.wait_gone(role="alert")
 
 
 def close_dialogs():
-    """Close dialogs and the template / environment drawers (sheets without a dialog role).
+    """Close confirmations, dialogs and the template / environment drawers (sheets without a dialog role).
 
     Escape only reaches a dialog or drawer that holds focus, which is often not the case after
     a scenario failed half-way; from the second attempt on, click a close control instead."""
     for attempt in range(6):
+        alerts = app.find_all(role="alert")
         dialogs = app.find_all(role="dialog")
         drawer = app.find_all(name="搜索模板") or app.find_all(name="搜索环境变量")
-        if not dialogs and not drawer:
+        if not alerts and not dialogs and not drawer:
             break
         closers = app.find_all(role="push button", name="Close") if dialogs and attempt >= 1 else []
-        if closers:
+        if alerts and attempt >= 1:
+            # A confirmation has no close button: cancel it.
+            app.click(app.find_in(Query(role="alert"), Query(role="push button", name="取消")))
+        elif closers:
             # The title-bar close button of the topmost dialog (overlays come last in the tree).
             app.click(closers[-1])
         elif drawer and not dialogs and attempt >= 1:
             # Click the drawer's overlay.
-            ox, oy = app.window_origin()
-            app.xdo("mousemove", str(ox + 300), str(oy + 450), "click", "1")
+            app.click_window(300, 450)
             time.sleep(0.5)
         else:
             app.key("Escape", settle=0.4)
@@ -452,7 +463,8 @@ def t08():
     click("启用脚本 e2e-sha")
     app.find(role="list item", name="脚本 e2e-sha 发送前 已停用")
     app.click(Query(role="list item", name="脚本 e2e-throw 发送前 已停用"), dx=0.3)
-    check(app.read(Query(name="脚本名称")) == "e2e-throw", "selecting a script loads it into the editor")
+    loaded = app.read(Query(name="脚本名称"))
+    check(loaded == "e2e-throw", f"selecting a script loads it into the editor: {loaded!r}")
     click("删除", role="push button")
     confirm("删除")
     app.wait_gone(role="list item", pattern=r"^脚本 e2e-throw ")
@@ -654,10 +666,10 @@ def t12():
     select_server("不可达")
     click("连接")
     err = status("连接错误").name
-    check("refused" in err.lower(), f"status carries the raw error: {err}")
+    check(REFUSED.search(err), f"status carries the raw error: {err}")
     toast("连接被拒绝")
     logs = "".join(p.read_text() for p in (DATA / "logs").glob("*.log"))
-    check("Connection refused" in logs and "不可达" in logs, "connection error written to the error log")
+    check(REFUSED.search(logs) and "不可达" in logs, "connection error written to the error log")
 
 
 @scenario("T13", "设置：主题切换与持久化、数据/日志路径、日志查看与清空")
@@ -670,7 +682,7 @@ def t13():
     app.find(role="status bar", name=f"日志目录 {DATA / 'logs'}")
     check(app.find(name="深色", role="radio button").checked, "theme radio reflects dark mode")
     recent = app.read(Query(name="最近日志"))
-    check("Connection refused" in recent, f"recent log view: {recent[:200]!r}")
+    check(REFUSED.search(recent), f"recent log view: {recent[:200]!r}")
     click("浅色", role="radio button")
     wait_until(lambda: config().get("theme") == "light", 4, desc="theme light persisted")
     click("跟随系统", role="radio button")
