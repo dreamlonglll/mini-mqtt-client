@@ -46,20 +46,20 @@ impl TemplateForm {
             })
         };
         let categories = state.read(cx).storage.template_categories(server_id);
-        let name = text(window, cx, &draft.name, "给模板起个容易识别的名称");
+        let name = text(window, cx, &draft.name, &tr!("template.name_placeholder"));
         let category = text(
             window,
             cx,
             draft.category.as_deref().unwrap_or(""),
-            "输入新分类或点击下方已有分类",
+            &tr!("template.category_placeholder"),
         );
         let description = text(
             window,
             cx,
             draft.description.as_deref().unwrap_or(""),
-            "可选：描述模板的用途",
+            &tr!("template.description_placeholder"),
         );
-        let topic = text(window, cx, &draft.topic, "例如: device/001/command");
+        let topic = text(window, cx, &draft.topic, &tr!("template.topic_placeholder"));
         let payload_text = draft.payload.clone();
         let payload = cx.new(|cx| {
             EditorState::new(window, cx)
@@ -105,9 +105,9 @@ impl TemplateForm {
                     cx,
                     ToastKind::Success,
                     if id.is_some() {
-                        "模板已更新"
+                        tr!("template.updated")
                     } else {
-                        "模板已创建"
+                        tr!("template.created")
                     },
                 );
                 true
@@ -128,7 +128,7 @@ impl TemplateForm {
         };
         match formatted {
             Some(f) => self.payload.update(cx, |s, cx| s.set_value(f, window, cx)),
-            None => notify(window, cx, ToastKind::Warning, "JSON 格式不正确"),
+            None => notify(window, cx, ToastKind::Warning, tr!("payload.json_invalid_short")),
         }
     }
 }
@@ -148,19 +148,19 @@ impl Render for TemplateForm {
 
         v_flex()
             .gap_3()
-            .child(section_label("基本信息", cx))
+            .child(section_label(tr!("template.basic_info"), cx))
             .child(form_row(
-                "模板名称",
+                tr!("template.name"),
                 true,
-                Input::new(&self.name).aria_label("模板名称"),
+                Input::new(&self.name).aria_label(tr!("template.name")),
                 cx,
             ))
             .child(form_row(
-                "分类",
+                tr!("template.category"),
                 false,
                 v_flex()
                     .gap_1p5()
-                    .child(Input::new(&self.category).aria_label("模板分类"))
+                    .child(Input::new(&self.category).aria_label(tr!("template.category_aria")))
                     .when(!self.categories.is_empty(), |this| {
                         this.child(
                             h_flex()
@@ -180,16 +180,16 @@ impl Render for TemplateForm {
                 cx,
             ))
             .child(form_row(
-                "描述",
+                tr!("common.description"),
                 false,
-                Input::new(&self.description).aria_label("模板描述"),
+                Input::new(&self.description).aria_label(tr!("template.description_aria")),
                 cx,
             ))
-            .child(section_label("MQTT 配置", cx))
+            .child(section_label(tr!("template.mqtt_settings"), cx))
             .child(form_row(
-                "主题",
+                tr!("template.topic"),
                 true,
-                Input::new(&self.topic).aria_label("模板主题").prefix(
+                Input::new(&self.topic).aria_label(tr!("template.topic_aria")).prefix(
                     gpui_kit::component::Icon::new(Lucide::Send)
                         .small()
                         .text_color(theme.muted_foreground),
@@ -203,7 +203,7 @@ impl Render for TemplateForm {
                     .gap_6()
                     .child(segmented(
                         "tpl-qos",
-                        "模板 QoS",
+                        &tr!("template.qos"),
                         &["QoS 0", "QoS 1", "QoS 2"],
                         self.qos as usize,
                         move |ix, _, cx| {
@@ -215,7 +215,7 @@ impl Render for TemplateForm {
                     ))
                     .child(
                         Switch::new("tpl-retain")
-                            .label("Retain 保留消息")
+                            .label(tr!("template.retain"))
                             .checked(self.retain)
                             .on_click(move |checked, _, cx| {
                                 let checked = *checked;
@@ -233,7 +233,7 @@ impl Render for TemplateForm {
                     .border_b_1()
                     .border_color(theme.border)
                     .pb_1()
-                    .child(div().text_sm().font_semibold().child("消息内容"))
+                    .child(div().text_sm().font_semibold().child(tr!("template.payload")))
                     .child(
                         h_flex()
                             .gap_1()
@@ -243,7 +243,7 @@ impl Render for TemplateForm {
                                         .ghost()
                                         .xsmall()
                                         .icon(Lucide::Braces)
-                                        .label("格式化")
+                                        .label(tr!("publish.format_json"))
                                         .on_click(move |_, window, cx| {
                                             e_pretty.update(cx, |this, cx| this.reformat(true, window, cx))
                                         }),
@@ -253,7 +253,7 @@ impl Render for TemplateForm {
                                         .ghost()
                                         .xsmall()
                                         .icon(IconName::Minus)
-                                        .label("压缩")
+                                        .label(tr!("template.minify"))
                                         .on_click(move |_, window, cx| {
                                             e_compact.update(cx, |this, cx| this.reformat(false, window, cx))
                                         }),
@@ -261,7 +261,7 @@ impl Render for TemplateForm {
                             })
                             .child(segmented(
                                 "tpl-format",
-                                "模板格式",
+                                &tr!("template.format"),
                                 &["JSON", "TEXT", "HEX"],
                                 format_ix,
                                 move |ix, _, cx| {
@@ -274,9 +274,11 @@ impl Render for TemplateForm {
                     ),
             )
             .child(
-                div()
-                    .h(px(200.))
-                    .child(Editor::new(&self.payload).aria_label("模板内容").h_full()),
+                div().h(px(200.)).child(
+                    Editor::new(&self.payload)
+                        .aria_label(tr!("template.payload_aria"))
+                        .h_full(),
+                ),
             )
     }
 }
@@ -290,16 +292,24 @@ pub fn open(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let title = if id.is_some() { "编辑模板" } else { "新建模板" };
-    let ok = if id.is_some() { "保存" } else { "创建模板" };
+    let title = if id.is_some() {
+        tr!("template.edit_title")
+    } else {
+        tr!("template.new_title")
+    };
+    let ok = if id.is_some() {
+        tr!("common.save")
+    } else {
+        tr!("template.create")
+    };
     let form = cx.new(|cx| TemplateForm::new(state, server_id, id, draft, window, cx));
     window.open_dialog(cx, move |dialog, _, _| {
         let save_form = form.clone();
         dialog
-            .title(title)
+            .title(title.clone())
             .w(px(720.))
             .child(form.clone())
-            .footer(dialog_footer(ok))
+            .footer(dialog_footer(ok.clone()))
             .on_ok(move |_, window, cx| save_form.update(cx, |form, cx| form.save(window, cx)))
     });
 }

@@ -22,7 +22,7 @@ impl SubscriptionForm {
             .update(cx, |state, cx| state.add_subscription(server_id, topic, qos, cx))
         {
             Ok(()) => {
-                notify(window, cx, ToastKind::Success, "订阅已添加");
+                notify(window, cx, ToastKind::Success, tr!("subscription.added"));
                 true
             }
             Err(err) => {
@@ -41,7 +41,7 @@ impl Render for SubscriptionForm {
             .child(form_row(
                 "Topic",
                 true,
-                Input::new(&self.topic).aria_label("订阅 Topic"),
+                Input::new(&self.topic).aria_label(tr!("subscription.topic")),
                 cx,
             ))
             .child(form_row(
@@ -49,7 +49,7 @@ impl Render for SubscriptionForm {
                 false,
                 segmented(
                     "sub-qos",
-                    "订阅 QoS",
+                    &tr!("subscription.qos"),
                     &["QoS 0", "QoS 1", "QoS 2"],
                     self.qos as usize,
                     move |ix, _, cx| {
@@ -66,13 +66,13 @@ impl Render for SubscriptionForm {
                     .pl(px(108.))
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child("支持通配符：+ 匹配单个层级（如 sensor/+/temp），# 匹配多个层级（如 device/#）"),
+                    .child(tr!("subscription.wildcard_hint")),
             )
     }
 }
 
 pub fn open(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &mut App) {
-    let topic = cx.new(|cx| InputState::new(window, cx).placeholder("例如: device/+/status 或 test/#"));
+    let topic = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("subscription.topic_placeholder")));
     let form = cx.new(|_| SubscriptionForm {
         state,
         server_id,
@@ -86,10 +86,10 @@ pub fn open(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &m
         }
         let save_form = form.clone();
         dialog
-            .title("添加订阅")
+            .title(tr!("subscription.add_title"))
             .w(px(520.))
             .child(form.clone())
-            .footer(dialog_footer("订阅"))
+            .footer(dialog_footer(tr!("subscription.subscribe")))
             .on_ok(move |_, window, cx| save_form.update(cx, |form, cx| form.save(window, cx)))
     });
 }

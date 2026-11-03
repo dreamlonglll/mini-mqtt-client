@@ -4,10 +4,23 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+/// Localised text (see `locales/app.yml`) as a `SharedString`. Takes the
+/// arguments of `rust_i18n::t!`: the key, then `name = value` pairs that fill
+/// `%{name}`.
+macro_rules! tr {
+    ($($args:tt)*) => {
+        gpui_kit::SharedString::from(rust_i18n::t!($($args)*))
+    };
+}
+
 mod assets;
 mod backend;
+mod i18n;
 mod state;
 mod ui;
+
+// Texts of the app (`locales/app.yml`), looked up with `rust_i18n::t!`.
+rust_i18n::i18n!("locales", fallback = "en");
 
 use gpui_kit::*;
 use state::AppState;
@@ -21,7 +34,6 @@ fn main() {
 
     gpui_kit::application().with_assets(assets::AppAssets).run(|cx| {
         gpui_kit::init(cx);
-        gpui_kit::component::set_locale("zh-CN");
 
         #[cfg(target_os = "macos")]
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);

@@ -107,7 +107,7 @@ pub fn section_label(text: impl Into<SharedString>, cx: &App) -> Div {
 pub fn segmented(
     id: &'static str,
     group: &str,
-    labels: &[&str],
+    labels: &[impl AsRef<str>],
     selected: usize,
     on_select: impl Fn(usize, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
@@ -116,6 +116,7 @@ pub fn segmented(
         .gap_0p5()
         .children(labels.iter().enumerate().map(|(ix, label)| {
             let on_select = on_select.clone();
+            let label = label.as_ref();
             let button = Button::new((id, ix))
                 .small()
                 .label(label.to_string())
@@ -152,33 +153,34 @@ fn step_number(state: &Entity<InputState>, delta: i64, min: i64, max: i64, windo
 /// GPUI and a per-frame warning in release builds once a screen reader is on).
 pub fn number_field(
     id: &'static str,
-    label: &'static str,
+    label: &str,
     state: &Entity<InputState>,
     step: i64,
     min: i64,
     max: i64,
 ) -> impl IntoElement {
     let (dec, inc) = (state.clone(), state.clone());
+    let label = SharedString::from(label.to_string());
     h_flex()
         .gap_1()
         .child(
             Button::new((id, 0usize))
                 .outline()
                 .icon(IconName::Minus)
-                .accessibility_label(format!("减少 {label}"))
+                .accessibility_label(tr!("common.decrease", label = label))
                 .on_click(move |_, window, cx| step_number(&dec, -step, min, max, window, cx)),
         )
         .child(
             div()
                 .flex_1()
                 .min_w(px(56.))
-                .child(gpui_kit::component::input::Input::new(state).aria_label(label)),
+                .child(gpui_kit::component::input::Input::new(state).aria_label(label.clone())),
         )
         .child(
             Button::new((id, 1usize))
                 .outline()
                 .icon(IconName::Plus)
-                .accessibility_label(format!("增加 {label}"))
+                .accessibility_label(tr!("common.increase", label = label))
                 .on_click(move |_, window, cx| step_number(&inc, step, min, max, window, cx)),
         )
 }
@@ -236,7 +238,7 @@ pub fn confirm(
             .description(description.clone())
             .ok_text(ok_text.clone())
             .ok_variant(gpui_kit::component::button::ButtonVariant::Danger)
-            .cancel_text("取消")
+            .cancel_text(tr!("common.cancel"))
             .show_cancel(true)
             .on_ok(move |_, window, cx| {
                 on_ok(window, cx);
@@ -257,12 +259,14 @@ pub fn close_button(label: impl Into<SharedString>, primary: bool) -> impl IntoE
 /// Standard dialog footer: Cancel + a primary action that triggers `on_ok`.
 pub fn dialog_footer(ok_label: impl Into<SharedString>) -> DialogFooter {
     let ok_label = ok_label.into();
-    DialogFooter::new().child(close_button("取消", false)).child(
-        div().min_w(px(88.)).child(
-            gpui_kit::component::dialog::DialogAction::new()
-                .child(Button::new("dialog-ok").primary().px_4().label(ok_label)),
-        ),
-    )
+    DialogFooter::new()
+        .child(close_button(tr!("common.cancel"), false))
+        .child(
+            div().min_w(px(88.)).child(
+                gpui_kit::component::dialog::DialogAction::new()
+                    .child(Button::new("dialog-ok").primary().px_4().label(ok_label)),
+            ),
+        )
 }
 
 pub fn empty_state(icon: impl Into<Icon>, text: impl Into<SharedString>, cx: &App) -> Div {

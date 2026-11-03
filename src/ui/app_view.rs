@@ -74,16 +74,17 @@ impl Render for AppView {
                 .items_center()
                 .justify_center()
                 .gap_4()
-                .child(div().h(px(160.)).w(px(360.)).child(empty_state(
-                    Lucide::Server,
-                    "还没有服务器，添加一个 MQTT 服务器开始使用",
-                    cx,
-                )))
+                .child(
+                    div()
+                        .h(px(160.))
+                        .w(px(360.))
+                        .child(empty_state(Lucide::Server, tr!("app.no_server"), cx)),
+                )
                 .child(
                     Button::new("add-first-server")
                         .primary()
                         .icon(gpui_kit::component::IconName::Plus)
-                        .label("添加服务器")
+                        .label(tr!("app.add_server"))
                         .on_click(move |_, window, cx| server_dialog::open(state.clone(), None, window, cx)),
                 )
                 .into_any_element()

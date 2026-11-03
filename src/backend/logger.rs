@@ -70,7 +70,7 @@ impl LogManager {
             .create(true)
             .append(true)
             .open(&log_file)
-            .map_err(|e| format!("无法打开日志文件: {e}"))?;
+            .map_err(|e| format!("cannot open the log file: {e}"))?;
         let line = format!(
             "[{}] [{}] {}{}\n",
             Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
@@ -79,7 +79,7 @@ impl LogManager {
             details.map(|d| format!(" | Details: {d}")).unwrap_or_default()
         );
         file.write_all(line.as_bytes())
-            .map_err(|e| format!("写入日志失败: {e}"))?;
+            .map_err(|e| format!("cannot write the log: {e}"))?;
         self.cleanup_old_logs();
         Ok(())
     }

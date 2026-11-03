@@ -14,14 +14,18 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{prelude::*, *};
 
-fn default_code(kind: ScriptType) -> &'static str {
+fn default_code(kind: ScriptType) -> String {
     match kind {
-        ScriptType::BeforePublish => {
-            "// 定义 process 函数处理 payload，点击\"查看可用函数\"查看更多\n\nasync function process(payload) {\n  // 在这里处理 payload\n  return payload;\n}\n"
-        }
-        ScriptType::AfterReceive => {
-            "// 定义 process 函数处理 payload，点击\"查看可用函数\"查看更多\n\nasync function process(payload, topic) {\n  // 在这里处理接收到的消息\n  return payload;\n}\n"
-        }
+        ScriptType::BeforePublish => format!(
+            "// {}\n\nasync function process(payload, topic) {{\n  // {}\n  return payload;\n}}\n",
+            tr!("script.default_comment"),
+            tr!("script.default_before")
+        ),
+        ScriptType::AfterReceive => format!(
+            "// {}\n\nasync function process(payload, topic) {{\n  // {}\n  return payload;\n}}\n",
+            tr!("script.default_comment"),
+            tr!("script.default_after")
+        ),
     }
 }
 
@@ -42,8 +46,8 @@ struct ScriptManager {
 
 impl ScriptManager {
     fn new(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let name = cx.new(|cx| InputState::new(window, cx).placeholder("脚本名称"));
-        let description = cx.new(|cx| InputState::new(window, cx).placeholder("脚本描述（可选）"));
+        let name = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("script.name")));
+        let description = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("script.description_placeholder")));
         let code = cx.new(|cx| {
             EditorState::new(window, cx)
                 .language("javascript")
@@ -56,7 +60,7 @@ impl ScriptManager {
         });
         let sample = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("测试用 payload")
+                .placeholder(tr!("script.sample_placeholder"))
                 .default_value(r#"{"hello": "mqtt"}"#)
         });
         let subscription = cx.observe(&state, |_, _, cx| cx.notify());
@@ -129,7 +133,7 @@ impl ScriptManager {
         match result {
             Ok(id) => {
                 self.selected = Some(id);
-                notify(window, cx, ToastKind::Success, "脚本已保存");
+                notify(window, cx, ToastKind::Success, tr!("script.saved"));
             }
             Err(err) => notify(window, cx, ToastKind::Warning, err),
         }
@@ -146,9 +150,9 @@ impl ScriptManager {
         confirm(
             window,
             cx,
-            "删除脚本",
-            format!("确定要删除脚本「{name}」吗？"),
-            "删除",
+            tr!("script.delete_title"),
+            tr!("script.delete_confirm", name = name),
+            tr!("common.delete"),
             move |window, cx| {
                 state.update(cx, |state, cx| state.delete_script(id, cx));
                 entity.update(cx, |this, cx| this.start_new(window, cx));
@@ -192,13 +196,13 @@ impl ScriptManager {
                     .justify_between()
                     .border_b_1()
                     .border_color(theme.border)
-                    .child(div().font_semibold().child("脚本列表"))
+                    .child(div().font_semibold().child(tr!("script.list")))
                     .child(
                         Button::new("script-new")
                             .primary()
                             .small()
                             .icon(IconName::Plus)
-                            .label("新增")
+                            .label(tr!("script.new"))
                             .on_click(move |_, window, cx| {
                                 new_entity.update(cx, |this, cx| this.start_new(window, cx))
                             }),
@@ -213,7 +217,11 @@ impl ScriptManager {
                     .gap_0p5()
                     .overflow_y_scrollbar()
                     .when(scripts.is_empty(), |this| {
-                        this.child(div().h(px(200.)).child(empty_state(Lucide::FileCode, "暂无脚本", cx)))
+                        this.child(
+                            div()
+                                .h(px(200.))
+                                .child(empty_state(Lucide::FileCode, tr!("script.empty"), cx)),
+                        )
                     })
                     .children(scripts.iter().map(|s| {
                         let id = s.id.unwrap_or_default();
@@ -229,10 +237,15 @@ impl ScriptManager {
                             .id(("script", id as u64))
                             .role(Role::ListItem)
                             .aria_label(format!(
-                                "脚本 {} {} {}",
+                                "{} {} {} {}",
+                                tr!("script.item"),
                                 s.name,
                                 s.kind().label(),
-                                if s.enabled { "已启用" } else { "已停用" }
+                                if s.enabled {
+                                    tr!("common.enabled")
+                                } else {
+                                    tr!("common.disabled")
+                                }
                             ))
                             .px_3()
                             .py_2()
@@ -254,7 +267,7 @@ impl ScriptManager {
                             )
                             .child(
                                 Switch::new(("script-enabled", id as u64))
-                                    .accessibility_label(format!("启用脚本 {}", s.name))
+                                    .accessibility_label(tr!("script.enable", name = s.name))
                                     .small()
                                     .checked(s.enabled)
                                     .on_click(move |checked, _, cx| {
@@ -270,14 +283,14 @@ impl ScriptManager {
         let theme = cx.theme();
         let output = self.output.as_ref()?;
         let (color, title, body) = match &output.result {
-            Ok(result) => (theme.success, "运行成功，输出：", result.clone()),
-            Err(err) => (theme.danger, "运行失败：", err.clone()),
+            Ok(result) => (theme.success, tr!("script.run_ok"), result.clone()),
+            Err(err) => (theme.danger, tr!("script.run_failed"), err.clone()),
         };
         Some(
             v_flex()
                 .id("script-output")
                 .role(Role::Status)
-                .aria_label(format!("测试结果 {title}{body}"))
+                .aria_label(format!("{} {title}{body}", tr!("script.test_result")))
                 .max_h(px(96.))
                 .overflow_y_scrollbar()
                 .p_2()
@@ -306,12 +319,8 @@ impl Render for ScriptManager {
         let (e_kind, e_delete, e_save, e_test) = (entity.clone(), entity.clone(), entity.clone(), entity.clone());
         let editing = self.selected.is_some();
         let hint = match self.kind {
-            ScriptType::BeforePublish => {
-                "定义 process(payload, topic) 函数，返回处理后的 payload（发送前执行）；env.变量名 读取环境变量"
-            }
-            ScriptType::AfterReceive => {
-                "定义 process(payload, topic) 函数，返回处理后的 payload（接收后执行）；env.变量名 读取环境变量"
-            }
+            ScriptType::BeforePublish => tr!("script.hint_before"),
+            ScriptType::AfterReceive => tr!("script.hint_after"),
         };
 
         h_flex()
@@ -331,18 +340,18 @@ impl Render for ScriptManager {
                             .justify_between()
                             .border_b_1()
                             .border_color(theme.border)
-                            .child(
-                                div()
-                                    .font_semibold()
-                                    .child(if editing { "编辑脚本" } else { "新建脚本" }),
-                            )
+                            .child(div().font_semibold().child(if editing {
+                                tr!("script.edit_title")
+                            } else {
+                                tr!("script.new_title")
+                            }))
                             .when(editing, |this| {
                                 this.child(
                                     Button::new("script-delete")
                                         .ghost()
                                         .small()
                                         .icon(Lucide::Trash)
-                                        .label("删除")
+                                        .label(tr!("common.delete"))
                                         .on_click(move |_, window, cx| {
                                             e_delete.update(cx, |this, cx| this.delete(window, cx))
                                         }),
@@ -358,11 +367,15 @@ impl Render for ScriptManager {
                             .gap_3()
                             .overflow_y_scrollbar()
                             .child(form_row(
-                                "名称",
+                                tr!("server.name"),
                                 true,
                                 h_flex()
                                     .gap_4()
-                                    .child(div().flex_1().child(Input::new(&self.name).aria_label("脚本名称")))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .child(Input::new(&self.name).aria_label(tr!("script.name"))),
+                                    )
                                     .child(
                                         RadioGroup::horizontal("script-kind")
                                             .disabled(editing)
@@ -378,15 +391,15 @@ impl Render for ScriptManager {
                                                 };
                                                 e_kind.update(cx, |this, cx| this.set_kind(kind, window, cx))
                                             })
-                                            .child(Radio::new("kind-before").label("发送前处理"))
-                                            .child(Radio::new("kind-after").label("接收后处理")),
+                                            .child(Radio::new("kind-before").label(tr!("script.before_publish")))
+                                            .child(Radio::new("kind-after").label(tr!("script.after_receive"))),
                                     ),
                                 cx,
                             ))
                             .child(form_row(
-                                "描述",
+                                tr!("common.description"),
                                 false,
-                                Input::new(&self.description).aria_label("脚本描述"),
+                                Input::new(&self.description).aria_label(tr!("script.description")),
                                 cx,
                             ))
                             .child(
@@ -404,7 +417,7 @@ impl Render for ScriptManager {
                                 div()
                                     .flex_1()
                                     .min_h(px(130.))
-                                    .child(Editor::new(&self.code).aria_label("脚本代码").h_full()),
+                                    .child(Editor::new(&self.code).aria_label(tr!("script.code")).h_full()),
                             )
                             .child(
                                 h_flex()
@@ -412,14 +425,14 @@ impl Render for ScriptManager {
                                     .child(
                                         div()
                                             .flex_1()
-                                            .child(Input::new(&self.sample).aria_label("测试 payload").small()),
+                                            .child(Input::new(&self.sample).aria_label(tr!("script.sample")).small()),
                                     )
                                     .child(
                                         Button::new("script-test")
                                             .outline()
                                             .small()
                                             .icon(IconName::Play)
-                                            .label("测试运行")
+                                            .label(tr!("script.test_run"))
                                             .loading(self.testing)
                                             .on_click(move |_, window, cx| {
                                                 e_test.update(cx, |this, cx| this.test_run(window, cx))
@@ -441,14 +454,14 @@ impl Render for ScriptManager {
                                 Button::new("script-help")
                                     .outline()
                                     .icon(IconName::BookOpen)
-                                    .label("查看可用函数")
+                                    .label(tr!("script.view_functions"))
                                     .on_click(|_, window, cx| open_help(window, cx)),
                             )
                             .child(
                                 Button::new("script-save")
                                     .primary()
                                     .icon(Lucide::Save)
-                                    .label("保存")
+                                    .label(tr!("common.save"))
                                     .on_click(move |_, window, cx| e_save.update(cx, |this, cx| this.save(window, cx))),
                             ),
                     ),
@@ -460,95 +473,98 @@ pub fn open(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &m
     let manager = cx.new(|cx| ScriptManager::new(state, server_id, window, cx));
     window.open_dialog(cx, move |dialog, _, _| {
         dialog
-            .title("脚本管理")
+            .title(tr!("script.title"))
             .w(px(1040.))
             .child(manager.clone())
-            .footer(DialogFooter::new().child(super::common::close_button("关闭", false)))
+            .footer(DialogFooter::new().child(super::common::close_button(tr!("common.close"), false)))
     });
 }
 
+/// `(section key, [(signature, description key)])` of the function help;
+/// the keys live under `script.help.` in the locale file.
 const HELP: &[(&str, &[(&str, &str)])] = &[
     (
-        "入口",
+        "entry",
+        &[
+            ("process(payload, topic)", "process"),
+            ("payload / topic", "globals"),
+            ("console.log / warn / error", "console"),
+            ("atob / btoa", "atob"),
+            ("JSON, Math, Date, ...", "builtins"),
+        ],
+    ),
+    (
+        "env",
+        &[
+            ("env.NAME", "env_name"),
+            ("env.get(\"NAME\")", "env_get"),
+            ("env.replace(text)", "env_replace"),
+            ("env.all()", "env_all"),
+        ],
+    ),
+    (
+        "encoding",
+        &[
+            ("crypto.stringToBytes(str)", "string_to_bytes"),
+            ("crypto.bytesToString(bytes)", "bytes_to_string"),
+            ("crypto.bytesToBase64(bytes) / base64ToBytes(str)", "base64"),
+            ("crypto.bytesToHex(bytes) / hexToBytes(hex)", "hex"),
+        ],
+    ),
+    (
+        "hash",
+        &[
+            ("await crypto.sha256(data)", "sha256"),
+            ("await crypto.sha1(data)", "sha1"),
+            ("crypto.md5(data)", "md5"),
+            ("await crypto.hmacSha256(key, data)", "hmac"),
+            ("crypto.crc32(data)", "crc32"),
+        ],
+    ),
+    (
+        "aes_base64",
+        &[
+            ("await crypto.aesGcmEncrypt(text, keyBase64, ivBase64?)", "gcm_encrypt"),
+            ("await crypto.aesGcmDecrypt(cipherBase64, keyBase64)", "gcm_decrypt"),
+            ("await crypto.aesCbcEncrypt(text, keyBase64, ivBase64?)", "cbc_encrypt"),
+            ("await crypto.aesCbcDecrypt(cipherBase64, keyBase64)", "cbc_decrypt"),
+        ],
+    ),
+    (
+        "aes_hex",
         &[
             (
-                "process(payload, topic)",
-                "返回值替换 payload；可为 async。返回对象时自动 JSON.stringify，返回 undefined 保持原样",
+                "await crypto.aesGcmEncryptHex(text, keyHex, ivHex?)",
+                "gcm_encrypt_short",
             ),
-            ("payload / topic", "全局变量：原始消息内容（字符串）与主题"),
-            ("console.log / warn / error", "输出日志（测试运行时可见）"),
-            ("atob / btoa", "Base64 编解码（Latin1）"),
-            ("JSON, Math, Date, ...", "标准 JavaScript 内置对象"),
-        ],
-    ),
-    (
-        "环境变量",
-        &[
-            ("env.变量名", "获取当前服务器的环境变量值"),
-            ("env.get(\"变量名\")", "获取环境变量值（不存在时为 undefined）"),
-            ("env.replace(text)", "替换文本中的 {{变量名}} 占位符"),
-            ("env.all()", "获取全部环境变量，返回 [{ name, value }] 数组"),
-        ],
-    ),
-    (
-        "编码转换",
-        &[
-            ("crypto.stringToBytes(str)", "字符串 → Uint8Array (UTF-8)"),
-            ("crypto.bytesToString(bytes)", "Uint8Array → 字符串"),
-            ("crypto.bytesToBase64(bytes) / base64ToBytes(str)", "Base64 编解码"),
-            ("crypto.bytesToHex(bytes) / hexToBytes(hex)", "Hex 编解码"),
-        ],
-    ),
-    (
-        "哈希",
-        &[
-            ("await crypto.sha256(data)", "SHA-256，返回小写 hex"),
-            ("await crypto.sha1(data)", "SHA-1，返回小写 hex"),
-            ("crypto.md5(data)", "MD5，返回小写 hex"),
-            ("await crypto.hmacSha256(key, data)", "HMAC-SHA256，返回小写 hex"),
-            ("crypto.crc32(data)", "CRC32，返回 8 位 hex"),
-        ],
-    ),
-    (
-        "AES（Base64 格式，结果包含 IV）",
-        &[
+            ("await crypto.aesGcmDecryptHex(cipherHex, keyHex)", "gcm_decrypt"),
             (
-                "await crypto.aesGcmEncrypt(text, keyBase64, ivBase64?)",
-                "AES-GCM 加密，IV 12 字节，缺省随机",
+                "await crypto.aesCbcEncryptHex(text, keyHex, ivHex?)",
+                "cbc_encrypt_short",
             ),
-            ("await crypto.aesGcmDecrypt(cipherBase64, keyBase64)", "AES-GCM 解密"),
-            (
-                "await crypto.aesCbcEncrypt(text, keyBase64, ivBase64?)",
-                "AES-CBC/PKCS7 加密，IV 16 字节",
-            ),
-            ("await crypto.aesCbcDecrypt(cipherBase64, keyBase64)", "AES-CBC 解密"),
+            ("await crypto.aesCbcDecryptHex(cipherHex, keyHex)", "cbc_decrypt"),
         ],
     ),
     (
-        "AES（Hex 格式，结果包含 IV）",
+        "other",
         &[
-            ("await crypto.aesGcmEncryptHex(text, keyHex, ivHex?)", "AES-GCM 加密"),
-            ("await crypto.aesGcmDecryptHex(cipherHex, keyHex)", "AES-GCM 解密"),
-            ("await crypto.aesCbcEncryptHex(text, keyHex, ivHex?)", "AES-CBC 加密"),
-            ("await crypto.aesCbcDecryptHex(cipherHex, keyHex)", "AES-CBC 解密"),
-        ],
-    ),
-    (
-        "其他",
-        &[
-            ("crypto.randomBytes(length)", "随机字节 Uint8Array"),
-            ("crypto.generateKey(bits = 128)", "随机密钥（Base64）"),
-            ("crypto.generateIv(length = 12)", "随机 IV（Base64）"),
-            ("crypto.xor(data, key)", "XOR 加解密（对称）"),
+            ("crypto.randomBytes(length)", "random_bytes"),
+            ("crypto.generateKey(bits = 128)", "generate_key"),
+            ("crypto.generateIv(length = 12)", "generate_iv"),
+            ("crypto.xor(data, key)", "xor"),
         ],
     ),
 ];
+
+fn help_text(key: &str) -> SharedString {
+    tr!(format!("script.help.{key}"))
+}
 
 fn open_help(window: &mut Window, cx: &mut App) {
     window.open_dialog(cx, |dialog, _, cx| {
         let theme = cx.theme().clone();
         dialog
-            .title("可用函数")
+            .title(tr!("script.functions"))
             .w(px(760.))
             .child(
                 v_flex()
@@ -559,7 +575,7 @@ fn open_help(window: &mut Window, cx: &mut App) {
                     .children(HELP.iter().map(|(section, items)| {
                         v_flex()
                             .gap_1()
-                            .child(div().text_sm().font_semibold().child(*section))
+                            .child(div().text_sm().font_semibold().child(help_text(section)))
                             .children(items.iter().map(|(sig, desc)| {
                                 h_flex()
                                     .gap_3()
@@ -573,13 +589,13 @@ fn open_help(window: &mut Window, cx: &mut App) {
                                             .text_color(theme.primary)
                                             .child(*sig),
                                     )
-                                    .child(div().flex_1().text_color(theme.muted_foreground).child(*desc))
+                                    .child(div().flex_1().text_color(theme.muted_foreground).child(help_text(desc)))
                             }))
                     }))
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(div().text_sm().font_semibold().child("示例"))
+                            .child(div().text_sm().font_semibold().child(tr!("script.example")))
                             .child(
                                 div()
                                     .p_2()
@@ -593,6 +609,25 @@ fn open_help(window: &mut Window, cx: &mut App) {
                             ),
                     ),
             )
-            .footer(DialogFooter::new().child(super::common::close_button("知道了", true)))
+            .footer(DialogFooter::new().child(super::common::close_button(tr!("script.got_it"), true)))
     });
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `super::*`: that would bring GPUI's `test` attribute into scope.
+    use super::HELP;
+
+    #[test]
+    fn help_texts_exist_in_both_languages() {
+        let keys = HELP
+            .iter()
+            .flat_map(|(section, items)| std::iter::once(*section).chain(items.iter().map(|(_, d)| *d)));
+        for key in keys {
+            let id = format!("script.help.{key}");
+            for locale in [crate::i18n::ZH_CN, crate::i18n::EN] {
+                assert_ne!(rust_i18n::t!(&id, locale = locale), id, "{id} missing for {locale}");
+            }
+        }
+    }
 }

@@ -11,6 +11,7 @@ use crate::backend::mqtt::{ConnectionStatus, IncomingMessage, MqttEvent, MqttMan
 use crate::backend::payload::{self, DetectedFormat};
 use crate::backend::storage::Storage;
 use crate::backend::{env, script, topic};
+use crate::i18n::{self, Language};
 use chrono::{DateTime, Local};
 use futures::StreamExt;
 use gpui_kit::component::{Theme, ThemeMode};
@@ -179,6 +180,9 @@ pub enum AppEvent {
     MessagesChanged(i64),
     /// Fill the publish panel (from a template or "copy to publish").
     FillPublish(PublishDraft),
+    /// The interface language changed: views refresh texts they keep in state
+    /// (input placeholders); everything else follows on the next render.
+    LanguageChanged,
 }
 
 /// Blue accent of the previous (Element Plus) UI, applied on top of the
@@ -236,6 +240,8 @@ pub struct AppState {
     unreported_drops: u64,
     drop_report_scheduled: bool,
     next_message_id: u64,
+    /// `MINI_MQTT_LANG` in effect until a language is picked in the settings.
+    language_override: Option<Language>,
     _pump: Task<()>,
 }
 
@@ -245,6 +251,9 @@ impl AppState {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let app_dir = config::app_data_dir();
         let config = AppConfig::load(&app_dir);
+        // Before any view exists, so every text starts in the right language.
+        let language_override = i18n::env_override();
+        i18n::apply(language_override.unwrap_or(config.language));
         let logs = Arc::new(LogManager::new(&app_dir));
         let data_file = config.data_file(&app_dir);
         let storage = match Storage::open(data_file.clone()) {
@@ -252,16 +261,16 @@ impl AppState {
             Err(err) => {
                 logs.write(
                     LogKind::Storage,
-                    &format!("无法打开数据文件 {}", data_file.display()),
+                    &tr!("storage.open_failed", path = data_file.display()),
                     Some(&err),
                 );
                 let fallback = app_dir.join("data.yaml");
-                Storage::open(fallback).unwrap_or_else(|e| panic!("无法初始化存储: {e}"))
+                Storage::open(fallback).unwrap_or_else(|e| panic!("cannot open the data file: {e}"))
             }
         }
         .with_logger(logs.clone());
         if let Some(backup) = storage.corrupt_backup().map(Path::to_path_buf) {
-            let message = format!("数据文件无法解析，已备份到 {}，本次以空数据启动", backup.display());
+            let message = tr!("storage.corrupt_backed_up", path = backup.display()).to_string();
             logs.write(LogKind::Storage, &message, Some(&data_file.display().to_string()));
             // Shown once the window (which listens for toasts) is open.
             cx.spawn(async move |this, cx| {
@@ -312,6 +321,7 @@ impl AppState {
             unreported_drops: 0,
             drop_report_scheduled: false,
             next_message_id: 1,
+            language_override,
             _pump: pump,
         };
         state.apply_theme(cx);
@@ -461,9 +471,9 @@ impl AppState {
         if script_errors > MAX_LOGGED_SCRIPT_ERRORS {
             self.logs.write(
                 LogKind::Script,
-                &format!(
-                    "另有 {} 条消息的接收后脚本执行失败",
-                    script_errors - MAX_LOGGED_SCRIPT_ERRORS
+                &tr!(
+                    "script.more_receive_errors",
+                    count = script_errors - MAX_LOGGED_SCRIPT_ERRORS
                 ),
                 None,
             );
@@ -490,7 +500,7 @@ impl AppState {
         if wait.is_zero() {
             let dropped = std::mem::take(&mut self.unreported_drops);
             self.last_drop_notice = Some(now);
-            let message = format!("消息过多，处理不及，已丢弃最早的 {dropped} 条");
+            let message = tr!("messages.dropped", count = dropped).to_string();
             self.logs.write(LogKind::Mqtt, &message, None);
             self.toast(ToastKind::Warning, message, cx);
         } else if !self.drop_report_scheduled {
@@ -613,6 +623,26 @@ impl AppState {
         cx.notify();
     }
 
+    // ----------------------------------------------------------------------
+    // Language
+
+    /// The language preference in effect (an environment override wins).
+    pub fn language(&self) -> Language {
+        self.language_override.unwrap_or(self.config.language)
+    }
+
+    pub fn set_language(&mut self, language: Language, cx: &mut Context<Self>) {
+        self.language_override = None;
+        self.config.language = language;
+        i18n::apply(language);
+        if let Err(err) = self.config.save(&self.app_dir) {
+            self.toast(ToastKind::Error, err, cx);
+        }
+        cx.emit(AppEvent::LanguageChanged);
+        cx.refresh_windows();
+        cx.notify();
+    }
+
     pub fn toggle_dark(&mut self, cx: &mut Context<Self>) {
         let next = if self.is_dark(cx) {
             ThemePreference::Light
@@ -654,7 +684,7 @@ impl AppState {
         self.storage.update_server(server)?;
         self.reload_servers();
         if self.status(id).is_busy() {
-            self.toast(ToastKind::Info, "配置已保存，重新连接后生效", cx);
+            self.toast(ToastKind::Info, tr!("server.saved_reconnect"), cx);
         }
         cx.notify();
         Ok(())
@@ -674,9 +704,12 @@ impl AppState {
     }
 
     pub fn duplicate_server(&mut self, id: i64, cx: &mut Context<Self>) -> Result<(), String> {
-        let mut copy = self.server(id).cloned().ok_or("服务器不存在")?;
+        let mut copy = self
+            .server(id)
+            .cloned()
+            .ok_or_else(|| tr!("storage.server_not_found").to_string())?;
         copy.id = None;
-        copy.name = format!("{} (副本)", copy.name);
+        copy.name = tr!("server.copy_name", name = copy.name).into();
         copy.client_id = None;
         self.create_server(copy, cx)?;
         Ok(())
@@ -689,7 +722,7 @@ impl AppState {
         if let Err(err) = self.mqtt.connect(&server) {
             self.logs.write(LogKind::Mqtt, &err, Some(&server.address()));
             self.statuses.insert(server_id, ConnectionStatus::Error(err.clone()));
-            self.toast(ToastKind::Error, format!("连接失败: {err}"), cx);
+            self.toast(ToastKind::Error, tr!("toast.connect_failed", error = err), cx);
         }
         cx.notify();
     }
@@ -712,11 +745,11 @@ impl AppState {
                     }
                 }
                 if !failed.is_empty() {
-                    let msg = format!("自动订阅失败: {}", failed.join("; "));
+                    let msg = tr!("toast.auto_subscribe_failed", error = failed.join("; ")).to_string();
                     self.logs.write(LogKind::Mqtt, &msg, None);
                     self.toast(ToastKind::Warning, msg, cx);
                 }
-                self.toast(ToastKind::Success, format!("已连接到 {name}"), cx);
+                self.toast(ToastKind::Success, tr!("toast.connected_to", name = name), cx);
             }
             ConnectionStatus::Error(err) => {
                 let address = self.server(server_id).map(|s| s.address()).unwrap_or_default();
@@ -751,7 +784,7 @@ impl AppState {
             return Task::ready(Err(err));
         }
         if !self.mqtt.is_connected(server_id) {
-            return Task::ready(Err("未连接到服务器，请先连接".into()));
+            return Task::ready(Err(tr!("publish.not_connected").into()));
         }
         let scripts = self.script_chain(server_id, ScriptType::BeforePublish);
         if scripts.is_empty() {
@@ -804,13 +837,13 @@ impl AppState {
             }
         };
         let bytes = payload::encode_payload(&processed, draft.format)
-            .map_err(|e| format!("脚本处理后的内容无法按 {} 编码: {e}", draft.format.label()))?;
+            .map_err(|e| tr!("publish.encode_failed", format = draft.format.label(), error = e).to_string())?;
         if let Err(err) = self
             .mqtt
             .publish(server_id, &draft.topic, bytes.clone(), draft.qos, draft.retain)
         {
             self.logs
-                .write(LogKind::Mqtt, &format!("发布失败: {err}"), Some(&draft.topic));
+                .write(LogKind::Mqtt, &tr!("publish.failed", error = err), Some(&draft.topic));
             return Err(friendly_mqtt_error(&err));
         }
         self.push_message(
@@ -911,7 +944,7 @@ impl AppState {
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         if draft.name.trim().is_empty() {
-            return Err("请输入模板名称".into());
+            return Err(tr!("template.name_required").into());
         }
         topic::validate_publish_topic(&draft.topic)?;
         payload::validate_payload(&draft.payload, draft.payload_type)?;
@@ -936,10 +969,10 @@ impl AppState {
         let name = self
             .storage
             .template(id)
-            .map(|t| format!("{} - 副本", t.name))
+            .map(|t| tr!("template.copy_name", name = t.name).to_string())
             .unwrap_or_default();
         match self.storage.duplicate_template(id, name) {
-            Ok(_) => self.toast(ToastKind::Success, "模板已复制", cx),
+            Ok(_) => self.toast(ToastKind::Success, tr!("template.duplicated"), cx),
             Err(err) => self.toast(ToastKind::Error, err, cx),
         }
         cx.notify();
@@ -949,7 +982,7 @@ impl AppState {
     pub fn use_template(&mut self, id: i64, cx: &mut Context<Self>) {
         match self.storage.use_template(id) {
             Ok(t) => {
-                self.toast(ToastKind::Success, format!("已加载: {}", t.name), cx);
+                self.toast(ToastKind::Success, tr!("template.loaded", name = t.name), cx);
                 cx.emit(AppEvent::FillPublish(PublishDraft::from(&t)));
             }
             Err(err) => self.toast(ToastKind::Error, err, cx),
@@ -963,8 +996,8 @@ impl AppState {
             .export_templates(server_id)
             .and_then(|json| std::fs::write(path, json).map_err(|e| e.to_string()));
         match result {
-            Ok(()) => self.toast(ToastKind::Success, format!("已导出到 {}", path.display()), cx),
-            Err(err) => self.toast(ToastKind::Error, format!("导出失败: {err}"), cx),
+            Ok(()) => self.toast(ToastKind::Success, tr!("template.exported", path = path.display()), cx),
+            Err(err) => self.toast(ToastKind::Error, tr!("template.export_failed", error = err), cx),
         }
     }
 
@@ -973,8 +1006,8 @@ impl AppState {
             .map_err(|e| e.to_string())
             .and_then(|json| self.storage.import_templates(server_id, &json));
         match result {
-            Ok(n) => self.toast(ToastKind::Success, format!("成功导入 {n} 个模板"), cx),
-            Err(err) => self.toast(ToastKind::Error, format!("导入失败: {err}"), cx),
+            Ok(n) => self.toast(ToastKind::Success, tr!("template.imported", count = n), cx),
+            Err(err) => self.toast(ToastKind::Error, tr!("template.import_failed", error = err), cx),
         }
         cx.notify();
     }
@@ -998,10 +1031,10 @@ impl AppState {
         cx: &mut Context<Self>,
     ) -> Result<i64, String> {
         if name.trim().is_empty() {
-            return Err("请输入脚本名称".into());
+            return Err(tr!("script.name_required").into());
         }
         if code.trim().is_empty() {
-            return Err("请输入脚本代码".into());
+            return Err(tr!("script.code_required").into());
         }
         script::validate(&code)?;
         let id = match id {
@@ -1054,13 +1087,13 @@ impl AppState {
     ) -> Result<(), String> {
         let name = name.trim().to_string();
         if name.is_empty() {
-            return Err("请输入变量名".into());
+            return Err(tr!("env.name_required").into());
         }
         if !env::is_valid_name(&name) {
-            return Err("变量名格式不正确：以字母开头，只能包含字母、数字、下划线".into());
+            return Err(tr!("env.invalid_name").into());
         }
         if value.is_empty() {
-            return Err("请输入变量值".into());
+            return Err(tr!("env.value_required").into());
         }
         match id {
             Some(id) => self.storage.update_env_variable(id, name, value, description)?,

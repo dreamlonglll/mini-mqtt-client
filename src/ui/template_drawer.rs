@@ -23,7 +23,7 @@ struct TemplateBrowser {
 
 impl TemplateBrowser {
     fn new(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("搜索名称 / Topic..."));
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("template.search_placeholder")));
         let subscriptions = vec![
             cx.observe(&state, |_, _, cx| cx.notify()),
             cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
@@ -46,7 +46,7 @@ impl TemplateBrowser {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("导入模板".into()),
+            prompt: Some(tr!("template.import_prompt")),
         });
         let (state, server_id) = (self.state.clone(), self.server_id);
         cx.spawn_in(window, async move |_, cx| {
@@ -87,11 +87,12 @@ impl TemplateBrowser {
             .id(("tpl-card", id as u64))
             .role(Role::ListItem)
             .aria_label(format!(
-                "模板 {} {} {} 使用 {} 次",
+                "{} {} {} {} {}",
+                tr!("template.item"),
                 t.name,
                 t.topic,
                 t.category.clone().unwrap_or_default(),
-                t.use_count
+                tr!("template.used_times", count = t.use_count)
             ))
             .p_3()
             .gap_2()
@@ -113,7 +114,7 @@ impl TemplateBrowser {
                     .when_some(t.category.clone(), |this, cat| this.child(chip(cat, theme.info, cx)))
                     .child(
                         Button::new(("tpl-menu", id as u64))
-                            .accessibility_label(format!("模板菜单 {}", t.name))
+                            .accessibility_label(tr!("template.menu", name = t.name))
                             .ghost()
                             .xsmall()
                             .icon(IconName::Ellipsis)
@@ -122,13 +123,13 @@ impl TemplateBrowser {
                                     (menu_state.clone(), menu_state.clone(), menu_state.clone());
                                 let edit_template = template.clone();
                                 let name = template.name.clone();
-                                menu.item(PopupMenuItem::new("编辑").icon(Lucide::SquarePen).on_click(
+                                menu.item(PopupMenuItem::new(tr!("common.edit")).icon(Lucide::SquarePen).on_click(
                                     move |_, window, cx| {
                                         template_dialog::open_edit(edit_state.clone(), &edit_template, window, cx)
                                     },
                                 ))
                                 .item(
-                                    PopupMenuItem::new("复制")
+                                    PopupMenuItem::new(tr!("common.duplicate"))
                                         .icon(IconName::Copy)
                                         .on_click(move |_, _, cx| {
                                             dup_state.update(cx, |state, cx| state.duplicate_template(id, cx))
@@ -136,21 +137,21 @@ impl TemplateBrowser {
                                 )
                                 .separator()
                                 .item(
-                                    PopupMenuItem::new("删除")
-                                        .icon(Lucide::Trash)
-                                        .on_click(move |_, window, cx| {
+                                    PopupMenuItem::new(tr!("common.delete")).icon(Lucide::Trash).on_click(
+                                        move |_, window, cx| {
                                             let del_state = del_state.clone();
                                             confirm(
                                                 window,
                                                 cx,
-                                                "删除确认",
-                                                format!("确定要删除模板「{name}」吗？"),
-                                                "删除",
+                                                tr!("template.delete_title"),
+                                                tr!("template.delete_confirm", name = name),
+                                                tr!("common.delete"),
                                                 move |_, cx| {
                                                     del_state.update(cx, |state, cx| state.delete_template(id, cx))
                                                 },
                                             );
-                                        }),
+                                        },
+                                    ),
                                 )
                             }),
                     ),
@@ -201,15 +202,15 @@ impl TemplateBrowser {
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child(format!("使用 {} 次", t.use_count)),
+                            .child(tr!("template.used_times", count = t.use_count)),
                     )
                     .child(
                         Button::new(("tpl-use", id as u64))
-                            .accessibility_label(format!("使用模板 {}", t.name))
+                            .accessibility_label(tr!("template.use_named", name = t.name))
                             .primary()
                             .xsmall()
                             .icon(Lucide::Send)
-                            .label("使用")
+                            .label(tr!("template.use"))
                             .on_click(move |_, window, cx| {
                                 use_state.update(cx, |state, cx| state.use_template(id, cx));
                                 window.close_sheet(cx);
@@ -266,7 +267,7 @@ impl Render for TemplateBrowser {
                     .child(
                         div().flex_1().child(
                             Input::new(&self.search)
-                                .aria_label("搜索模板")
+                                .aria_label(tr!("template.search"))
                                 .cleanable(true)
                                 .prefix(Icon::new(IconName::Search).small().text_color(theme.muted_foreground)),
                         ),
@@ -275,7 +276,7 @@ impl Render for TemplateBrowser {
                         Button::new("tpl-new")
                             .primary()
                             .icon(IconName::Plus)
-                            .label("新建")
+                            .label(tr!("template.new"))
                             .on_click(move |_, window, cx| {
                                 template_dialog::open(
                                     new_state.clone(),
@@ -296,7 +297,7 @@ impl Render for TemplateBrowser {
                             .outline()
                             .small()
                             .icon(Lucide::Upload)
-                            .label("导入")
+                            .label(tr!("template.import"))
                             .on_click(move |_, window, cx| e_import.update(cx, |this, cx| this.import(window, cx))),
                     )
                     .child(
@@ -304,7 +305,7 @@ impl Render for TemplateBrowser {
                             .outline()
                             .small()
                             .icon(Lucide::Download)
-                            .label("导出")
+                            .label(tr!("template.export"))
                             .disabled(!has_templates)
                             .on_click(move |_, window, cx| e_export.update(cx, |this, cx| this.export(window, cx))),
                     )
@@ -313,7 +314,7 @@ impl Render for TemplateBrowser {
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child(format!("共 {} 个模板", all.len())),
+                            .child(tr!("template.total", count = all.len())),
                     ),
             )
             .when(!categories.is_empty(), |this| {
@@ -321,7 +322,12 @@ impl Render for TemplateBrowser {
                     h_flex()
                         .flex_wrap()
                         .gap_1p5()
-                        .child(category_button("全部".into(), None, 0, self.category.is_none()))
+                        .child(category_button(
+                            tr!("messages.all").into(),
+                            None,
+                            0,
+                            self.category.is_none(),
+                        ))
                         .children(categories.iter().enumerate().map(|(ix, c)| {
                             category_button(c.clone(), Some(c.clone()), ix + 1, self.category.as_ref() == Some(c))
                         })),
@@ -338,9 +344,9 @@ impl Render for TemplateBrowser {
                         this.child(div().h(px(240.)).child(empty_state(
                             IconName::Inbox,
                             if has_templates {
-                                "没有匹配的模板"
+                                tr!("template.no_match")
                             } else {
-                                "暂无模板，点击「新建」创建常用命令"
+                                tr!("template.empty")
                             },
                             cx,
                         )))
@@ -353,6 +359,9 @@ impl Render for TemplateBrowser {
 pub fn open(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &mut App) {
     let browser = cx.new(|cx| TemplateBrowser::new(state, server_id, window, cx));
     window.open_sheet_at(Placement::Right, cx, move |sheet, _, _| {
-        sheet.title("命令模板").size(px(460.)).child(browser.clone())
+        sheet
+            .title(tr!("template.drawer_title"))
+            .size(px(460.))
+            .child(browser.clone())
     });
 }

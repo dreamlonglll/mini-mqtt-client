@@ -17,7 +17,7 @@ fn usage(name: &str) -> String {
 
 fn copy(text: String, window: &mut Window, cx: &mut App) {
     cx.write_to_clipboard(ClipboardItem::new_string(text));
-    notify(window, cx, ToastKind::Success, "已复制到剪贴板");
+    notify(window, cx, ToastKind::Success, tr!("common.copied"));
 }
 
 struct EnvBrowser {
@@ -29,7 +29,7 @@ struct EnvBrowser {
 
 impl EnvBrowser {
     fn new(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("搜索变量名或描述"));
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("env.search_placeholder")));
         let subscriptions = vec![
             cx.observe(&state, |_, _, cx| cx.notify()),
             cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
@@ -56,7 +56,7 @@ impl EnvBrowser {
         v_flex()
             .id(("env-card", id as u64))
             .role(Role::ListItem)
-            .aria_label(format!("环境变量 {} {}", var.name, var.value))
+            .aria_label(format!("{} {} {}", tr!("env.item"), var.name, var.value))
             .p_3()
             .gap_2()
             .rounded(theme.radius_lg)
@@ -77,7 +77,7 @@ impl EnvBrowser {
                     )
                     .child(
                         Button::new(("env-menu", id as u64))
-                            .accessibility_label(format!("变量菜单 {}", var.name))
+                            .accessibility_label(tr!("env.menu", name = var.name))
                             .ghost()
                             .xsmall()
                             .icon(IconName::Ellipsis)
@@ -85,7 +85,7 @@ impl EnvBrowser {
                                 let (edit_state, del_state) = (menu_state.clone(), menu_state.clone());
                                 let (edit_var, value, name) =
                                     (menu_var.clone(), menu_var.value.clone(), menu_var.name.clone());
-                                menu.item(PopupMenuItem::new("编辑").icon(Lucide::SquarePen).on_click(
+                                menu.item(PopupMenuItem::new(tr!("common.edit")).icon(Lucide::SquarePen).on_click(
                                     move |_, window, cx| {
                                         open_dialog(
                                             edit_state.clone(),
@@ -97,30 +97,32 @@ impl EnvBrowser {
                                     },
                                 ))
                                 .item(
-                                    PopupMenuItem::new("复制值")
+                                    PopupMenuItem::new(tr!("env.copy_value"))
                                         .icon(IconName::Copy)
                                         .on_click(move |_, window, cx| copy(value.clone(), window, cx)),
                                 )
                                 .separator()
                                 .item(
-                                    PopupMenuItem::new("删除")
-                                        .icon(Lucide::Trash)
-                                        .on_click(move |_, window, cx| {
+                                    PopupMenuItem::new(tr!("common.delete")).icon(Lucide::Trash).on_click(
+                                        move |_, window, cx| {
                                             let del_state = del_state.clone();
                                             confirm(
                                                 window,
                                                 cx,
-                                                "删除变量",
-                                                format!("确定要删除变量「{name}」吗？"),
-                                                "删除",
+                                                tr!("env.delete_title"),
+                                                tr!("env.delete_confirm", name = name),
+                                                tr!("common.delete"),
                                                 move |window, cx| match del_state
                                                     .update(cx, |state, cx| state.delete_env_variable(id, cx))
                                                 {
-                                                    Ok(()) => notify(window, cx, ToastKind::Success, "变量已删除"),
+                                                    Ok(()) => {
+                                                        notify(window, cx, ToastKind::Success, tr!("env.deleted"))
+                                                    }
                                                     Err(err) => notify(window, cx, ToastKind::Error, err),
                                                 },
                                             );
-                                        }),
+                                        },
+                                    ),
                                 )
                             }),
                     ),
@@ -157,11 +159,11 @@ impl EnvBrowser {
                     )
                     .child(
                         Button::new(("env-copy-usage", id as u64))
-                            .accessibility_label(format!("复制引用 {}", var.name))
+                            .accessibility_label(tr!("env.copy_usage_of", name = var.name))
                             .ghost()
                             .xsmall()
                             .icon(IconName::Copy)
-                            .tooltip(format!("复制 {usage_text}"))
+                            .tooltip(tr!("env.copy_usage", usage = usage_text))
                             .on_click(move |_, window, cx| copy(usage_text.clone(), window, cx)),
                     ),
             )
@@ -195,7 +197,7 @@ impl Render for EnvBrowser {
                     .child(
                         div().flex_1().child(
                             Input::new(&self.search)
-                                .aria_label("搜索环境变量")
+                                .aria_label(tr!("env.search"))
                                 .cleanable(true)
                                 .prefix(Icon::new(IconName::Search).small().text_color(theme.muted_foreground)),
                         ),
@@ -204,7 +206,7 @@ impl Render for EnvBrowser {
                         Button::new("env-new")
                             .primary()
                             .icon(IconName::Plus)
-                            .label("新增变量")
+                            .label(tr!("env.add"))
                             .on_click(move |_, window, cx| open_dialog(new_state.clone(), server_id, None, window, cx)),
                     ),
             )
@@ -212,7 +214,7 @@ impl Render for EnvBrowser {
                 div()
                     .text_xs()
                     .text_color(theme.muted_foreground)
-                    .child("在订阅 Topic、发布的 Topic / Payload、命令模板和定时发布中用 {{变量名}} 引用，脚本中用 env.变量名 访问"),
+                    .child(tr!("env.hint")),
             )
             .child(
                 v_flex()
@@ -225,9 +227,9 @@ impl Render for EnvBrowser {
                         this.child(div().h(px(240.)).child(empty_state(
                             Lucide::Variable,
                             if all.is_empty() {
-                                "暂无环境变量"
+                                tr!("env.empty")
                             } else {
-                                "没有匹配的变量"
+                                tr!("env.no_match")
                             },
                             cx,
                         )))
@@ -240,7 +242,7 @@ impl Render for EnvBrowser {
 pub fn open(state: Entity<AppState>, server_id: i64, window: &mut Window, cx: &mut App) {
     let browser = cx.new(|cx| EnvBrowser::new(state, server_id, window, cx));
     window.open_sheet_at(Placement::Right, cx, move |sheet, _, _| {
-        sheet.title("环境变量").size(px(460.)).child(browser.clone())
+        sheet.title(tr!("env.title")).size(px(460.)).child(browser.clone())
     });
 }
 
@@ -263,7 +265,7 @@ impl EnvForm {
             state.save_env_variable(server_id, id, name, value, description, cx)
         }) {
             Ok(()) => {
-                notify(window, cx, ToastKind::Success, "变量已保存");
+                notify(window, cx, ToastKind::Success, tr!("env.saved"));
                 true
             }
             Err(err) => {
@@ -279,29 +281,29 @@ impl Render for EnvForm {
         v_flex()
             .gap_4()
             .child(form_row(
-                "变量名",
+                tr!("env.name"),
                 true,
                 v_flex()
                     .gap_1()
-                    .child(Input::new(&self.name).aria_label("变量名"))
+                    .child(Input::new(&self.name).aria_label(tr!("env.name")))
                     .child(
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child("以字母开头，只能包含字母、数字、下划线"),
+                            .child(tr!("env.name_hint")),
                     ),
                 cx,
             ))
             .child(form_row(
-                "变量值",
+                tr!("env.value"),
                 true,
-                Textarea::new(&self.value).aria_label("变量值"),
+                Textarea::new(&self.value).aria_label(tr!("env.value")),
                 cx,
             ))
             .child(form_row(
-                "描述",
+                tr!("common.description"),
                 false,
-                Input::new(&self.description).aria_label("变量描述"),
+                Input::new(&self.description).aria_label(tr!("env.description")),
                 cx,
             ))
     }
@@ -318,18 +320,18 @@ pub fn open_dialog(
     let var = existing.clone();
     let name = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder("请输入变量名")
+            .placeholder(tr!("env.name_placeholder"))
             .default_value(var.as_ref().map(|v| v.name.clone()).unwrap_or_default())
     });
     let value = cx.new(|cx| {
         TextareaState::new(window, cx)
             .rows(3)
-            .placeholder("请输入变量值")
+            .placeholder(tr!("env.value_placeholder"))
             .default_value(var.as_ref().map(|v| v.value.clone()).unwrap_or_default())
     });
     let description = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder("请输入变量描述（可选）")
+            .placeholder(tr!("env.description_placeholder"))
             .default_value(var.as_ref().and_then(|v| v.description.clone()).unwrap_or_default())
     });
     let form = cx.new(|_| EnvForm {
@@ -341,9 +343,9 @@ pub fn open_dialog(
         description,
     });
     let title = if existing.is_some() {
-        "编辑变量"
+        tr!("env.edit_title")
     } else {
-        "新增变量"
+        tr!("env.add")
     };
     let first = std::cell::Cell::new(true);
     window.open_dialog(cx, move |dialog, window, cx| {
@@ -352,10 +354,10 @@ pub fn open_dialog(
         }
         let save_form = form.clone();
         dialog
-            .title(title)
+            .title(title.clone())
             .w(px(520.))
             .child(form.clone())
-            .footer(dialog_footer("保存"))
+            .footer(dialog_footer(tr!("common.save")))
             .on_ok(move |_, window, cx| save_form.update(cx, |form, cx| form.save(window, cx)))
     });
 }

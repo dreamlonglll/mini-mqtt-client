@@ -47,9 +47,9 @@ impl Render for HeaderView {
                 .small()
                 .icon(Lucide::Unplug)
                 .label(if status == ConnectionStatus::Connecting {
-                    "取消"
+                    tr!("common.cancel")
                 } else {
-                    "断开"
+                    tr!("header.disconnect")
                 })
                 .on_click(move |_, _, cx| connect_state.update(cx, |state, cx| state.disconnect(id, cx)))
         } else {
@@ -57,7 +57,7 @@ impl Render for HeaderView {
                 .primary()
                 .small()
                 .icon(Lucide::Plug)
-                .label("连接")
+                .label(tr!("header.connect"))
                 .on_click(move |_, _, cx| connect_state.update(cx, |state, cx| state.connect(id, cx)))
         };
 
@@ -95,8 +95,8 @@ impl Render for HeaderView {
                     .id("connection-status")
                     .role(Role::Status)
                     .aria_label(match &status {
-                        ConnectionStatus::Error(err) => format!("连接状态 {} {}", status.label(), err),
-                        _ => format!("连接状态 {}", status.label()),
+                        ConnectionStatus::Error(err) => format!("{} {} {}", tr!("header.status"), status.label(), err),
+                        _ => format!("{} {}", tr!("header.status"), status.label()),
                     }),
             )
             .when_some(error, |this, error| {
@@ -128,11 +128,11 @@ impl Render for HeaderView {
             .child(connect_button)
             .child(
                 Button::new("edit-server")
-                    .accessibility_label("编辑服务器")
+                    .accessibility_label(tr!("header.edit_server"))
                     .ghost()
                     .small()
                     .icon(Lucide::SquarePen)
-                    .tooltip("编辑服务器")
+                    .tooltip(tr!("header.edit_server"))
                     .on_click(move |_, window, cx| {
                         server_dialog::open(edit_state.clone(), Some(edit_server.clone()), window, cx)
                     }),

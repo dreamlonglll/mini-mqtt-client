@@ -54,8 +54,8 @@ impl MessageDetail {
                 let (text, cut) = payload::text_prefix(&m.payload, TEXT_LIMIT);
                 if cut {
                     format!(
-                        "{text}\n\n…（仅显示前 {} KB，共 {total} 字节；「复制内容」可获取全部）",
-                        TEXT_LIMIT / 1024
+                        "{text}\n\n{}",
+                        tr!("detail.text_truncated", kb = TEXT_LIMIT / 1024, total = total)
                     )
                 } else {
                     text
@@ -68,7 +68,10 @@ impl MessageDetail {
                     .collect::<Vec<_>>()
                     .join("\n");
                 if total > HEX_LIMIT {
-                    dump.push_str(&format!("\n…（仅显示前 {} KB，共 {total} 字节）", HEX_LIMIT / 1024));
+                    dump.push_str(&format!(
+                        "\n{}",
+                        tr!("detail.hex_truncated", kb = HEX_LIMIT / 1024, total = total)
+                    ));
                 }
                 dump
             }
@@ -104,7 +107,7 @@ impl Render for MessageDetail {
             View::Json => 1,
             View::Hex => 2,
         };
-        let meta = |label: &'static str, value: String| {
+        let meta = |label: SharedString, value: SharedString| {
             h_flex()
                 .gap_1()
                 .text_xs()
@@ -120,16 +123,22 @@ impl Render for MessageDetail {
                     .gap_x_4()
                     .gap_y_1()
                     .child(meta(
-                        "方向",
+                        tr!("detail.direction"),
                         match m.direction {
-                            Direction::Receive => "接收".into(),
-                            Direction::Publish => "发布".into(),
+                            Direction::Receive => tr!("detail.receive"),
+                            Direction::Publish => tr!("detail.publish"),
                         },
                     ))
-                    .child(meta("时间", m.timestamp.format("%Y-%m-%d %H:%M:%S%.3f").to_string()))
-                    .child(meta("QoS", m.qos.to_string()))
-                    .child(meta("Retain", if m.retain { "是".into() } else { "否".into() }))
-                    .child(meta("大小", format!("{} 字节", m.payload.len())))
+                    .child(meta(
+                        tr!("detail.time"),
+                        m.timestamp.format("%Y-%m-%d %H:%M:%S%.3f").to_string().into(),
+                    ))
+                    .child(meta("QoS".into(), m.qos.to_string().into()))
+                    .child(meta(
+                        "Retain".into(),
+                        if m.retain { tr!("common.yes") } else { tr!("common.no") },
+                    ))
+                    .child(meta(tr!("detail.size"), tr!("detail.bytes", count = m.payload.len())))
                     .child(chip(m.format.label(), theme.primary, cx)),
             )
             .when_some(m.script_error.clone(), |this, err| {
@@ -140,13 +149,13 @@ impl Render for MessageDetail {
                         .bg(theme.danger.opacity(0.08))
                         .text_xs()
                         .text_color(theme.danger)
-                        .child(format!("脚本处理失败: {err}")),
+                        .child(tr!("detail.script_failed", error = err)),
                 )
             })
             .child(segmented(
                 "detail-view",
-                "查看方式",
-                &["文本", "JSON", "HEX"],
+                &tr!("detail.view"),
+                &[tr!("detail.text"), "JSON".into(), "HEX".into()],
                 view_ix,
                 move |ix, window, cx| {
                     entity.update(cx, |this, cx| {
@@ -162,7 +171,7 @@ impl Render for MessageDetail {
             .child(
                 div().h(px(320.)).child(
                     Editor::new(&self.content)
-                        .aria_label("消息内容")
+                        .aria_label(tr!("detail.content"))
                         .h_full()
                         .readonly(true),
                 ),
@@ -181,17 +190,17 @@ pub fn open(state: Entity<AppState>, message: Message, window: &mut Window, cx: 
             DialogFooter::new()
                 .child(
                     Button::new("copy-payload")
-                        .label("复制内容")
+                        .label(tr!("detail.copy_content"))
                         .icon(gpui_kit::component::IconName::Copy)
                         .on_click(move |_, window, cx| {
                             let text = copy_detail.read(cx).copy_content();
                             cx.write_to_clipboard(ClipboardItem::new_string(text));
-                            notify(window, cx, ToastKind::Success, "已复制到剪贴板");
+                            notify(window, cx, ToastKind::Success, tr!("common.copied"));
                         }),
                 )
                 .child(
                     Button::new("copy-to-publish")
-                        .label("复制到发布")
+                        .label(tr!("detail.copy_to_publish"))
                         .icon(super::common::Lucide::Send)
                         .on_click(move |_, window, cx| {
                             let m = publish_detail.read(cx).message.clone();
@@ -207,10 +216,10 @@ pub fn open(state: Entity<AppState>, message: Message, window: &mut Window, cx: 
                             };
                             state.update(cx, |state, cx| state.fill_publish(draft, cx));
                             window.close_dialog(cx);
-                            notify(window, cx, ToastKind::Success, "已复制到发布面板");
+                            notify(window, cx, ToastKind::Success, tr!("detail.copied_to_publish"));
                         }),
                 )
-                .child(super::common::close_button("关闭", true)),
+                .child(super::common::close_button(tr!("common.close"), true)),
         )
     });
 }

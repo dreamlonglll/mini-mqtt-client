@@ -106,7 +106,8 @@ impl Storage {
                     // timestamped copy (an earlier backup is not overwritten).
                     let backup = file_path
                         .with_extension(format!("corrupt-{}.yaml", chrono::Local::now().format("%Y%m%d%H%M%S")));
-                    fs::copy(&file_path, &backup).map_err(|e| format!("数据文件无法解析，且备份失败: {e}（{err}）"))?;
+                    fs::copy(&file_path, &backup)
+                        .map_err(|e| tr!("storage.backup_failed", error = e, reason = err).to_string())?;
                     log::error!("data file is invalid ({err}); backed up to {}", backup.display());
                     corrupt_backup = Some(backup);
                     AppData::default()
@@ -152,7 +153,7 @@ impl Storage {
         };
         let path = self.file_path();
         write_atomic(&path, content.as_bytes()).map_err(|e| {
-            let message = format!("保存数据失败: {e}");
+            let message = tr!("storage.save_failed", error = e).to_string();
             if let Some(logger) = &self.logger {
                 logger.write(LogKind::Storage, &message, Some(&path.display().to_string()));
             }
@@ -188,7 +189,7 @@ impl Storage {
                 .servers
                 .iter_mut()
                 .find(|s| s.id.is_some() && s.id == server.id)
-                .ok_or("服务器不存在")?;
+                .ok_or_else(|| tr!("storage.server_not_found").to_string())?;
             let created_at = existing.created_at.clone();
             *existing = server;
             existing.created_at = created_at;
@@ -236,7 +237,7 @@ impl Storage {
                 .iter()
                 .any(|s| s.server_id == server_id && s.topic == topic)
             {
-                return Err(format!("已存在订阅: {topic}"));
+                return Err(tr!("storage.subscription_exists", topic = topic).to_string());
             }
             data.next_subscription_id += 1;
             let sub = Subscription {
@@ -263,7 +264,7 @@ impl Storage {
                 .subscriptions
                 .iter_mut()
                 .find(|s| s.id == Some(id))
-                .ok_or("订阅不存在")?;
+                .ok_or_else(|| tr!("storage.subscription_not_found").to_string())?;
             sub.is_active = is_active;
         }
         self.save()
@@ -326,7 +327,7 @@ impl Storage {
                 .templates
                 .iter_mut()
                 .find(|t| t.id == Some(id))
-                .ok_or("模板不存在")?;
+                .ok_or_else(|| tr!("storage.template_not_found").to_string())?;
             t.name = draft.name;
             t.topic = draft.topic;
             t.payload = draft.payload;
@@ -353,7 +354,7 @@ impl Storage {
                 .templates
                 .iter_mut()
                 .find(|t| t.id == Some(id))
-                .ok_or("模板不存在")?;
+                .ok_or_else(|| tr!("storage.template_not_found").to_string())?;
             t.use_count += 1;
             t.last_used_at = Some(now());
             t.clone()
@@ -384,7 +385,8 @@ impl Storage {
     /// Import templates exported as JSON (same format as before). Returns the
     /// number of imported templates.
     pub fn import_templates(&self, server_id: i64, json: &str) -> Result<usize, String> {
-        let templates: Vec<CommandTemplate> = serde_json::from_str(json).map_err(|e| format!("JSON解析错误: {e}"))?;
+        let templates: Vec<CommandTemplate> =
+            serde_json::from_str(json).map_err(|e| tr!("storage.json_parse_error", error = e).to_string())?;
         let mut imported = 0;
         for t in templates {
             let draft = TemplateDraft {
@@ -405,7 +407,9 @@ impl Storage {
     }
 
     pub fn duplicate_template(&self, id: i64, new_name: String) -> Result<i64, String> {
-        let t = self.template(id).ok_or("模板不存在")?;
+        let t = self
+            .template(id)
+            .ok_or_else(|| tr!("storage.template_not_found").to_string())?;
         let draft = TemplateDraft {
             payload_type: t.format(),
             name: new_name,
@@ -482,7 +486,11 @@ impl Storage {
     ) -> Result<(), String> {
         {
             let mut data = self.data.write();
-            let s = data.scripts.iter_mut().find(|s| s.id == Some(id)).ok_or("脚本不存在")?;
+            let s = data
+                .scripts
+                .iter_mut()
+                .find(|s| s.id == Some(id))
+                .ok_or_else(|| tr!("storage.script_not_found").to_string())?;
             s.name = name;
             s.code = code;
             s.description = description;
@@ -494,7 +502,11 @@ impl Storage {
     pub fn toggle_script(&self, id: i64, enabled: bool) -> Result<(), String> {
         {
             let mut data = self.data.write();
-            let s = data.scripts.iter_mut().find(|s| s.id == Some(id)).ok_or("脚本不存在")?;
+            let s = data
+                .scripts
+                .iter_mut()
+                .find(|s| s.id == Some(id))
+                .ok_or_else(|| tr!("storage.script_not_found").to_string())?;
             s.enabled = enabled;
             s.updated_at = Some(now());
         }
@@ -543,7 +555,7 @@ impl Storage {
                 .iter()
                 .any(|e| e.server_id == server_id && e.name == name)
             {
-                return Err("变量名已存在".into());
+                return Err(tr!("env.duplicate_name").to_string());
             }
             data.next_env_variable_id += 1;
             let id = data.next_env_variable_id;
@@ -578,13 +590,13 @@ impl Storage {
                 .iter()
                 .find(|e| e.id == Some(id))
                 .map(|e| e.server_id)
-                .ok_or("环境变量不存在")?;
+                .ok_or_else(|| tr!("env.not_found").to_string())?;
             if data
                 .env_variables
                 .iter()
                 .any(|e| e.server_id == server_id && e.name == name && e.id != Some(id))
             {
-                return Err("变量名已存在".into());
+                return Err(tr!("env.duplicate_name").to_string());
             }
             if let Some(e) = data.env_variables.iter_mut().find(|e| e.id == Some(id)) {
                 e.name = name;

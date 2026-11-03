@@ -13,11 +13,11 @@ use gpui_kit::component::input::{Editor, EditorState, Input, InputState};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::{prelude::*, *};
 
-fn placeholder(format: PayloadFormat) -> &'static str {
+fn placeholder(format: PayloadFormat) -> SharedString {
     match format {
-        PayloadFormat::Json => r#"JSON 格式，例如: {"action": "start", "value": 100}"#,
-        PayloadFormat::Hex => "十六进制格式，例如: 48 65 6C 6C 6F",
-        PayloadFormat::Text => "纯文本消息内容",
+        PayloadFormat::Json => tr!("publish.placeholder_json"),
+        PayloadFormat::Hex => tr!("publish.placeholder_hex"),
+        PayloadFormat::Text => tr!("publish.placeholder_text"),
     }
 }
 
@@ -40,7 +40,7 @@ impl PublishPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let topic = cx.new(|cx| InputState::new(window, cx).placeholder("Topic，例如: device/001/command"));
+        let topic = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("publish.topic_placeholder")));
         let format = PayloadFormat::Json;
         let payload = cx.new(|cx| {
             EditorState::new(window, cx)
@@ -49,10 +49,16 @@ impl PublishPanel {
                 .placeholder(placeholder(format))
         });
         let subscriptions = vec![
-            cx.subscribe_in(&state, window, |this, _, event: &AppEvent, window, cx| {
-                if let AppEvent::FillPublish(draft) = event {
-                    this.fill(draft.clone(), window, cx);
+            cx.subscribe_in(&state, window, |this, _, event: &AppEvent, window, cx| match event {
+                AppEvent::FillPublish(draft) => this.fill(draft.clone(), window, cx),
+                AppEvent::LanguageChanged => {
+                    this.topic.update(cx, |s, cx| {
+                        s.set_placeholder(tr!("publish.topic_placeholder"), window, cx)
+                    });
+                    let format = this.format;
+                    this.set_format(format, window, cx);
                 }
+                _ => {}
             }),
             cx.observe(&scheduler, |_, _, cx| cx.notify()),
         ];
@@ -96,7 +102,7 @@ impl PublishPanel {
 
     fn publish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(server_id) = self.state.read(cx).active_server_id else {
-            notify(window, cx, ToastKind::Warning, "请先选择一个服务器");
+            notify(window, cx, ToastKind::Warning, tr!("publish.select_server_first"));
             return;
         };
         if self.publishing {
@@ -111,7 +117,7 @@ impl PublishPanel {
             let _ = this.update_in(cx, |this, window, cx| {
                 this.publishing = false;
                 match result {
-                    Ok(()) => notify(window, cx, ToastKind::Success, "消息已发布"),
+                    Ok(()) => notify(window, cx, ToastKind::Success, tr!("publish.published")),
                     Err(err) => notify(window, cx, ToastKind::Error, err),
                 }
                 cx.notify();
@@ -129,7 +135,7 @@ impl PublishPanel {
         };
         match formatted {
             Some(f) => self.payload.update(cx, |s, cx| s.set_value(f, window, cx)),
-            None => notify(window, cx, ToastKind::Warning, "JSON 格式不正确"),
+            None => notify(window, cx, ToastKind::Warning, tr!("payload.json_invalid_short")),
         }
     }
 
@@ -139,7 +145,7 @@ impl PublishPanel {
         };
         let d = self.draft(cx);
         if d.topic.is_empty() {
-            notify(window, cx, ToastKind::Warning, "请先输入 Topic");
+            notify(window, cx, ToastKind::Warning, tr!("publish.enter_topic_first"));
             return;
         }
         let draft = TemplateDraft {
@@ -181,7 +187,7 @@ impl Render for PublishPanel {
 
         card(cx)
             .child(
-                card_header(Lucide::Send, "发布消息", cx)
+                card_header(Lucide::Send, tr!("publish.title"), cx)
                     .child(div().flex_1())
                     .when(self.format == PayloadFormat::Json, |this| {
                         this.child(
@@ -189,7 +195,7 @@ impl Render for PublishPanel {
                                 .ghost()
                                 .small()
                                 .icon(Lucide::Braces)
-                                .label("格式化")
+                                .label(tr!("publish.format_json"))
                                 .on_click(move |_, window, cx| {
                                     e_json.update(cx, |this, cx| this.format_json(true, window, cx))
                                 }),
@@ -197,7 +203,7 @@ impl Render for PublishPanel {
                     })
                     .child(segmented(
                         "payload-format",
-                        "发布格式",
+                        &tr!("publish.format_group"),
                         &["JSON", "TEXT", "HEX"],
                         format_ix,
                         move |ix, window, cx| {
@@ -209,7 +215,7 @@ impl Render for PublishPanel {
                             h_flex()
                                 .id("schedule-indicator")
                                 .role(Role::Status)
-                                .aria_label(format!("定时发布进度 {schedule_progress}"))
+                                .aria_label(format!("{} {schedule_progress}", tr!("scheduled.progress")))
                                 .gap_1()
                                 .px_2()
                                 .rounded(theme.radius)
@@ -224,7 +230,7 @@ impl Render for PublishPanel {
                                 .danger()
                                 .small()
                                 .icon(Lucide::CircleStop)
-                                .label("停止")
+                                .label(tr!("scheduled.stop"))
                                 .on_click(move |_, _, cx| stop_sched.update(cx, |s, cx| s.stop(cx))),
                         )
                     })
@@ -233,7 +239,7 @@ impl Render for PublishPanel {
                             .outline()
                             .small()
                             .icon(Lucide::Timer)
-                            .label("定时发布")
+                            .label(tr!("scheduled.title"))
                             .on_click(move |_, window, cx| {
                                 if let Some(id) = sched_state.read(cx).active_server_id {
                                     scheduled::open(sched.clone(), sched_state.clone(), id, window, cx);
@@ -251,13 +257,13 @@ impl Render for PublishPanel {
                             .child(
                                 div().flex_1().child(
                                     Input::new(&self.topic)
-                                        .aria_label("发布 Topic")
+                                        .aria_label(tr!("publish.topic"))
                                         .prefix(Icon::new(Lucide::Send).small().text_color(theme.muted_foreground)),
                                 ),
                             )
                             .child(segmented(
                                 "publish-qos",
-                                "发布 QoS",
+                                &tr!("publish.qos"),
                                 &["QoS 0", "QoS 1", "QoS 2"],
                                 self.qos as usize,
                                 move |ix, _, cx| {
@@ -285,10 +291,11 @@ impl Render for PublishPanel {
                             .gap_3()
                             .items_end()
                             .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .child(Editor::new(&self.payload).aria_label("发布内容").h(px(104.))),
+                                div().flex_1().min_w_0().child(
+                                    Editor::new(&self.payload)
+                                        .aria_label(tr!("publish.payload"))
+                                        .h(px(104.)),
+                                ),
                             )
                             .child(
                                 v_flex()
@@ -298,10 +305,10 @@ impl Render for PublishPanel {
                                             .gap_2()
                                             .child(
                                                 Button::new("open-templates")
-                                                    .accessibility_label("从模板加载")
+                                                    .accessibility_label(tr!("publish.load_template"))
                                                     .outline()
                                                     .icon(IconName::FolderOpen)
-                                                    .tooltip("从模板加载")
+                                                    .tooltip(tr!("publish.load_template"))
                                                     .on_click(move |_, window, cx| {
                                                         if let Some(id) = open_state.read(cx).active_server_id {
                                                             template_drawer::open(open_state.clone(), id, window, cx);
@@ -310,10 +317,10 @@ impl Render for PublishPanel {
                                             )
                                             .child(
                                                 Button::new("save-template")
-                                                    .accessibility_label("保存为模板")
+                                                    .accessibility_label(tr!("publish.save_template"))
                                                     .outline()
                                                     .icon(IconName::Star)
-                                                    .tooltip("保存为模板")
+                                                    .tooltip(tr!("publish.save_template"))
                                                     .on_click(move |_, window, cx| {
                                                         e_save.update(cx, |this, cx| this.save_as_template(window, cx))
                                                     }),
@@ -324,13 +331,13 @@ impl Render for PublishPanel {
                                             .primary()
                                             .w(px(108.))
                                             .icon(Lucide::Send)
-                                            .label("发布")
+                                            .label(tr!("publish.publish"))
                                             .loading(self.publishing)
                                             .disabled(!connected)
                                             .tooltip(if connected {
-                                                "发布消息"
+                                                tr!("publish.title")
                                             } else {
-                                                "请先连接服务器"
+                                                tr!("publish.connect_first")
                                             })
                                             .on_click(move |_, window, cx| {
                                                 e_publish.update(cx, |this, cx| this.publish(window, cx))

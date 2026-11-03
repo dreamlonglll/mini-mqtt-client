@@ -60,7 +60,7 @@ impl Render for CommandBar {
                     .text_sm()
                     .font_semibold()
                     .child(Icon::new(Lucide::Zap).small().text_color(theme.primary))
-                    .child("快捷命令"),
+                    .child(tr!("command_bar.title")),
             )
             .child(div().h(px(18.)).w(px(1.)).bg(theme.border))
             .child(
@@ -75,7 +75,7 @@ impl Render for CommandBar {
                             div()
                                 .text_xs()
                                 .text_color(theme.muted_foreground)
-                                .child("暂无模板，可在发布面板点击 ☆ 保存常用命令"),
+                                .child(tr!("command_bar.empty")),
                         )
                     })
                     .children(templates.into_iter().map(|t| {
@@ -85,7 +85,11 @@ impl Render for CommandBar {
                             .outline()
                             .small()
                             .label(t.name.clone())
-                            .tooltip(format!("{}  ·  使用 {} 次", t.topic, t.use_count))
+                            .tooltip(format!(
+                                "{}  ·  {}",
+                                t.topic,
+                                tr!("template.used_times", count = t.use_count)
+                            ))
                             .on_click(move |_, _, cx| state.update(cx, |state, cx| state.use_template(id, cx)))
                     })),
             )
@@ -94,7 +98,7 @@ impl Render for CommandBar {
                     .ghost()
                     .small()
                     .icon(Lucide::KeyRound)
-                    .label("环境变量")
+                    .label(tr!("env.title"))
                     .on_click(move |_, window, cx| {
                         if let Some(id) = env_state.read(cx).active_server_id {
                             env_drawer::open(env_state.clone(), id, window, cx);
@@ -106,7 +110,7 @@ impl Render for CommandBar {
                     .ghost()
                     .small()
                     .icon(IconName::FolderOpen)
-                    .label("管理模板")
+                    .label(tr!("command_bar.manage_templates"))
                     .on_click(move |_, window, cx| {
                         if let Some(id) = templates_state.read(cx).active_server_id {
                             template_drawer::open(templates_state.clone(), id, window, cx);
@@ -118,7 +122,7 @@ impl Render for CommandBar {
                     .ghost()
                     .small()
                     .icon(Lucide::FileCode)
-                    .label("管理脚本")
+                    .label(tr!("command_bar.manage_scripts"))
                     .on_click(move |_, window, cx| {
                         if let Some(id) = scripts_state.read(cx).active_server_id {
                             script_dialog::open(scripts_state.clone(), id, window, cx);

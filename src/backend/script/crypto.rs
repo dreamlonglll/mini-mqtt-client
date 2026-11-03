@@ -33,7 +33,7 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
             return Ok(bytes);
         }
     }
-    Err(format!("无效的 Base64 字符串: {}", truncate(input)))
+    Err(tr!("crypto.invalid_base64", input = truncate(input)).to_string())
 }
 
 pub fn hex_encode(bytes: &[u8]) -> String {
@@ -43,7 +43,7 @@ pub fn hex_encode(bytes: &[u8]) -> String {
 pub fn hex_decode(input: &str) -> Result<Vec<u8>, String> {
     let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
     let cleaned = cleaned.strip_prefix("0x").unwrap_or(&cleaned);
-    hex::decode(cleaned).map_err(|e| format!("无效的 Hex 字符串 ({e}): {}", truncate(input)))
+    hex::decode(cleaned).map_err(|e| tr!("crypto.invalid_hex", error = e, input = truncate(input)).to_string())
 }
 
 fn truncate(s: &str) -> String {
@@ -85,7 +85,7 @@ pub fn crc32(data: &[u8]) -> String {
 fn check_key(key: &[u8]) -> Result<(), String> {
     match key.len() {
         16 | 24 | 32 => Ok(()),
-        n => Err(format!("AES 密钥长度必须为 16/24/32 字节，当前为 {n} 字节")),
+        n => Err(tr!("crypto.key_length", len = n).to_string()),
     }
 }
 
@@ -94,7 +94,13 @@ pub fn aes_gcm_encrypt(plaintext: &[u8], key: &[u8], iv: Option<&[u8]>) -> Resul
     check_key(key)?;
     let iv = match iv {
         Some(iv) if iv.len() != GCM_IV_LEN => {
-            return Err(format!("AES-GCM IV 必须为 {GCM_IV_LEN} 字节，当前为 {} 字节", iv.len()));
+            return Err(tr!(
+                "crypto.iv_length",
+                mode = "AES-GCM",
+                expected = GCM_IV_LEN,
+                len = iv.len()
+            )
+            .to_string());
         }
         Some(iv) => iv.to_vec(),
         None => random_bytes(GCM_IV_LEN),
@@ -105,7 +111,7 @@ pub fn aes_gcm_encrypt(plaintext: &[u8], key: &[u8], iv: Option<&[u8]>) -> Resul
         24 => Aes192Gcm::new_from_slice(key).unwrap().encrypt(nonce, plaintext),
         _ => Aes256Gcm::new_from_slice(key).unwrap().encrypt(nonce, plaintext),
     }
-    .map_err(|_| "AES-GCM 加密失败".to_string())?;
+    .map_err(|_| tr!("crypto.gcm_encrypt_failed").to_string())?;
     let mut out = iv;
     out.extend_from_slice(&ct);
     Ok(out)
@@ -115,7 +121,7 @@ pub fn aes_gcm_encrypt(plaintext: &[u8], key: &[u8], iv: Option<&[u8]>) -> Resul
 pub fn aes_gcm_decrypt(data: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     check_key(key)?;
     if data.len() < GCM_IV_LEN + 16 {
-        return Err("AES-GCM 密文长度不足".into());
+        return Err(tr!("crypto.gcm_too_short").into());
     }
     let (iv, ct) = data.split_at(GCM_IV_LEN);
     let nonce = Nonce::from_slice(iv);
@@ -124,7 +130,7 @@ pub fn aes_gcm_decrypt(data: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
         24 => Aes192Gcm::new_from_slice(key).unwrap().decrypt(nonce, ct),
         _ => Aes256Gcm::new_from_slice(key).unwrap().decrypt(nonce, ct),
     }
-    .map_err(|_| "AES-GCM 解密失败（密钥错误或数据被篡改）".to_string())
+    .map_err(|_| tr!("crypto.gcm_decrypt_failed").to_string())
 }
 
 /// PKCS#7-padded AES-CBC. Returns `iv || ciphertext`.
@@ -132,7 +138,13 @@ pub fn aes_cbc_encrypt(plaintext: &[u8], key: &[u8], iv: Option<&[u8]>) -> Resul
     check_key(key)?;
     let iv = match iv {
         Some(iv) if iv.len() != CBC_IV_LEN => {
-            return Err(format!("AES-CBC IV 必须为 {CBC_IV_LEN} 字节，当前为 {} 字节", iv.len()));
+            return Err(tr!(
+                "crypto.iv_length",
+                mode = "AES-CBC",
+                expected = CBC_IV_LEN,
+                len = iv.len()
+            )
+            .to_string());
         }
         Some(iv) => iv.to_vec(),
         None => random_bytes(CBC_IV_LEN),
@@ -157,7 +169,7 @@ pub fn aes_cbc_encrypt(plaintext: &[u8], key: &[u8], iv: Option<&[u8]>) -> Resul
 pub fn aes_cbc_decrypt(data: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     check_key(key)?;
     if data.len() < CBC_IV_LEN + 16 || !(data.len() - CBC_IV_LEN).is_multiple_of(16) {
-        return Err("AES-CBC 密文长度无效".into());
+        return Err(tr!("crypto.cbc_length").into());
     }
     let (iv, ct) = data.split_at(CBC_IV_LEN);
     let result = match key.len() {
@@ -171,7 +183,7 @@ pub fn aes_cbc_decrypt(data: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
             .unwrap()
             .decrypt_padded_vec_mut::<Pkcs7>(ct),
     };
-    result.map_err(|_| "AES-CBC 解密失败（密钥错误或填充无效）".to_string())
+    result.map_err(|_| tr!("crypto.cbc_decrypt_failed").to_string())
 }
 
 #[cfg(test)]

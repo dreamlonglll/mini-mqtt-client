@@ -1,4 +1,4 @@
-//! Create / edit server dialog (tabs: 基本配置 / 认证 / 高级).
+//! Create / edit server dialog (tabs: basic / authentication / advanced).
 
 use super::common::{
     IconName, dialog_footer, form_row, input_value, notify, number_field, number_state, opt_value, segmented,
@@ -59,36 +59,31 @@ impl ServerForm {
                     .default_value(value)
             })
         };
-        let name = text(window, cx, &server.name, "给这个连接起个名字");
-        let host = text(window, cx, &server.host, "主机地址，例如 broker.emqx.io");
-        let client_id = text(window, cx, server.client_id.as_deref().unwrap_or(""), "留空则自动生成");
-        let username = text(window, cx, server.username.as_deref().unwrap_or(""), "可选");
+        let name = text(window, cx, &server.name, &tr!("server.name_placeholder"));
+        let host = text(window, cx, &server.host, &tr!("server.host_placeholder"));
+        let client_id = text(
+            window,
+            cx,
+            server.client_id.as_deref().unwrap_or(""),
+            &tr!("server.client_id_placeholder"),
+        );
+        let username = text(
+            window,
+            cx,
+            server.username.as_deref().unwrap_or(""),
+            &tr!("common.optional"),
+        );
         let password = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("可选")
+                .placeholder(tr!("common.optional"))
                 .masked(true)
                 .default_value(server.password.clone().unwrap_or_default())
         });
         let port = number_state(window, cx, server.port as i64);
         let keep_alive = number_state(window, cx, server.keep_alive as i64);
-        let ca_cert = pem_state(
-            window,
-            cx,
-            &server.ca_cert,
-            "-----BEGIN CERTIFICATE-----（留空则使用系统根证书）",
-        );
-        let client_cert = pem_state(
-            window,
-            cx,
-            &server.client_cert,
-            "-----BEGIN CERTIFICATE-----（可选，双向认证）",
-        );
-        let client_key = pem_state(
-            window,
-            cx,
-            &server.client_key,
-            "-----BEGIN PRIVATE KEY-----（可选，双向认证）",
-        );
+        let ca_cert = pem_state(window, cx, &server.ca_cert, &tr!("server.ca_placeholder"));
+        let client_cert = pem_state(window, cx, &server.client_cert, &tr!("server.cert_placeholder"));
+        let client_key = pem_state(window, cx, &server.client_key, &tr!("server.key_placeholder"));
         Self {
             state,
             transport: server.transport(),
@@ -126,13 +121,13 @@ impl ServerForm {
         let port: i32 = input_value(&self.port, cx).trim().parse().unwrap_or(0);
         let keep_alive: i32 = input_value(&self.keep_alive, cx).trim().parse().unwrap_or(-1);
         let error = if name.is_empty() {
-            Some("请输入名称")
+            Some(tr!("server.name_required"))
         } else if host.is_empty() {
-            Some("请输入主机地址")
+            Some(tr!("server.host_required"))
         } else if !(1..=65535).contains(&port) {
-            Some("端口范围为 1-65535")
+            Some(tr!("server.port_range"))
         } else if !(0..=65535).contains(&keep_alive) {
-            Some("Keep Alive 范围为 0-65535")
+            Some(tr!("server.keep_alive_range"))
         } else {
             None
         };
@@ -182,9 +177,9 @@ impl ServerForm {
                     cx,
                     ToastKind::Success,
                     if is_new {
-                        "服务器已添加"
+                        tr!("server.added")
                     } else {
-                        "服务器已更新"
+                        tr!("server.updated")
                     },
                 );
                 true
@@ -205,19 +200,19 @@ impl ServerForm {
         v_flex()
             .gap_4()
             .child(form_row(
-                "名称",
+                tr!("server.name"),
                 true,
-                Input::new(&self.name).aria_label("服务器名称"),
+                Input::new(&self.name).aria_label(tr!("server.name_aria")),
                 cx,
             ))
             .child(form_row(
-                "服务器地址",
+                tr!("server.address"),
                 true,
                 v_flex()
                     .gap_2()
                     .child(segmented(
                         "transport",
-                        "传输协议",
+                        &tr!("server.transport"),
                         &["mqtt://", "mqtts://", "ws://", "wss://"],
                         transport_ix,
                         move |ix, window, cx| {
@@ -227,26 +222,33 @@ impl ServerForm {
                     .child(
                         h_flex()
                             .gap_2()
-                            .child(div().flex_1().child(Input::new(&self.host).aria_label("主机地址")))
-                            .child(":")
                             .child(
                                 div()
-                                    .w(px(130.))
-                                    .child(number_field("port", "端口", &self.port, 1, 1, 65535)),
-                            ),
+                                    .flex_1()
+                                    .child(Input::new(&self.host).aria_label(tr!("server.host"))),
+                            )
+                            .child(":")
+                            .child(div().w(px(130.)).child(number_field(
+                                "port",
+                                &tr!("server.port"),
+                                &self.port,
+                                1,
+                                1,
+                                65535,
+                            ))),
                     )
                     .when(matches!(self.transport, Transport::Ws | Transport::Wss), |this| {
                         this.child(
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("WebSocket 默认路径为 /mqtt，可在主机后追加路径，例如 broker.emqx.io/mqtt"),
+                                .child(tr!("server.ws_hint")),
                         )
                     }),
                 cx,
             ))
             .child(form_row(
-                "协议版本",
+                tr!("server.protocol_version"),
                 false,
                 div().pt_1p5().child(
                     RadioGroup::horizontal("protocol-version")
@@ -275,10 +277,10 @@ impl ServerForm {
                     )
                     .child(
                         Button::new("regen-client-id")
-                            .accessibility_label("随机生成 Client ID")
+                            .accessibility_label(tr!("server.regen_client_id"))
                             .outline()
                             .icon(IconName::RefreshCw)
-                            .tooltip("随机生成")
+                            .tooltip(tr!("server.regen"))
                             .on_click(move |_, window, cx| {
                                 regen_id.update(cx, |s, cx| s.set_value(generate_client_id(), window, cx))
                             }),
@@ -291,15 +293,17 @@ impl ServerForm {
         v_flex()
             .gap_4()
             .child(form_row(
-                "用户名",
+                tr!("server.username"),
                 false,
-                Input::new(&self.username).aria_label("用户名"),
+                Input::new(&self.username).aria_label(tr!("server.username")),
                 cx,
             ))
             .child(form_row(
-                "密码",
+                tr!("server.password"),
                 false,
-                Input::new(&self.password).aria_label("密码").mask_toggle(),
+                Input::new(&self.password)
+                    .aria_label(tr!("server.password"))
+                    .mask_toggle(),
                 cx,
             ))
     }
@@ -322,7 +326,12 @@ impl ServerForm {
                         0,
                         65535,
                     )))
-                    .child(div().text_sm().text_color(cx.theme().muted_foreground).child("秒")),
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(tr!("server.seconds")),
+                    ),
                 cx,
             ))
             .child(form_row(
@@ -348,26 +357,26 @@ impl ServerForm {
                         .pl(px(108.))
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
-                        .child("选择 mqtts:// 或 wss:// 后可配置 TLS 证书"),
+                        .child(tr!("server.tls_hint")),
                 )
             })
             .when(tls, |this| {
                 this.child(form_row(
-                    "CA 证书",
+                    tr!("server.ca_cert"),
                     false,
-                    Textarea::new(&self.ca_cert).aria_label("CA 证书"),
+                    Textarea::new(&self.ca_cert).aria_label(tr!("server.ca_cert")),
                     cx,
                 ))
                 .child(form_row(
-                    "客户端证书",
+                    tr!("server.client_cert"),
                     false,
-                    Textarea::new(&self.client_cert).aria_label("客户端证书"),
+                    Textarea::new(&self.client_cert).aria_label(tr!("server.client_cert")),
                     cx,
                 ))
                 .child(form_row(
-                    "客户端私钥",
+                    tr!("server.client_key"),
                     false,
-                    Textarea::new(&self.client_key).aria_label("客户端私钥"),
+                    Textarea::new(&self.client_key).aria_label(tr!("server.client_key")),
                     cx,
                 ))
             })
@@ -395,9 +404,9 @@ impl Render for ServerForm {
                             cx.notify();
                         })
                     })
-                    .child(Tab::new().label("基本配置"))
-                    .child(Tab::new().label("认证"))
-                    .child(Tab::new().label("高级")),
+                    .child(Tab::new().label(tr!("server.tab_basic")))
+                    .child(Tab::new().label(tr!("server.tab_auth")))
+                    .child(Tab::new().label(tr!("server.tab_advanced"))),
             )
             .child(div().min_h(px(250.)).child(content))
     }
@@ -405,18 +414,18 @@ impl Render for ServerForm {
 
 pub fn open(state: Entity<AppState>, existing: Option<MqttServer>, window: &mut Window, cx: &mut App) {
     let title = if existing.is_some() {
-        "编辑 Server"
+        tr!("server.edit_title")
     } else {
-        "新增 Server"
+        tr!("server.add_title")
     };
     let form = cx.new(|cx| ServerForm::new(state, existing, window, cx));
     window.open_dialog(cx, move |dialog, _, _| {
         let save_form = form.clone();
         dialog
-            .title(title)
+            .title(title.clone())
             .w(px(640.))
             .child(form.clone())
-            .footer(dialog_footer("保存"))
+            .footer(dialog_footer(tr!("common.save")))
             .on_ok(move |_, window, cx| save_form.update(cx, |form, cx| form.save(window, cx)))
     });
 }

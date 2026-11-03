@@ -1,5 +1,7 @@
-//! Application paths and the small `config.yaml` (custom data path, theme).
+//! Application paths and the small `config.yaml` (custom data path, theme,
+//! language, message limit).
 
+use crate::i18n::Language;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,12 +22,35 @@ pub fn app_data_dir() -> PathBuf {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(from = "String", into = "String")]
 pub enum ThemePreference {
     #[default]
     System,
     Light,
     Dark,
+}
+
+/// Unknown values fall back to the default instead of making the whole
+/// config file (and with it the custom data path) unreadable.
+impl From<String> for ThemePreference {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "light" => ThemePreference::Light,
+            "dark" => ThemePreference::Dark,
+            _ => ThemePreference::System,
+        }
+    }
+}
+
+impl From<ThemePreference> for String {
+    fn from(value: ThemePreference) -> Self {
+        match value {
+            ThemePreference::System => "system",
+            ThemePreference::Light => "light",
+            ThemePreference::Dark => "dark",
+        }
+        .to_string()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -34,6 +59,9 @@ pub struct AppConfig {
     pub data_path: Option<String>,
     #[serde(default)]
     pub theme: ThemePreference,
+    /// Interface language: `auto` (follow the system), `zh-CN` or `en-US`.
+    #[serde(default)]
+    pub language: Language,
     /// Keys this version does not model, written back unchanged.
     #[serde(flatten)]
     pub extra: serde_yaml::Mapping,
@@ -54,7 +82,8 @@ impl AppConfig {
     pub fn save(&self, app_dir: &Path) -> Result<(), String> {
         fs::create_dir_all(app_dir).map_err(|e| e.to_string())?;
         let content = serde_yaml::to_string(self).map_err(|e| e.to_string())?;
-        super::storage::write_atomic(&Self::path(app_dir), content.as_bytes()).map_err(|e| format!("保存配置失败: {e}"))
+        super::storage::write_atomic(&Self::path(app_dir), content.as_bytes())
+            .map_err(|e| tr!("config.save_failed", error = e).to_string())
     }
 
     /// Resolve the data file: the custom path if it (or its parent) exists,
@@ -80,13 +109,13 @@ pub fn migrate_data_path(
     copy_data: bool,
 ) -> Result<(), String> {
     if !new_path.is_absolute() {
-        return Err("请提供绝对路径".to_string());
+        return Err(tr!("config.absolute_path").to_string());
     }
     if let Some(parent) = new_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("无法创建目录: {e}"))?;
+        fs::create_dir_all(parent).map_err(|e| tr!("config.create_dir_failed", error = e).to_string())?;
     }
     if copy_data && current_file.exists() && current_file != new_path {
-        fs::copy(current_file, new_path).map_err(|e| format!("复制数据文件失败: {e}"))?;
+        fs::copy(current_file, new_path).map_err(|e| tr!("config.copy_failed", error = e).to_string())?;
     }
     config.data_path = Some(new_path.to_string_lossy().to_string());
     config.save(app_dir)
@@ -101,6 +130,26 @@ mod tests {
         let config: AppConfig = serde_yaml::from_str("data_path: /tmp/x/data.yaml\n").unwrap();
         assert_eq!(config.data_path.as_deref(), Some("/tmp/x/data.yaml"));
         assert_eq!(config.theme, ThemePreference::System);
+        assert_eq!(config.language, Language::System);
+    }
+
+    #[test]
+    fn language_and_theme_round_trip_and_tolerate_unknown_values() {
+        let config: AppConfig = serde_yaml::from_str("theme: dark\nlanguage: en-US\n").unwrap();
+        assert_eq!(config.theme, ThemePreference::Dark);
+        assert_eq!(config.language, Language::English);
+        let text = serde_yaml::to_string(&config).unwrap();
+        assert!(
+            text.contains("theme: dark") && text.contains("language: en-US"),
+            "{text}"
+        );
+        let odd: AppConfig = serde_yaml::from_str("data_path: /x/data.yaml\ntheme: neon\nlanguage: fr\n").unwrap();
+        assert_eq!(
+            odd.data_path.as_deref(),
+            Some("/x/data.yaml"),
+            "data path survives odd values"
+        );
+        assert_eq!((odd.theme, odd.language), (ThemePreference::System, Language::System));
     }
 
     #[test]

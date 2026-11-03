@@ -42,6 +42,11 @@ crc32fast = "1"
 rand = "0.8"
 hex = "0.4"
 
+# Localisation: rust-i18n is what GPUI Kit's components use, so one locale
+# switch covers the app and the components; sys-locale reads the OS language.
+rust-i18n = "4"
+sys-locale = "0.3"
+
 # Storage & misc
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

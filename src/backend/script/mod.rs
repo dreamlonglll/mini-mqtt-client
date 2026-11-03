@@ -42,7 +42,11 @@ pub struct ScriptChainError {
 
 impl std::fmt::Display for ScriptChainError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "脚本执行失败 [{}]: {}", self.script_name, self.message)
+        f.write_str(&tr!(
+            "script.chain_failed",
+            name = self.script_name,
+            error = self.message
+        ))
     }
 }
 
@@ -71,7 +75,7 @@ pub fn validate(code: &str) -> Result<(), String> {
     let wrapped = wrap(code);
     boa_engine::Script::parse(Source::from_bytes(wrapped.as_bytes()), None, &mut ctx)
         .map(|_| ())
-        .map_err(|e| format!("语法错误: {e}"))
+        .map_err(|e| tr!("script.syntax_error", error = e).to_string())
 }
 
 fn wrap(code: &str) -> String {
@@ -104,16 +108,14 @@ fn execute(code: &str, payload: &str, topic: &str, env: &EnvVars) -> Result<Stri
     let promise = value
         .as_object()
         .and_then(|obj| JsPromise::from_object(obj).ok())
-        .ok_or_else(|| "脚本执行异常：未返回 Promise".to_string())?;
+        .ok_or_else(|| tr!("script.no_promise").to_string())?;
     match promise.state() {
         boa_engine::builtins::promise::PromiseState::Fulfilled(v) => value_to_payload(&v, payload, &mut ctx),
         boa_engine::builtins::promise::PromiseState::Rejected(reason) => Err(reason
             .to_string(&mut ctx)
             .map(|s| s.to_std_string_escaped())
-            .unwrap_or_else(|_| "未知错误".to_string())),
-        boa_engine::builtins::promise::PromiseState::Pending => {
-            Err("脚本未完成：存在无法完成的 Promise（不支持定时器）".to_string())
-        }
+            .unwrap_or_else(|_| tr!("script.unknown_error").to_string())),
+        boa_engine::builtins::promise::PromiseState::Pending => Err(tr!("script.pending_promise").to_string()),
     }
 }
 
@@ -121,7 +123,7 @@ fn describe_error(err: JsError, ctx: &mut Context) -> String {
     if let Some(native) = err.as_native() {
         // RuntimeLimit errors cannot be turned into JS values (Boa panics).
         if matches!(native.kind, boa_engine::error::JsNativeErrorKind::RuntimeLimit) {
-            return format!("脚本超出运行限制（可能存在死循环或递归过深）: {}", native.message());
+            return tr!("script.runtime_limit", error = native.message()).to_string();
         }
         return format!("{}: {}", native.kind, native.message());
     }
@@ -149,7 +151,7 @@ fn value_to_payload(value: &JsValue, original: &str, ctx: &mut Context) -> Resul
         return match value.to_json(ctx) {
             Ok(Some(json)) => Ok(json.to_string()),
             Ok(None) => Ok(original.to_string()),
-            Err(e) => Err(format!("返回值无法序列化为 JSON: {}", describe_error(e, ctx))),
+            Err(e) => Err(tr!("script.not_serializable", error = describe_error(e, ctx)).to_string()),
         };
     }
     value
@@ -223,7 +225,7 @@ fn arg_usize(args: &[JsValue], i: usize, default: usize, ctx: &mut Context) -> J
         Some(v) if !v.is_null_or_undefined() => {
             let n = v.to_number(ctx)?;
             if !n.is_finite() || !(0.0..=1_048_576.0).contains(&n) {
-                return Err(err("长度参数无效"));
+                return Err(err(tr!("script.invalid_length")));
             }
             Ok(n as usize)
         }
@@ -270,7 +272,7 @@ fn random_bytes(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<Js
 fn generate_key(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
     let bits = arg_usize(args, 0, 128, ctx)?;
     if !matches!(bits, 128 | 192 | 256) {
-        return Err(err("密钥位数必须为 128/192/256"));
+        return Err(err(tr!("script.invalid_key_bits")));
     }
     Ok(str_value(crypto::base64_encode(&crypto::random_bytes(bits / 8))))
 }
@@ -307,7 +309,7 @@ fn xor(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
     let data: Vec<u16> = arg_string(args, 0, ctx)?.encode_utf16().collect();
     let key: Vec<u16> = arg_string(args, 1, ctx)?.encode_utf16().collect();
     if key.is_empty() {
-        return Err(err("xor 密钥不能为空"));
+        return Err(err(tr!("script.xor_empty_key")));
     }
     let out: Vec<u16> = data.iter().enumerate().map(|(i, c)| c ^ key[i % key.len()]).collect();
     Ok(JsValue::from(JsString::from(out.as_slice())))
@@ -390,7 +392,7 @@ fn btoa(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
     for ch in s.chars() {
         let code = ch as u32;
         if code > 0xFF {
-            return Err(err("btoa: 字符串包含 Latin1 范围之外的字符"));
+            return Err(err(tr!("script.btoa_latin1")));
         }
         bytes.push(code as u8);
     }

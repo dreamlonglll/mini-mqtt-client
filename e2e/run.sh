@@ -22,6 +22,10 @@ export E2E_DISPLAY="${E2E_DISPLAY:-:97}"
 export E2E_TCP_PORT="${E2E_TCP_PORT:-18830}"
 export E2E_WS_PORT="${E2E_WS_PORT:-18083}"
 export E2E_TLS_PORT="${E2E_TLS_PORT:-18883}"
+# The scenarios find controls by their (Chinese) accessible names: pin the
+# interface language instead of following the machine's locale (often C or
+# en_US on CI).
+export MINI_MQTT_LANG=zh-CN
 
 missing=()
 for tool in Xvfb mosquitto mosquitto_pub mosquitto_sub xdotool xclip xwd convert openssl dbus-run-session; do

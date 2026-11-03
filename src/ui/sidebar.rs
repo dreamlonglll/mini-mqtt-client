@@ -43,7 +43,7 @@ impl SidebarView {
     fn section_header(
         &self,
         id: &'static str,
-        title: &'static str,
+        title: SharedString,
         enabled: bool,
         on_add: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         cx: &App,
@@ -61,25 +61,22 @@ impl SidebarView {
                     .text_color(cx.theme().muted_foreground)
                     .child(title),
             )
-            .child(
+            .child({
+                let label = if id == "add-server" {
+                    tr!("sidebar.add_server")
+                } else {
+                    tr!("sidebar.add_subscription")
+                };
                 Button::new(id)
-                    .accessibility_label(if id == "add-server" {
-                        "新增服务器"
-                    } else {
-                        "新增订阅"
-                    })
+                    .accessibility_label(label.clone())
                     .primary()
                     .xsmall()
                     .rounded(px(999.))
                     .icon(IconName::Plus)
                     .disabled(!enabled)
-                    .tooltip(if id == "add-server" {
-                        "新增服务器"
-                    } else {
-                        "新增订阅"
-                    })
-                    .on_click(on_add),
-            )
+                    .tooltip(label)
+                    .on_click(on_add)
+            })
     }
 
     fn server_item(&self, server: &MqttServer, active: bool, cx: &App) -> impl IntoElement {
@@ -94,11 +91,16 @@ impl SidebarView {
             .id(("server", id as u64))
             .role(Role::ListItem)
             .aria_label(format!(
-                "服务器 {} {} {}{}",
+                "{} {} {} {}{}",
+                tr!("sidebar.server"),
                 server.name,
                 server.address(),
                 status.label(),
-                if active { " 当前" } else { "" }
+                if active {
+                    format!(" {}", tr!("sidebar.current"))
+                } else {
+                    String::new()
+                }
             ))
             .mx_2()
             .px_3()
@@ -136,7 +138,7 @@ impl SidebarView {
             )
             .child(
                 Button::new(("server-menu", id as u64))
-                    .accessibility_label(format!("服务器菜单 {}", server.name))
+                    .accessibility_label(tr!("sidebar.server_menu", name = server.name))
                     .ghost()
                     .xsmall()
                     .icon(IconName::EllipsisVertical)
@@ -145,16 +147,14 @@ impl SidebarView {
                         let dup_state = menu_state.clone();
                         let del_state = menu_state.clone();
                         let name = name.clone();
-                        menu.item(
-                            PopupMenuItem::new("编辑")
-                                .icon(Lucide::SquarePen)
-                                .on_click(move |_, window, cx| {
-                                    let server = edit_state.read(cx).server(id).cloned();
-                                    server_dialog::open(edit_state.clone(), server, window, cx);
-                                }),
-                        )
+                        menu.item(PopupMenuItem::new(tr!("common.edit")).icon(Lucide::SquarePen).on_click(
+                            move |_, window, cx| {
+                                let server = edit_state.read(cx).server(id).cloned();
+                                server_dialog::open(edit_state.clone(), server, window, cx);
+                            },
+                        ))
                         .item(
-                            PopupMenuItem::new("复制")
+                            PopupMenuItem::new(tr!("common.duplicate"))
                                 .icon(IconName::Copy)
                                 .on_click(move |_, _, cx| {
                                     dup_state.update(cx, |state, cx| {
@@ -166,16 +166,15 @@ impl SidebarView {
                         )
                         .separator()
                         .item(
-                            PopupMenuItem::new("删除")
-                                .icon(Lucide::Trash)
-                                .on_click(move |_, window, cx| {
+                            PopupMenuItem::new(tr!("common.delete")).icon(Lucide::Trash).on_click(
+                                move |_, window, cx| {
                                     let del_state = del_state.clone();
                                     confirm(
                                         window,
                                         cx,
-                                        "删除服务器",
-                                        format!("确定要删除服务器「{name}」吗？其订阅、模板和脚本也会一并删除。"),
-                                        "删除",
+                                        tr!("sidebar.delete_server_title"),
+                                        tr!("sidebar.delete_server_confirm", name = name),
+                                        tr!("common.delete"),
                                         move |_, cx| {
                                             del_state.update(cx, |state, cx| {
                                                 if let Err(err) = state.delete_server(id, cx) {
@@ -184,7 +183,8 @@ impl SidebarView {
                                             })
                                         },
                                     );
-                                }),
+                                },
+                            ),
                         )
                     }),
             )
@@ -207,10 +207,15 @@ impl SidebarView {
             .id(("sub", id))
             .role(Role::ListItem)
             .aria_label(format!(
-                "订阅 {} Q{} {}",
+                "{} {} Q{} {}",
+                tr!("sidebar.subscription"),
                 sub.topic,
                 sub.qos,
-                if sub.is_active { "已启用" } else { "已停用" }
+                if sub.is_active {
+                    tr!("common.enabled")
+                } else {
+                    tr!("common.disabled")
+                }
             ))
             .group("sub-item")
             .mx_2()
@@ -221,7 +226,7 @@ impl SidebarView {
             .hover(|s| s.bg(theme.sidebar_accent.opacity(0.5)))
             .child(
                 Switch::new(("sub-switch", id))
-                    .accessibility_label(format!("启用订阅 {}", sub.topic))
+                    .accessibility_label(tr!("sidebar.enable_subscription", topic = sub.topic))
                     .checked(sub.is_active)
                     .xsmall()
                     .on_click(move |checked, _, cx| {
@@ -247,11 +252,11 @@ impl SidebarView {
             .child(
                 div().invisible().group_hover("sub-item", |s| s.visible()).child(
                     Button::new(("sub-delete", id))
-                        .accessibility_label(format!("删除订阅 {}", sub.topic))
+                        .accessibility_label(tr!("sidebar.delete_subscription_of", topic = sub.topic))
                         .ghost()
                         .xsmall()
                         .icon(Lucide::Trash)
-                        .tooltip("删除订阅")
+                        .tooltip(tr!("sidebar.delete_subscription"))
                         .on_click(move |_, _, cx| {
                             delete_state.update(cx, |state, cx| state.remove_subscription(&delete_sub, cx))
                         }),
@@ -301,7 +306,7 @@ impl Render for SidebarView {
                     .overflow_y_scrollbar()
                     .child(self.section_header(
                         "add-server",
-                        "SERVER",
+                        tr!("sidebar.servers"),
                         true,
                         move |_, window, cx| server_dialog::open(add_server_state.clone(), None, window, cx),
                         cx,
@@ -316,7 +321,7 @@ impl Render for SidebarView {
                     .child(div().mx_4().my_3().h(px(1.)).bg(theme.sidebar_border))
                     .child(self.section_header(
                         "add-subscription",
-                        "订阅",
+                        tr!("sidebar.subscriptions"),
                         active_id.is_some(),
                         move |_, window, cx| {
                             if let Some(server_id) = add_sub_state.read(cx).active_server_id {
@@ -336,7 +341,7 @@ impl Render for SidebarView {
                                         .py_2()
                                         .text_xs()
                                         .text_color(theme.muted_foreground)
-                                        .child("暂无订阅，点击 + 添加"),
+                                        .child(tr!("sidebar.no_subscriptions")),
                                 )
                             })
                             .children(subscriptions.iter().map(|sub| self.subscription_item(sub, cx))),
@@ -355,16 +360,20 @@ impl Render for SidebarView {
                             .ghost()
                             .small()
                             .icon(if is_dark { IconName::Sun } else { IconName::Moon })
-                            .label(if is_dark { "浅色模式" } else { "深色模式" })
+                            .label(if is_dark {
+                                tr!("sidebar.light_mode")
+                            } else {
+                                tr!("sidebar.dark_mode")
+                            })
                             .on_click(move |_, _, cx| theme_state.update(cx, |state, cx| state.toggle_dark(cx))),
                     )
                     .child(
                         Button::new("open-settings")
-                            .accessibility_label("系统设置")
+                            .accessibility_label(tr!("settings.title"))
                             .ghost()
                             .small()
                             .icon(IconName::Settings)
-                            .tooltip("系统设置")
+                            .tooltip(tr!("settings.title"))
                             .on_click(move |_, window, cx| settings_dialog::open(settings_state.clone(), window, cx)),
                     ),
             )

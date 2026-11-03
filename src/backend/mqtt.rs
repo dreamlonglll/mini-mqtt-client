@@ -10,6 +10,7 @@
 use super::models::{MqttServer, Transport};
 use chrono::{DateTime, Local};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use gpui_kit::SharedString;
 use parking_lot::Mutex;
 use rumqttc::{TlsConfiguration, Transport as RumqttTransport};
 use std::collections::{HashMap, VecDeque};
@@ -40,12 +41,12 @@ pub enum ConnectionStatus {
 }
 
 impl ConnectionStatus {
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> SharedString {
         match self {
-            ConnectionStatus::Disconnected => "未连接",
-            ConnectionStatus::Connecting => "连接中...",
-            ConnectionStatus::Connected => "已连接",
-            ConnectionStatus::Error(_) => "连接错误",
+            ConnectionStatus::Disconnected => tr!("status.disconnected"),
+            ConnectionStatus::Connecting => tr!("status.connecting"),
+            ConnectionStatus::Connected => tr!("status.connected"),
+            ConnectionStatus::Error(_) => tr!("status.error"),
         }
     }
 
@@ -90,11 +91,11 @@ enum Client {
 }
 
 fn qos_v4(qos: u8) -> Result<rumqttc::QoS, String> {
-    rumqttc::qos(qos).map_err(|_| format!("无效的 QoS: {qos}"))
+    rumqttc::qos(qos).map_err(|_| tr!("mqtt.invalid_qos", qos = qos).to_string())
 }
 
 fn qos_v5(qos: u8) -> Result<rumqttc::v5::mqttbytes::QoS, String> {
-    rumqttc::v5::mqttbytes::qos(qos).ok_or_else(|| format!("无效的 QoS: {qos}"))
+    rumqttc::v5::mqttbytes::qos(qos).ok_or_else(|| tr!("mqtt.invalid_qos", qos = qos).to_string())
 }
 
 impl Client {
@@ -244,7 +245,7 @@ impl MqttManager {
 
         let transport = build_transport(server)?;
         let host = broker_host(server);
-        let port = u16::try_from(server.port).map_err(|_| "端口无效".to_string())?;
+        let port = u16::try_from(server.port).map_err(|_| tr!("mqtt.invalid_port").to_string())?;
         let keep_alive = keep_alive_for(server);
         let credentials = server
             .username
@@ -374,7 +375,7 @@ impl MqttManager {
         let clients = self.inner.clients.lock();
         match clients.get(&server_id) {
             Some(h) if h.connected.load(Ordering::Relaxed) => f(&h.client),
-            _ => Err("未连接到服务器".to_string()),
+            _ => Err(tr!("mqtt.not_connected").to_string()),
         }
     }
 
@@ -443,12 +444,14 @@ fn build_tls(server: &MqttServer) -> Result<TlsConfiguration, String> {
     if let Some(ca) = non_empty(&server.ca_cert) {
         let certs = rustls_pemfile::certs(&mut ca.as_bytes())
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("CA 证书解析失败: {e}"))?;
+            .map_err(|e| tr!("tls.ca_parse_failed", error = e).to_string())?;
         if certs.is_empty() {
-            return Err("CA 证书解析失败: 未找到 PEM 证书".into());
+            return Err(tr!("tls.ca_parse_failed", error = tr!("tls.no_pem_cert")).to_string());
         }
         for cert in certs {
-            roots.add(cert).map_err(|e| format!("CA 证书无效: {e}"))?;
+            roots
+                .add(cert)
+                .map_err(|e| tr!("tls.ca_invalid", error = e).to_string())?;
         }
     } else {
         let native = rustls_native_certs::load_native_certs();
@@ -456,7 +459,7 @@ fn build_tls(server: &MqttServer) -> Result<TlsConfiguration, String> {
             let _ = roots.add(cert);
         }
         if roots.is_empty() {
-            return Err("未找到系统根证书，请在高级设置中填写 CA 证书".into());
+            return Err(tr!("tls.no_system_roots").to_string());
         }
     }
 
@@ -465,16 +468,16 @@ fn build_tls(server: &MqttServer) -> Result<TlsConfiguration, String> {
         (Some(cert), Some(key)) => {
             let chain = rustls_pemfile::certs(&mut cert.as_bytes())
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| format!("客户端证书解析失败: {e}"))?;
+                .map_err(|e| tr!("tls.cert_parse_failed", error = e).to_string())?;
             let key = rustls_pemfile::private_key(&mut key.as_bytes())
-                .map_err(|e| format!("客户端私钥解析失败: {e}"))?
-                .ok_or("客户端私钥解析失败: 未找到 PEM 私钥")?;
+                .map_err(|e| tr!("tls.key_parse_failed", error = e).to_string())?
+                .ok_or_else(|| tr!("tls.key_parse_failed", error = tr!("tls.no_pem_key")).to_string())?;
             builder
                 .with_client_auth_cert(chain, key)
-                .map_err(|e| format!("客户端证书无效: {e}"))?
+                .map_err(|e| tr!("tls.cert_invalid", error = e).to_string())?
         }
         (None, None) => builder.with_no_client_auth(),
-        _ => return Err("客户端证书和私钥需要同时填写".into()),
+        _ => return Err(tr!("tls.cert_and_key_required").to_string()),
     };
     Ok(TlsConfiguration::Rustls(Arc::new(config)))
 }
@@ -531,7 +534,7 @@ async fn run_v4(
                 }
                 Ok(Event::Incoming(Packet::SubAck(ack))) => {
                     if ack.return_codes.iter().any(|c| matches!(c, SubscribeReasonCode::Failure)) {
-                        inner.emit(server_id, generation, MqttEvent::Warning { server_id, message: "服务器拒绝了订阅请求".into() });
+                        inner.emit(server_id, generation, MqttEvent::Warning { server_id, message: tr!("mqtt.subscribe_rejected").to_string() });
                     }
                 }
                 Ok(_) => {}
@@ -591,11 +594,11 @@ async fn run_v5(
                 }
                 Ok(Event::Incoming(Packet::SubAck(ack))) => {
                     if let Some(code) = ack.return_codes.iter().find(|c| !matches!(c, SubscribeReasonCode::Success(_))) {
-                        inner.emit(server_id, generation, MqttEvent::Warning { server_id, message: format!("服务器拒绝了订阅请求: {code:?}") });
+                        inner.emit(server_id, generation, MqttEvent::Warning { server_id, message: format!("{}: {code:?}", tr!("mqtt.subscribe_rejected")) });
                     }
                 }
                 Ok(Event::Incoming(Packet::Disconnect(d))) => {
-                    inner.emit_status(server_id, generation, ConnectionStatus::Error(format!("服务器断开连接: {:?}", d.reason_code)));
+                    inner.emit_status(server_id, generation, ConnectionStatus::Error(format!("{}: {:?}", tr!("mqtt.server_disconnected"), d.reason_code)));
                     break;
                 }
                 Ok(_) => {}

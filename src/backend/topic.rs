@@ -2,13 +2,13 @@
 
 fn validate_base(topic: &str) -> Result<(), String> {
     if topic.trim().is_empty() {
-        return Err("Topic 不能为空".into());
+        return Err(tr!("topic.empty").into());
     }
     if topic.len() > 65535 {
-        return Err("Topic 长度超过限制".into());
+        return Err(tr!("topic.too_long").into());
     }
     if topic.contains('\0') {
-        return Err("Topic 不能包含空字符".into());
+        return Err(tr!("topic.nul").into());
     }
     Ok(())
 }
@@ -17,7 +17,7 @@ fn validate_base(topic: &str) -> Result<(), String> {
 pub fn validate_publish_topic(topic: &str) -> Result<(), String> {
     validate_base(topic)?;
     if topic.contains('+') || topic.contains('#') {
-        return Err("发布主题不能包含通配符 (+ 或 #)".into());
+        return Err(tr!("topic.publish_wildcard").into());
     }
     Ok(())
 }
@@ -27,14 +27,14 @@ pub fn validate_subscribe_topic(topic: &str) -> Result<(), String> {
     validate_base(topic)?;
     if let Some(hash) = topic.find('#') {
         if hash != topic.len() - 1 {
-            return Err("# 通配符只能在主题末尾".into());
+            return Err(tr!("topic.hash_last").into());
         }
         if hash > 0 && !topic[..hash].ends_with('/') {
-            return Err("# 通配符前必须是 /".into());
+            return Err(tr!("topic.hash_after_slash").into());
         }
     }
     if topic.split('/').any(|level| level.contains('+') && level != "+") {
-        return Err("+ 通配符必须占据整个层级".into());
+        return Err(tr!("topic.plus_level").into());
     }
     Ok(())
 }

@@ -119,12 +119,12 @@ pub fn parse_hex(input: &str) -> Result<Vec<u8>, String> {
         .map(|part| part.trim_start_matches("0x").trim_start_matches("0X"))
         .collect();
     if !cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err("HEX 格式不正确".to_string());
+        return Err(tr!("payload.hex_invalid").to_string());
     }
     if !cleaned.len().is_multiple_of(2) {
-        return Err("HEX 长度必须为偶数".to_string());
+        return Err(tr!("payload.hex_odd").to_string());
     }
-    hex::decode(&cleaned).map_err(|e| format!("HEX解码失败: {e}"))
+    hex::decode(&cleaned).map_err(|e| tr!("payload.hex_decode_failed", error = e).to_string())
 }
 
 /// One row of a classic hex dump.
@@ -171,7 +171,7 @@ pub fn validate_payload(payload: &str, format: PayloadFormat) -> Result<(), Stri
         PayloadFormat::Hex => parse_hex(payload).map(|_| ()),
         PayloadFormat::Json if !payload.trim().is_empty() => serde_json::from_str::<serde_json::Value>(payload)
             .map(|_| ())
-            .map_err(|e| format!("JSON 格式不正确: {e}")),
+            .map_err(|e| tr!("payload.json_invalid", error = e).to_string()),
         _ => Ok(()),
     }
 }

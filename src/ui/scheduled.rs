@@ -69,15 +69,14 @@ impl Scheduler {
     }
 
     pub fn progress_label(&self) -> SharedString {
-        format!(
-            "第 {} 轮 · {}/{} · 成功 {} 失败 {}",
-            self.round,
-            (self.index + 1).min(self.total),
-            self.total,
-            self.success,
-            self.failed
+        tr!(
+            "scheduled.progress_label",
+            round = self.round,
+            current = (self.index + 1).min(self.total),
+            total = self.total,
+            success = self.success,
+            failed = self.failed
         )
-        .into()
     }
 
     pub fn start(
@@ -152,11 +151,13 @@ impl Scheduler {
                 s.push_log(LogLine {
                     time: now(),
                     topic: "—".into(),
-                    detail: format!("定时发布完成，共发送 {} 条", s.sent),
+                    detail: tr!("scheduled.finished_log", count = s.sent).to_string(),
                     ok: true,
                 });
                 if let Some(state) = s.state.clone() {
-                    state.update(cx, |state, cx| state.toast(ToastKind::Success, "定时发布完成", cx));
+                    state.update(cx, |state, cx| {
+                        state.toast(ToastKind::Success, tr!("scheduled.finished"), cx)
+                    });
                 }
                 cx.notify();
             })
@@ -171,11 +172,13 @@ impl Scheduler {
             self.push_log(LogLine {
                 time: now(),
                 topic: "—".into(),
-                detail: "已停止定时发布".into(),
+                detail: tr!("scheduled.stopped").to_string(),
                 ok: false,
             });
             if let Some(state) = self.state.clone() {
-                state.update(cx, |state, cx| state.toast(ToastKind::Info, "已停止定时发布", cx));
+                state.update(cx, |state, cx| {
+                    state.toast(ToastKind::Info, tr!("scheduled.stopped"), cx)
+                });
             }
             cx.notify();
         }
@@ -256,11 +259,11 @@ impl ScheduleDialog {
             .filter_map(|id| templates.iter().find(|t| t.id == Some(*id)).cloned())
             .collect();
         if commands.is_empty() {
-            notify(window, cx, ToastKind::Warning, "请至少选择一条命令");
+            notify(window, cx, ToastKind::Warning, tr!("scheduled.select_one"));
             return;
         }
         if !self.state.read(cx).mqtt.is_connected(self.server_id) {
-            notify(window, cx, ToastKind::Warning, "请先连接服务器");
+            notify(window, cx, ToastKind::Warning, tr!("publish.connect_first"));
             return;
         }
         if self.order_by_name {
@@ -297,13 +300,13 @@ impl ScheduleDialog {
                             .justify_between()
                             .border_b_1()
                             .border_color(theme.border)
-                            .child(div().font_semibold().child("命令列表"))
+                            .child(div().font_semibold().child(tr!("scheduled.commands")))
                             .child(
                                 h_flex()
                                     .gap_3()
                                     .child(
                                         Checkbox::new("select-all")
-                                            .label("全选")
+                                            .label(tr!("scheduled.select_all"))
                                             .checked(all_selected)
                                             .disabled(templates.is_empty())
                                             .on_click(move |checked, _, cx| {
@@ -319,7 +322,7 @@ impl ScheduleDialog {
                                         div()
                                             .text_xs()
                                             .text_color(theme.muted_foreground)
-                                            .child(format!("已选择 {} 条命令", self.selected.len())),
+                                            .child(tr!("scheduled.selected", count = self.selected.len())),
                                     ),
                             ),
                     )
@@ -331,7 +334,7 @@ impl ScheduleDialog {
                             .when(templates.is_empty(), |this| {
                                 this.child(div().h(px(140.)).child(empty_state(
                                     IconName::Inbox,
-                                    "暂无模板，请先在「管理模板」中创建命令",
+                                    tr!("scheduled.no_templates"),
                                     cx,
                                 )))
                             })
@@ -348,8 +351,14 @@ impl ScheduleDialog {
                                     .id(("schedule-tpl", id as u64))
                                     .role(Role::ListItem)
                                     .aria_label(match order {
-                                        Some(ix) => format!("命令 {} 已选 #{}", t.name, ix + 1),
-                                        None => format!("命令 {}", t.name),
+                                        Some(ix) => format!(
+                                            "{} {} {} #{}",
+                                            tr!("scheduled.command"),
+                                            t.name,
+                                            tr!("scheduled.chosen"),
+                                            ix + 1
+                                        ),
+                                        None => format!("{} {}", tr!("scheduled.command"), t.name),
                                     })
                                     .px_4()
                                     .py_2()
@@ -403,7 +412,7 @@ impl ScheduleDialog {
                             .border_b_1()
                             .border_color(theme.border)
                             .font_semibold()
-                            .child("发送配置"),
+                            .child(tr!("scheduled.config")),
                     )
                     .child(
                         v_flex()
@@ -413,13 +422,13 @@ impl ScheduleDialog {
                                 h_flex()
                                     .gap_6()
                                     .child(form_row(
-                                        "发送间隔",
+                                        tr!("scheduled.interval"),
                                         false,
                                         h_flex()
                                             .gap_2()
                                             .child(div().w(px(150.)).child(number_field(
                                                 "interval",
-                                                "发送间隔",
+                                                &tr!("scheduled.interval"),
                                                 &self.interval,
                                                 100,
                                                 10,
@@ -429,13 +438,13 @@ impl ScheduleDialog {
                                         cx,
                                     ))
                                     .child(form_row(
-                                        "每轮间隔",
+                                        tr!("scheduled.round_interval"),
                                         false,
                                         h_flex()
                                             .gap_2()
                                             .child(div().w(px(150.)).child(number_field(
                                                 "round-interval",
-                                                "每轮间隔",
+                                                &tr!("scheduled.round_interval"),
                                                 &self.round_interval,
                                                 100,
                                                 0,
@@ -446,7 +455,7 @@ impl ScheduleDialog {
                                     )),
                             )
                             .child(form_row(
-                                "发送顺序",
+                                tr!("scheduled.order"),
                                 false,
                                 div().pt_1p5().child(
                                     RadioGroup::horizontal("schedule-order")
@@ -458,13 +467,13 @@ impl ScheduleDialog {
                                                 cx.notify();
                                             })
                                         })
-                                        .child(Radio::new("order-selection").label("按勾选顺序"))
-                                        .child(Radio::new("order-name").label("按名称排序")),
+                                        .child(Radio::new("order-selection").label(tr!("scheduled.order_selection")))
+                                        .child(Radio::new("order-name").label(tr!("scheduled.order_name"))),
                                 ),
                                 cx,
                             ))
                             .child(form_row(
-                                "循环模式",
+                                tr!("scheduled.loop_mode"),
                                 false,
                                 h_flex()
                                     .gap_4()
@@ -478,8 +487,8 @@ impl ScheduleDialog {
                                                     cx.notify();
                                                 })
                                             })
-                                            .child(Radio::new("loop-infinite").label("无限循环"))
-                                            .child(Radio::new("loop-count").label("指定次数")),
+                                            .child(Radio::new("loop-infinite").label(tr!("scheduled.infinite")))
+                                            .child(Radio::new("loop-count").label(tr!("scheduled.count"))),
                                     )
                                     .when(!self.infinite, |this| {
                                         this.child(
@@ -487,13 +496,13 @@ impl ScheduleDialog {
                                                 .gap_2()
                                                 .child(div().w(px(130.)).child(number_field(
                                                     "loop-count",
-                                                    "循环次数",
+                                                    &tr!("scheduled.loop_count"),
                                                     &self.loop_count,
                                                     1,
                                                     1,
                                                     1_000_000,
                                                 )))
-                                                .child("轮"),
+                                                .child(tr!("scheduled.rounds_unit")),
                                         )
                                     }),
                                 cx,
@@ -506,14 +515,14 @@ impl ScheduleDialog {
                     .gap_2()
                     .child(
                         Button::new("schedule-cancel")
-                            .label("取消")
+                            .label(tr!("common.cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         Button::new("schedule-start")
                             .primary()
                             .icon(IconName::Play)
-                            .label("开始发布")
+                            .label(tr!("scheduled.start"))
                             .on_click(move |_, window, cx| e_start.update(cx, |this, cx| this.start(window, cx))),
                     ),
             )
@@ -523,7 +532,7 @@ impl ScheduleDialog {
         let theme = cx.theme().clone();
         let s = self.scheduler.read(cx);
         let running = s.running;
-        let stat = |label: &'static str, value: String, color: Hsla| {
+        let stat = |label: SharedString, value: String, color: Hsla| {
             v_flex()
                 .flex_1()
                 .items_center()
@@ -540,22 +549,30 @@ impl ScheduleDialog {
         v_flex()
             .id("schedule-progress")
             .role(Role::Status)
-            .aria_label(format!(
-                "定时发布 {} 轮次 {} 已发送 {} 成功 {} 失败 {}",
-                if running { "运行中" } else { "已结束" },
-                s.round,
-                s.sent,
-                s.success,
-                s.failed
+            .aria_label(tr!(
+                "scheduled.status_aria",
+                state = if running {
+                    tr!("scheduled.running")
+                } else {
+                    tr!("scheduled.ended")
+                },
+                round = s.round,
+                sent = s.sent,
+                success = s.success,
+                failed = s.failed
             ))
             .gap_4()
             .child(
                 h_flex()
                     .gap_3()
-                    .child(stat("当前轮次", s.round.to_string(), theme.foreground))
-                    .child(stat("已发送", s.sent.to_string(), theme.primary))
-                    .child(stat("成功", s.success.to_string(), theme.success))
-                    .child(stat("失败", s.failed.to_string(), theme.danger)),
+                    .child(stat(
+                        tr!("scheduled.current_round"),
+                        s.round.to_string(),
+                        theme.foreground,
+                    ))
+                    .child(stat(tr!("scheduled.sent"), s.sent.to_string(), theme.primary))
+                    .child(stat(tr!("scheduled.success"), s.success.to_string(), theme.success))
+                    .child(stat(tr!("scheduled.failed"), s.failed.to_string(), theme.danger)),
             )
             .child(
                 h_flex()
@@ -567,14 +584,14 @@ impl ScheduleDialog {
                         theme.muted_foreground
                     }))
                     .child(if running {
-                        format!(
-                            "正在发送：{}（{}/{}）",
-                            s.current.clone().unwrap_or_default(),
-                            (s.index + 1).min(s.total),
-                            s.total
+                        tr!(
+                            "scheduled.sending",
+                            name = s.current.clone().unwrap_or_default(),
+                            current = (s.index + 1).min(s.total),
+                            total = s.total
                         )
                     } else {
-                        "已结束".to_string()
+                        tr!("scheduled.ended")
                     }),
             )
             .child(
@@ -620,27 +637,27 @@ impl ScheduleDialog {
                     .when(running, |this| {
                         this.child(
                             Button::new("schedule-background")
-                                .label("后台运行")
+                                .label(tr!("scheduled.background"))
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                         .child(
                             Button::new("schedule-stop")
                                 .danger()
                                 .icon(Lucide::CircleStop)
-                                .label("停止")
+                                .label(tr!("scheduled.stop"))
                                 .on_click(move |_, _, cx| stop.update(cx, |s, cx| s.stop(cx))),
                         )
                     })
                     .when(!running, |this| {
                         this.child(
                             Button::new("schedule-back")
-                                .label("返回配置")
+                                .label(tr!("scheduled.back"))
                                 .on_click(move |_, _, cx| back.update(cx, |s, cx| s.reset_results(cx))),
                         )
                         .child(
                             Button::new("schedule-close")
                                 .primary()
-                                .label("关闭")
+                                .label(tr!("common.close"))
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                     }),
@@ -666,7 +683,7 @@ pub fn open(scheduler: Entity<Scheduler>, state: Entity<AppState>, server_id: i6
         s.running && s.server_id != Some(server_id)
     };
     if other_running {
-        notify(window, cx, ToastKind::Warning, "其他服务器正在定时发布，请先停止");
+        notify(window, cx, ToastKind::Warning, tr!("scheduled.other_running"));
         return;
     }
     let view = cx.new(|cx| {
@@ -688,6 +705,6 @@ pub fn open(scheduler: Entity<Scheduler>, state: Entity<AppState>, server_id: i6
         }
     });
     window.open_dialog(cx, move |dialog, _, _| {
-        dialog.title("定时发布").w(px(860.)).child(view.clone())
+        dialog.title(tr!("scheduled.title")).w(px(860.)).child(view.clone())
     });
 }

@@ -11,4 +11,7 @@ fn main() {
         }
     }
     println!("cargo:rerun-if-changed=assets/app-icon/icon.ico");
+    // rust-i18n embeds the locale files at compile time without telling
+    // cargo; rebuild when they change.
+    println!("cargo:rerun-if-changed=locales");
 }

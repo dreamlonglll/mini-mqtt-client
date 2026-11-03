@@ -32,16 +32,22 @@ pub struct MessageListView {
 
 impl MessageListView {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("搜索 Topic / 内容..."));
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("messages.search_placeholder")));
         let subscriptions = vec![
-            cx.subscribe(&state, |this, state, event: &AppEvent, cx| {
-                // Messages of servers in the background do not touch this view.
-                if let AppEvent::MessagesChanged(server_id) = event
-                    && state.read(cx).active_server_id == Some(*server_id)
-                {
-                    this.refresh(cx);
-                }
-            }),
+            cx.subscribe_in(
+                &state,
+                window,
+                |this, state, event: &AppEvent, window, cx| match event {
+                    // Messages of servers in the background do not touch this view.
+                    AppEvent::MessagesChanged(server_id) if state.read(cx).active_server_id == Some(*server_id) => {
+                        this.refresh(cx);
+                    }
+                    AppEvent::LanguageChanged => this.search.update(cx, |s, cx| {
+                        s.set_placeholder(tr!("messages.search_placeholder"), window, cx)
+                    }),
+                    _ => {}
+                },
+            ),
             cx.subscribe(&search, |this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.refresh(cx);
@@ -152,7 +158,8 @@ impl MessageListView {
                     .id(("message", message.id))
                     .role(Role::ListItem)
                     .aria_label(format!(
-                        "消息 {} {} {} Q{}{} {}{}",
+                        "{} {} {} {} Q{}{} {}{}",
+                        tr!("messages.item"),
                         dir_label,
                         message.topic,
                         message.format.label(),
@@ -162,7 +169,7 @@ impl MessageListView {
                         message
                             .script_error
                             .as_ref()
-                            .map(|e| format!(" 脚本错误: {e}"))
+                            .map(|e| format!(" {}: {e}", tr!("messages.script_error")))
                             .unwrap_or_default()
                     ))
                     .gap_1p5()
@@ -224,7 +231,8 @@ impl MessageListView {
                             .font_family(theme.mono_font_family.clone())
                             .line_clamp(6)
                             .when(preview.is_empty(), |this| {
-                                this.text_color(theme.muted_foreground).child("(空消息)")
+                                this.text_color(theme.muted_foreground)
+                                    .child(tr!("messages.empty_payload"))
                             })
                             .when(!preview.is_empty(), |this| this.child(preview)),
                     )
@@ -279,9 +287,9 @@ impl Render for MessageListView {
                 .into_any_element()
         } else {
             let text = if self.total > 0 {
-                "没有匹配的消息"
+                tr!("messages.no_match")
             } else {
-                "订阅 Topic 后，收到的消息将显示在这里"
+                tr!("messages.empty")
             };
             div()
                 .flex_1()
@@ -292,18 +300,18 @@ impl Render for MessageListView {
         card(cx)
             .size_full()
             .child(
-                card_header(Lucide::MessageSquare, "消息列表", cx)
+                card_header(Lucide::MessageSquare, tr!("messages.title"), cx)
                     .child(
                         chip(count_label.clone(), theme.muted_foreground, cx)
                             .id("message-count")
                             .role(Role::Status)
-                            .aria_label(format!("消息数 {count_label}")),
+                            .aria_label(format!("{} {count_label}", tr!("messages.count"))),
                     )
                     .child(div().flex_1())
                     .child(
                         div().w(px(220.)).child(
                             Input::new(&self.search)
-                                .aria_label("搜索消息")
+                                .aria_label(tr!("messages.search"))
                                 .small()
                                 .cleanable(true)
                                 .prefix(
@@ -315,8 +323,8 @@ impl Render for MessageListView {
                     )
                     .child(segmented(
                         "message-filter",
-                        "消息过滤",
-                        &["全部", "接收", "发布"],
+                        &tr!("messages.filter"),
+                        &[tr!("messages.all"), tr!("messages.received"), tr!("messages.published")],
                         filter_ix,
                         move |ix, _, cx| {
                             entity.update(cx, |this, cx| {
@@ -331,20 +339,20 @@ impl Render for MessageListView {
                     ))
                     .child(
                         Button::new("clear-messages")
-                            .accessibility_label("清空消息")
+                            .accessibility_label(tr!("messages.clear"))
                             .ghost()
                             .small()
                             .icon(Lucide::Trash)
-                            .tooltip("清空消息")
+                            .tooltip(tr!("messages.clear"))
                             .disabled(self.total == 0)
                             .on_click(move |_, window, cx| {
                                 let clear_state = clear_state.clone();
                                 confirm(
                                     window,
                                     cx,
-                                    "确认清空",
-                                    "确定要清空所有消息记录吗？",
-                                    "清空",
+                                    tr!("messages.clear_title"),
+                                    tr!("messages.clear_confirm"),
+                                    tr!("common.clear"),
                                     move |_, cx| {
                                         clear_state.update(cx, |state, cx| {
                                             if let Some(id) = state.active_server_id {

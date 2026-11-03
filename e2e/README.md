@@ -34,6 +34,8 @@
 | `E2E_ONLY` | 只运行指定场景，如 `T01,T05` |
 | `E2E_DISPLAY` | 使用的 X display，默认 `:97` |
 
+`run.sh` 固定以 `MINI_MQTT_LANG=zh-CN` 启动应用：场景按中文无障碍名称定位控件，不能随机器语言（CI 上常为 `C` / `en_US`）切到英文界面。
+
 依赖（Ubuntu/Debian）：
 
 ```bash

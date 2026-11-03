@@ -287,10 +287,10 @@ impl ScriptType {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> gpui_kit::SharedString {
         match self {
-            ScriptType::BeforePublish => "发送前",
-            ScriptType::AfterReceive => "接收后",
+            ScriptType::BeforePublish => tr!("script.before_publish_short"),
+            ScriptType::AfterReceive => tr!("script.after_receive_short"),
         }
     }
 }

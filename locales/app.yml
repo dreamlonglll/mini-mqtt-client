@@ -1,0 +1,1432 @@
+# Texts of Mini MQTT Client, one entry per key with both languages
+# (rust-i18n format version 2). Placeholders: %{name}.
+_version: 2
+app:
+  add_server:
+    zh-CN: "添加服务器"
+    en: "Add Server"
+  no_server:
+    zh-CN: "还没有服务器，添加一个 MQTT 服务器开始使用"
+    en: "No servers yet. Add an MQTT server to get started"
+command_bar:
+  empty:
+    zh-CN: "暂无模板，可在发布面板点击 ☆ 保存常用命令"
+    en: "No templates yet. Click ☆ in the publish panel to save a command"
+  manage_scripts:
+    zh-CN: "管理脚本"
+    en: "Scripts"
+  manage_templates:
+    zh-CN: "管理模板"
+    en: "Templates"
+  title:
+    zh-CN: "快捷命令"
+    en: "Quick Commands"
+common:
+  cancel:
+    zh-CN: "取消"
+    en: "Cancel"
+  clear:
+    zh-CN: "清空"
+    en: "Clear"
+  close:
+    zh-CN: "关闭"
+    en: "Close"
+  copied:
+    zh-CN: "已复制到剪贴板"
+    en: "Copied to clipboard"
+  decrease:
+    zh-CN: "减少 %{label}"
+    en: "Decrease %{label}"
+  delete:
+    zh-CN: "删除"
+    en: "Delete"
+  description:
+    zh-CN: "描述"
+    en: "Description"
+  disabled:
+    zh-CN: "已停用"
+    en: "disabled"
+  duplicate:
+    zh-CN: "复制"
+    en: "Duplicate"
+  edit:
+    zh-CN: "编辑"
+    en: "Edit"
+  enabled:
+    zh-CN: "已启用"
+    en: "enabled"
+  increase:
+    zh-CN: "增加 %{label}"
+    en: "Increase %{label}"
+  no:
+    zh-CN: "否"
+    en: "No"
+  optional:
+    zh-CN: "可选"
+    en: "Optional"
+  save:
+    zh-CN: "保存"
+    en: "Save"
+  yes:
+    zh-CN: "是"
+    en: "Yes"
+config:
+  absolute_path:
+    zh-CN: "请提供绝对路径"
+    en: "An absolute path is required"
+  copy_failed:
+    zh-CN: "复制数据文件失败: %{error}"
+    en: "Failed to copy the data file: %{error}"
+  create_dir_failed:
+    zh-CN: "无法创建目录: %{error}"
+    en: "Cannot create the folder: %{error}"
+  save_failed:
+    zh-CN: "保存配置失败: %{error}"
+    en: "Failed to save the settings: %{error}"
+crypto:
+  cbc_decrypt_failed:
+    zh-CN: "AES-CBC 解密失败（密钥错误或填充无效）"
+    en: "AES-CBC decryption failed (wrong key or invalid padding)"
+  cbc_length:
+    zh-CN: "AES-CBC 密文长度无效"
+    en: "Invalid AES-CBC ciphertext length"
+  gcm_decrypt_failed:
+    zh-CN: "AES-GCM 解密失败（密钥错误或数据被篡改）"
+    en: "AES-GCM decryption failed (wrong key or tampered data)"
+  gcm_encrypt_failed:
+    zh-CN: "AES-GCM 加密失败"
+    en: "AES-GCM encryption failed"
+  gcm_too_short:
+    zh-CN: "AES-GCM 密文长度不足"
+    en: "The AES-GCM ciphertext is too short"
+  invalid_base64:
+    zh-CN: "无效的 Base64 字符串: %{input}"
+    en: "Invalid Base64 string: %{input}"
+  invalid_hex:
+    zh-CN: "无效的 Hex 字符串 (%{error}): %{input}"
+    en: "Invalid hex string (%{error}): %{input}"
+  iv_length:
+    zh-CN: "%{mode} IV 必须为 %{expected} 字节，当前为 %{len} 字节"
+    en: "The %{mode} IV must be %{expected} bytes long, got %{len} bytes"
+  key_length:
+    zh-CN: "AES 密钥长度必须为 16/24/32 字节，当前为 %{len} 字节"
+    en: "The AES key must be 16, 24 or 32 bytes long, got %{len} bytes"
+detail:
+  bytes:
+    zh-CN: "%{count} 字节"
+    en: "%{count} bytes"
+  content:
+    zh-CN: "消息内容"
+    en: "Message content"
+  copied_to_publish:
+    zh-CN: "已复制到发布面板"
+    en: "Copied to the publish panel"
+  copy_content:
+    zh-CN: "复制内容"
+    en: "Copy"
+  copy_to_publish:
+    zh-CN: "复制到发布"
+    en: "Copy to Publish"
+  direction:
+    zh-CN: "方向"
+    en: "Direction"
+  hex_truncated:
+    zh-CN: "…（仅显示前 %{kb} KB，共 %{total} 字节）"
+    en: "… (showing the first %{kb} KB of %{total} bytes)"
+  publish:
+    zh-CN: "发布"
+    en: "Published"
+  receive:
+    zh-CN: "接收"
+    en: "Received"
+  script_failed:
+    zh-CN: "脚本处理失败: %{error}"
+    en: "Script failed: %{error}"
+  size:
+    zh-CN: "大小"
+    en: "Size"
+  text:
+    zh-CN: "文本"
+    en: "Text"
+  text_truncated:
+    zh-CN: "…（仅显示前 %{kb} KB，共 %{total} 字节；「复制内容」可获取全部）"
+    en: "… (showing the first %{kb} KB of %{total} bytes; \"Copy\" copies everything)"
+  time:
+    zh-CN: "时间"
+    en: "Time"
+  view:
+    zh-CN: "查看方式"
+    en: "View"
+env:
+  add:
+    zh-CN: "新增变量"
+    en: "Add Variable"
+  copy_usage:
+    zh-CN: "复制 %{usage}"
+    en: "Copy %{usage}"
+  copy_usage_of:
+    zh-CN: "复制引用 %{name}"
+    en: "Copy reference %{name}"
+  copy_value:
+    zh-CN: "复制值"
+    en: "Copy Value"
+  delete_confirm:
+    zh-CN: "确定要删除变量「%{name}」吗？"
+    en: "Delete variable \"%{name}\"?"
+  delete_title:
+    zh-CN: "删除变量"
+    en: "Delete Variable"
+  deleted:
+    zh-CN: "变量已删除"
+    en: "Variable deleted"
+  description:
+    zh-CN: "变量描述"
+    en: "Variable description"
+  description_placeholder:
+    zh-CN: "请输入变量描述（可选）"
+    en: "Description (optional)"
+  duplicate_name:
+    zh-CN: "变量名已存在"
+    en: "A variable with this name already exists"
+  edit_title:
+    zh-CN: "编辑变量"
+    en: "Edit Variable"
+  empty:
+    zh-CN: "暂无环境变量"
+    en: "No environment variables"
+  hint:
+    zh-CN: "在订阅 Topic、发布的 Topic / Payload、命令模板和定时发布中用 {{变量名}} 引用，脚本中用 env.变量名 访问"
+    en: "Use {{NAME}} in subscription topics, published topics / payloads, templates and scheduled publishing; scripts read env.NAME"
+  invalid_name:
+    zh-CN: "变量名格式不正确：以字母开头，只能包含字母、数字、下划线"
+    en: "Invalid name: start with a letter and use only letters, digits and underscores"
+  item:
+    zh-CN: "环境变量"
+    en: "Variable"
+  menu:
+    zh-CN: "变量菜单 %{name}"
+    en: "Variable menu %{name}"
+  name:
+    zh-CN: "变量名"
+    en: "Name"
+  name_hint:
+    zh-CN: "以字母开头，只能包含字母、数字、下划线"
+    en: "Start with a letter; letters, digits and underscores only"
+  name_placeholder:
+    zh-CN: "请输入变量名"
+    en: "Variable name"
+  name_required:
+    zh-CN: "请输入变量名"
+    en: "Enter a variable name"
+  no_match:
+    zh-CN: "没有匹配的变量"
+    en: "No matching variables"
+  not_found:
+    zh-CN: "环境变量不存在"
+    en: "Environment variable not found"
+  saved:
+    zh-CN: "变量已保存"
+    en: "Variable saved"
+  search:
+    zh-CN: "搜索环境变量"
+    en: "Search variables"
+  search_placeholder:
+    zh-CN: "搜索变量名或描述"
+    en: "Search name or description"
+  title:
+    zh-CN: "环境变量"
+    en: "Environment Variables"
+  value:
+    zh-CN: "变量值"
+    en: "Value"
+  value_placeholder:
+    zh-CN: "请输入变量值"
+    en: "Value"
+  value_required:
+    zh-CN: "请输入变量值"
+    en: "Enter a value"
+header:
+  connect:
+    zh-CN: "连接"
+    en: "Connect"
+  disconnect:
+    zh-CN: "断开"
+    en: "Disconnect"
+  edit_server:
+    zh-CN: "编辑服务器"
+    en: "Edit Server"
+  status:
+    zh-CN: "连接状态"
+    en: "Connection status"
+messages:
+  all:
+    zh-CN: "全部"
+    en: "All"
+  clear:
+    zh-CN: "清空消息"
+    en: "Clear messages"
+  clear_confirm:
+    zh-CN: "确定要清空所有消息记录吗？"
+    en: "Clear all messages?"
+  clear_title:
+    zh-CN: "确认清空"
+    en: "Clear Messages"
+  count:
+    zh-CN: "消息数"
+    en: "Message count"
+  dropped:
+    zh-CN: "消息过多，处理不及，已丢弃最早的 %{count} 条"
+    en: "Too many messages to keep up: dropped the %{count} oldest"
+  empty:
+    zh-CN: "订阅 Topic 后，收到的消息将显示在这里"
+    en: "Messages of your subscriptions appear here"
+  empty_payload:
+    zh-CN: "(空消息)"
+    en: "(empty)"
+  filter:
+    zh-CN: "消息过滤"
+    en: "Message filter"
+  item:
+    zh-CN: "消息"
+    en: "Message"
+  no_match:
+    zh-CN: "没有匹配的消息"
+    en: "No matching messages"
+  published:
+    zh-CN: "发布"
+    en: "Published"
+  received:
+    zh-CN: "接收"
+    en: "Received"
+  script_error:
+    zh-CN: "脚本错误"
+    en: "Script error"
+  search:
+    zh-CN: "搜索消息"
+    en: "Search messages"
+  search_placeholder:
+    zh-CN: "搜索 Topic / 内容..."
+    en: "Search topic / payload..."
+  title:
+    zh-CN: "消息列表"
+    en: "Messages"
+mqtt:
+  invalid_port:
+    zh-CN: "端口无效"
+    en: "Invalid port"
+  invalid_qos:
+    zh-CN: "无效的 QoS: %{qos}"
+    en: "Invalid QoS: %{qos}"
+  not_connected:
+    zh-CN: "未连接到服务器"
+    en: "Not connected to the broker"
+  server_disconnected:
+    zh-CN: "服务器断开连接"
+    en: "The broker closed the connection"
+  subscribe_rejected:
+    zh-CN: "服务器拒绝了订阅请求"
+    en: "The broker rejected the subscription"
+mqtt_errors:
+  auth_failed:
+    message:
+      zh-CN: "认证失败"
+      en: "Authentication failed"
+    suggestion:
+      zh-CN: "请检查用户名和密码是否正确"
+      en: "Check that the username and password are correct"
+  bad_credentials:
+    message:
+      zh-CN: "用户名或密码错误"
+      en: "Bad username or password"
+    suggestion:
+      zh-CN: "请检查用户名和密码是否正确"
+      en: "Check that the username and password are correct"
+  broker_unavailable:
+    message:
+      zh-CN: "服务器不可用"
+      en: "Broker unavailable"
+    suggestion:
+      zh-CN: "请检查服务器是否正常运行"
+      en: "Check that the broker is running"
+  certificate:
+    message:
+      zh-CN: "证书错误"
+      en: "Certificate error"
+    suggestion:
+      zh-CN: "请检查 TLS 证书配置"
+      en: "Check the TLS certificate settings"
+  connection_refused:
+    message:
+      zh-CN: "连接被拒绝"
+      en: "Connection refused"
+    suggestion:
+      zh-CN: "请检查服务器地址和端口是否正确"
+      en: "Check that the broker host and port are correct"
+  connection_reset:
+    message:
+      zh-CN: "连接被重置"
+      en: "Connection reset"
+    suggestion:
+      zh-CN: "请重新连接服务器"
+      en: "Reconnect to the broker"
+  disconnected:
+    message:
+      zh-CN: "连接已断开"
+      en: "Disconnected"
+    suggestion:
+      zh-CN: "请重新连接服务器"
+      en: "Reconnect to the broker"
+  dns:
+    message:
+      zh-CN: "无法解析主机名"
+      en: "Cannot resolve the host name"
+    suggestion:
+      zh-CN: "请检查服务器地址是否正确"
+      en: "Check that the broker address is correct"
+  format:
+    zh-CN: "%{message}：%{suggestion}"
+    en: "%{message}: %{suggestion}"
+  invalid_client_id:
+    message:
+      zh-CN: "Client ID 无效"
+      en: "Invalid Client ID"
+    suggestion:
+      zh-CN: "请检查 Client ID 格式是否正确"
+      en: "Check that the Client ID format is correct"
+  io:
+    message:
+      zh-CN: "IO错误"
+      en: "IO error"
+    suggestion:
+      zh-CN: "请检查网络连接或重试"
+      en: "Check the network connection or try again"
+  network:
+    message:
+      zh-CN: "网络错误"
+      en: "Network error"
+    suggestion:
+      zh-CN: "请检查网络连接是否正常"
+      en: "Check that the network connection is working"
+  not_authorized:
+    message:
+      zh-CN: "未授权"
+      en: "Not authorized"
+    suggestion:
+      zh-CN: "当前用户没有该操作权限"
+      en: "The current user is not allowed to perform this operation"
+  packet_too_large:
+    message:
+      zh-CN: "消息包过大"
+      en: "Packet too large"
+    suggestion:
+      zh-CN: "请减小消息体大小"
+      en: "Reduce the payload size"
+  payload_too_large:
+    message:
+      zh-CN: "消息体过大"
+      en: "Payload too large"
+    suggestion:
+      zh-CN: "请减小消息体大小"
+      en: "Reduce the payload size"
+  protocol:
+    message:
+      zh-CN: "协议错误"
+      en: "Protocol error"
+    suggestion:
+      zh-CN: "请检查 MQTT 协议版本是否匹配"
+      en: "Check that the MQTT protocol version matches"
+  protocol_version:
+    message:
+      zh-CN: "协议版本不被支持"
+      en: "Protocol version not supported"
+    suggestion:
+      zh-CN: "请尝试切换 MQTT 协议版本"
+      en: "Try another MQTT protocol version"
+  timeout:
+    message:
+      zh-CN: "连接超时"
+      en: "Connection timed out"
+    suggestion:
+      zh-CN: "请检查网络连接或服务器是否可用"
+      en: "Check your network connection or whether the broker is reachable"
+  tls:
+    message:
+      zh-CN: "TLS 错误"
+      en: "TLS error"
+    suggestion:
+      zh-CN: "请检查 TLS/SSL 配置与端口"
+      en: "Check the TLS/SSL settings and the port"
+  topic_invalid:
+    message:
+      zh-CN: "主题格式无效"
+      en: "Invalid topic format"
+    suggestion:
+      zh-CN: "请检查主题格式是否符合MQTT规范"
+      en: "Check that the topic conforms to the MQTT specification"
+  websocket:
+    message:
+      zh-CN: "WebSocket 错误"
+      en: "WebSocket error"
+    suggestion:
+      zh-CN: "请检查 WebSocket 地址与路径（如 /mqtt）"
+      en: "Check the WebSocket address and path (e.g. /mqtt)"
+payload:
+  hex_decode_failed:
+    zh-CN: "HEX解码失败: %{error}"
+    en: "Failed to decode HEX: %{error}"
+  hex_invalid:
+    zh-CN: "HEX 格式不正确"
+    en: "Invalid HEX"
+  hex_odd:
+    zh-CN: "HEX 长度必须为偶数"
+    en: "HEX must have an even number of digits"
+  json_invalid:
+    zh-CN: "JSON 格式不正确: %{error}"
+    en: "Invalid JSON: %{error}"
+  json_invalid_short:
+    zh-CN: "JSON 格式不正确"
+    en: "Invalid JSON"
+publish:
+  connect_first:
+    zh-CN: "请先连接服务器"
+    en: "Connect to the server first"
+  encode_failed:
+    zh-CN: "脚本处理后的内容无法按 %{format} 编码: %{error}"
+    en: "The script output cannot be encoded as %{format}: %{error}"
+  enter_topic_first:
+    zh-CN: "请先输入 Topic"
+    en: "Enter a topic first"
+  failed:
+    zh-CN: "发布失败: %{error}"
+    en: "Publish failed: %{error}"
+  format_group:
+    zh-CN: "发布格式"
+    en: "Publish format"
+  format_json:
+    zh-CN: "格式化"
+    en: "Format"
+  load_template:
+    zh-CN: "从模板加载"
+    en: "Load from template"
+  not_connected:
+    zh-CN: "未连接到服务器，请先连接"
+    en: "Not connected. Connect to the server first"
+  payload:
+    zh-CN: "发布内容"
+    en: "Publish payload"
+  placeholder_hex:
+    zh-CN: "十六进制格式，例如: 48 65 6C 6C 6F"
+    en: "Hexadecimal, e.g. 48 65 6C 6C 6F"
+  placeholder_json:
+    zh-CN: "JSON 格式，例如: {\"action\": \"start\", \"value\": 100}"
+    en: "JSON, e.g. {\"action\": \"start\", \"value\": 100}"
+  placeholder_text:
+    zh-CN: "纯文本消息内容"
+    en: "Plain text message"
+  publish:
+    zh-CN: "发布"
+    en: "Publish"
+  published:
+    zh-CN: "消息已发布"
+    en: "Message published"
+  qos:
+    zh-CN: "发布 QoS"
+    en: "Publish QoS"
+  save_template:
+    zh-CN: "保存为模板"
+    en: "Save as template"
+  select_server_first:
+    zh-CN: "请先选择一个服务器"
+    en: "Select a server first"
+  title:
+    zh-CN: "发布消息"
+    en: "Publish"
+  topic:
+    zh-CN: "发布 Topic"
+    en: "Publish topic"
+  topic_placeholder:
+    zh-CN: "Topic，例如: device/001/command"
+    en: "Topic, e.g. device/001/command"
+scheduled:
+  back:
+    zh-CN: "返回配置"
+    en: "Back"
+  background:
+    zh-CN: "后台运行"
+    en: "Run in Background"
+  chosen:
+    zh-CN: "已选"
+    en: "selected"
+  command:
+    zh-CN: "命令"
+    en: "Command"
+  commands:
+    zh-CN: "命令列表"
+    en: "Commands"
+  config:
+    zh-CN: "发送配置"
+    en: "Settings"
+  count:
+    zh-CN: "指定次数"
+    en: "Fixed rounds"
+  current_round:
+    zh-CN: "当前轮次"
+    en: "Round"
+  ended:
+    zh-CN: "已结束"
+    en: "Finished"
+  failed:
+    zh-CN: "失败"
+    en: "Failed"
+  finished:
+    zh-CN: "定时发布完成"
+    en: "Scheduled publish finished"
+  finished_log:
+    zh-CN: "定时发布完成，共发送 %{count} 条"
+    en: "Scheduled publish finished, %{count} messages sent"
+  infinite:
+    zh-CN: "无限循环"
+    en: "Forever"
+  interval:
+    zh-CN: "发送间隔"
+    en: "Interval"
+  loop_count:
+    zh-CN: "循环次数"
+    en: "Rounds"
+  loop_mode:
+    zh-CN: "循环模式"
+    en: "Repeat"
+  no_templates:
+    zh-CN: "暂无模板，请先在「管理模板」中创建命令"
+    en: "No templates yet. Create commands under \"Templates\" first"
+  order:
+    zh-CN: "发送顺序"
+    en: "Order"
+  order_name:
+    zh-CN: "按名称排序"
+    en: "By name"
+  order_selection:
+    zh-CN: "按勾选顺序"
+    en: "Selection order"
+  other_running:
+    zh-CN: "其他服务器正在定时发布，请先停止"
+    en: "Another server is running a scheduled publish. Stop it first"
+  progress:
+    zh-CN: "定时发布进度"
+    en: "Scheduled publish progress"
+  progress_label:
+    zh-CN: "第 %{round} 轮 · %{current}/%{total} · 成功 %{success} 失败 %{failed}"
+    en: "Round %{round} · %{current}/%{total} · %{success} ok, %{failed} failed"
+  round_interval:
+    zh-CN: "每轮间隔"
+    en: "Round interval"
+  rounds_unit:
+    zh-CN: "轮"
+    en: "rounds"
+  running:
+    zh-CN: "运行中"
+    en: "running"
+  select_all:
+    zh-CN: "全选"
+    en: "Select all"
+  select_one:
+    zh-CN: "请至少选择一条命令"
+    en: "Select at least one command"
+  selected:
+    zh-CN: "已选择 %{count} 条命令"
+    en: "%{count} commands selected"
+  sending:
+    zh-CN: "正在发送：%{name}（%{current}/%{total}）"
+    en: "Sending: %{name} (%{current}/%{total})"
+  sent:
+    zh-CN: "已发送"
+    en: "Sent"
+  start:
+    zh-CN: "开始发布"
+    en: "Start"
+  status_aria:
+    zh-CN: "定时发布 %{state} 轮次 %{round} 已发送 %{sent} 成功 %{success} 失败 %{failed}"
+    en: "Scheduled publish %{state} round %{round} sent %{sent} ok %{success} failed %{failed}"
+  stop:
+    zh-CN: "停止"
+    en: "Stop"
+  stopped:
+    zh-CN: "已停止定时发布"
+    en: "Scheduled publish stopped"
+  success:
+    zh-CN: "成功"
+    en: "Succeeded"
+  title:
+    zh-CN: "定时发布"
+    en: "Scheduled Publish"
+script:
+  after_receive:
+    zh-CN: "接收后处理"
+    en: "After receive"
+  after_receive_short:
+    zh-CN: "接收后"
+    en: "After receive"
+  before_publish:
+    zh-CN: "发送前处理"
+    en: "Before publish"
+  before_publish_short:
+    zh-CN: "发送前"
+    en: "Before publish"
+  btoa_latin1:
+    zh-CN: "btoa: 字符串包含 Latin1 范围之外的字符"
+    en: "btoa: the string contains characters outside of Latin1"
+  chain_failed:
+    zh-CN: "脚本执行失败 [%{name}]: %{error}"
+    en: "Script failed [%{name}]: %{error}"
+  code:
+    zh-CN: "脚本代码"
+    en: "Script code"
+  code_required:
+    zh-CN: "请输入脚本代码"
+    en: "Enter the script code"
+  default_after:
+    zh-CN: "在这里处理接收到的消息"
+    en: "Process the received message here"
+  default_before:
+    zh-CN: "在这里处理 payload"
+    en: "Process the payload here"
+  default_comment:
+    zh-CN: "定义 process 函数处理 payload，点击\"查看可用函数\"查看更多"
+    en: "Define process() to transform the payload. See \"Available Functions\" for more"
+  delete_confirm:
+    zh-CN: "确定要删除脚本「%{name}」吗？"
+    en: "Delete script \"%{name}\"?"
+  delete_title:
+    zh-CN: "删除脚本"
+    en: "Delete Script"
+  description:
+    zh-CN: "脚本描述"
+    en: "Script description"
+  description_placeholder:
+    zh-CN: "脚本描述（可选）"
+    en: "Description (optional)"
+  edit_title:
+    zh-CN: "编辑脚本"
+    en: "Edit Script"
+  empty:
+    zh-CN: "暂无脚本"
+    en: "No scripts"
+  enable:
+    zh-CN: "启用脚本 %{name}"
+    en: "Enable script %{name}"
+  example:
+    zh-CN: "示例"
+    en: "Example"
+  functions:
+    zh-CN: "可用函数"
+    en: "Available Functions"
+  got_it:
+    zh-CN: "知道了"
+    en: "Got It"
+  help:
+    aes_base64:
+      zh-CN: "AES（Base64 格式，结果包含 IV）"
+      en: "AES (Base64, the result includes the IV)"
+    aes_hex:
+      zh-CN: "AES（Hex 格式，结果包含 IV）"
+      en: "AES (hex, the result includes the IV)"
+    atob:
+      zh-CN: "Base64 编解码（Latin1）"
+      en: "Base64 encode / decode (Latin1)"
+    base64:
+      zh-CN: "Base64 编解码"
+      en: "Base64 encode / decode"
+    builtins:
+      zh-CN: "标准 JavaScript 内置对象"
+      en: "Standard JavaScript built-ins"
+    bytes_to_string:
+      zh-CN: "Uint8Array → 字符串"
+      en: "Uint8Array → string"
+    cbc_decrypt:
+      zh-CN: "AES-CBC 解密"
+      en: "AES-CBC decryption"
+    cbc_encrypt:
+      zh-CN: "AES-CBC/PKCS7 加密，IV 16 字节"
+      en: "AES-CBC/PKCS7 encryption, 16-byte IV"
+    cbc_encrypt_short:
+      zh-CN: "AES-CBC 加密"
+      en: "AES-CBC encryption"
+    console:
+      zh-CN: "输出日志（测试运行时可见）"
+      en: "Log output (shown by a test run)"
+    crc32:
+      zh-CN: "CRC32，返回 8 位 hex"
+      en: "CRC32 as 8 hex digits"
+    encoding:
+      zh-CN: "编码转换"
+      en: "Encoding"
+    entry:
+      zh-CN: "入口"
+      en: "Entry point"
+    env:
+      zh-CN: "环境变量"
+      en: "Environment variables"
+    env_all:
+      zh-CN: "获取全部环境变量，返回 [{ name, value }] 数组"
+      en: "All variables as an array of { name, value }"
+    env_get:
+      zh-CN: "获取环境变量值（不存在时为 undefined）"
+      en: "Value of a variable (undefined if it does not exist)"
+    env_name:
+      zh-CN: "获取当前服务器的环境变量值"
+      en: "Value of a variable of the current server"
+    env_replace:
+      zh-CN: "替换文本中的 {{变量名}} 占位符"
+      en: "Replace {{NAME}} placeholders in a text"
+    gcm_decrypt:
+      zh-CN: "AES-GCM 解密"
+      en: "AES-GCM decryption"
+    gcm_encrypt:
+      zh-CN: "AES-GCM 加密，IV 12 字节，缺省随机"
+      en: "AES-GCM encryption, 12-byte IV, random by default"
+    gcm_encrypt_short:
+      zh-CN: "AES-GCM 加密"
+      en: "AES-GCM encryption"
+    generate_iv:
+      zh-CN: "随机 IV（Base64）"
+      en: "Random IV (Base64)"
+    generate_key:
+      zh-CN: "随机密钥（Base64）"
+      en: "Random key (Base64)"
+    globals:
+      zh-CN: "全局变量：原始消息内容（字符串）与主题"
+      en: "Globals: the original payload (string) and the topic"
+    hash:
+      zh-CN: "哈希"
+      en: "Hashes"
+    hex:
+      zh-CN: "Hex 编解码"
+      en: "Hex encode / decode"
+    hmac:
+      zh-CN: "HMAC-SHA256，返回小写 hex"
+      en: "HMAC-SHA256 as lower-case hex"
+    md5:
+      zh-CN: "MD5，返回小写 hex"
+      en: "MD5 as lower-case hex"
+    other:
+      zh-CN: "其他"
+      en: "Other"
+    process:
+      zh-CN: "返回值替换 payload；可为 async。返回对象时自动 JSON.stringify，返回 undefined 保持原样"
+      en: "The return value replaces the payload; may be async. Objects are JSON.stringify'd, undefined keeps the payload"
+    random_bytes:
+      zh-CN: "随机字节 Uint8Array"
+      en: "Random bytes as Uint8Array"
+    sha1:
+      zh-CN: "SHA-1，返回小写 hex"
+      en: "SHA-1 as lower-case hex"
+    sha256:
+      zh-CN: "SHA-256，返回小写 hex"
+      en: "SHA-256 as lower-case hex"
+    string_to_bytes:
+      zh-CN: "字符串 → Uint8Array (UTF-8)"
+      en: "String → Uint8Array (UTF-8)"
+    xor:
+      zh-CN: "XOR 加解密（对称）"
+      en: "XOR encryption (symmetric)"
+  hint_after:
+    zh-CN: "定义 process(payload, topic) 函数，返回处理后的 payload（接收后执行）；env.变量名 读取环境变量"
+    en: "Define process(payload, topic) and return the processed payload (runs after receiving); env.NAME reads a variable"
+  hint_before:
+    zh-CN: "定义 process(payload, topic) 函数，返回处理后的 payload（发送前执行）；env.变量名 读取环境变量"
+    en: "Define process(payload, topic) and return the processed payload (runs before publishing); env.NAME reads a variable"
+  invalid_key_bits:
+    zh-CN: "密钥位数必须为 128/192/256"
+    en: "The key size must be 128, 192 or 256 bits"
+  invalid_length:
+    zh-CN: "长度参数无效"
+    en: "Invalid length"
+  item:
+    zh-CN: "脚本"
+    en: "Script"
+  list:
+    zh-CN: "脚本列表"
+    en: "Scripts"
+  more_receive_errors:
+    zh-CN: "另有 %{count} 条消息的接收后脚本执行失败"
+    en: "After-receive scripts failed for %{count} more messages"
+  name:
+    zh-CN: "脚本名称"
+    en: "Script name"
+  name_required:
+    zh-CN: "请输入脚本名称"
+    en: "Enter a script name"
+  new:
+    zh-CN: "新增"
+    en: "New"
+  new_title:
+    zh-CN: "新建脚本"
+    en: "New Script"
+  no_promise:
+    zh-CN: "脚本执行异常：未返回 Promise"
+    en: "Script error: no Promise returned"
+  not_serializable:
+    zh-CN: "返回值无法序列化为 JSON: %{error}"
+    en: "The return value cannot be serialised to JSON: %{error}"
+  pending_promise:
+    zh-CN: "脚本未完成：存在无法完成的 Promise（不支持定时器）"
+    en: "The script did not finish: a Promise never settled (timers are not supported)"
+  run_failed:
+    zh-CN: "运行失败："
+    en: "Failed:"
+  run_ok:
+    zh-CN: "运行成功，输出："
+    en: "Succeeded, output:"
+  runtime_limit:
+    zh-CN: "脚本超出运行限制（可能存在死循环或递归过深）: %{error}"
+    en: "The script exceeded its run limits (endless loop or too deep recursion?): %{error}"
+  sample:
+    zh-CN: "测试 payload"
+    en: "Test payload"
+  sample_placeholder:
+    zh-CN: "测试用 payload"
+    en: "Payload for a test run"
+  saved:
+    zh-CN: "脚本已保存"
+    en: "Script saved"
+  syntax_error:
+    zh-CN: "语法错误: %{error}"
+    en: "Syntax error: %{error}"
+  test_result:
+    zh-CN: "测试结果"
+    en: "Test result"
+  test_run:
+    zh-CN: "测试运行"
+    en: "Test Run"
+  title:
+    zh-CN: "脚本管理"
+    en: "Scripts"
+  unknown_error:
+    zh-CN: "未知错误"
+    en: "Unknown error"
+  view_functions:
+    zh-CN: "查看可用函数"
+    en: "Available Functions"
+  xor_empty_key:
+    zh-CN: "xor 密钥不能为空"
+    en: "The xor key must not be empty"
+server:
+  add_title:
+    zh-CN: "新增 Server"
+    en: "Add Server"
+  added:
+    zh-CN: "服务器已添加"
+    en: "Server added"
+  address:
+    zh-CN: "服务器地址"
+    en: "Address"
+  ca_cert:
+    zh-CN: "CA 证书"
+    en: "CA Certificate"
+  ca_placeholder:
+    zh-CN: "-----BEGIN CERTIFICATE-----（留空则使用系统根证书）"
+    en: "-----BEGIN CERTIFICATE----- (leave empty to use the system root certificates)"
+  cert_placeholder:
+    zh-CN: "-----BEGIN CERTIFICATE-----（可选，双向认证）"
+    en: "-----BEGIN CERTIFICATE----- (optional, mutual TLS)"
+  client_cert:
+    zh-CN: "客户端证书"
+    en: "Client Certificate"
+  client_id_placeholder:
+    zh-CN: "留空则自动生成"
+    en: "Leave empty to generate one"
+  client_key:
+    zh-CN: "客户端私钥"
+    en: "Client Key"
+  copy_name:
+    zh-CN: "%{name} (副本)"
+    en: "%{name} (Copy)"
+  edit_title:
+    zh-CN: "编辑 Server"
+    en: "Edit Server"
+  host:
+    zh-CN: "主机地址"
+    en: "Host"
+  host_placeholder:
+    zh-CN: "主机地址，例如 broker.emqx.io"
+    en: "Host, e.g. broker.emqx.io"
+  host_required:
+    zh-CN: "请输入主机地址"
+    en: "Enter the host"
+  keep_alive_range:
+    zh-CN: "Keep Alive 范围为 0-65535"
+    en: "Keep Alive must be between 0 and 65535"
+  key_placeholder:
+    zh-CN: "-----BEGIN PRIVATE KEY-----（可选，双向认证）"
+    en: "-----BEGIN PRIVATE KEY----- (optional, mutual TLS)"
+  name:
+    zh-CN: "名称"
+    en: "Name"
+  name_aria:
+    zh-CN: "服务器名称"
+    en: "Server name"
+  name_placeholder:
+    zh-CN: "给这个连接起个名字"
+    en: "A name for this connection"
+  name_required:
+    zh-CN: "请输入名称"
+    en: "Enter a name"
+  password:
+    zh-CN: "密码"
+    en: "Password"
+  port:
+    zh-CN: "端口"
+    en: "Port"
+  port_range:
+    zh-CN: "端口范围为 1-65535"
+    en: "The port must be between 1 and 65535"
+  protocol_version:
+    zh-CN: "协议版本"
+    en: "Protocol"
+  regen:
+    zh-CN: "随机生成"
+    en: "Generate"
+  regen_client_id:
+    zh-CN: "随机生成 Client ID"
+    en: "Generate a random Client ID"
+  saved_reconnect:
+    zh-CN: "配置已保存，重新连接后生效"
+    en: "Saved. Reconnect to apply the changes"
+  seconds:
+    zh-CN: "秒"
+    en: "seconds"
+  tab_advanced:
+    zh-CN: "高级"
+    en: "Advanced"
+  tab_auth:
+    zh-CN: "认证"
+    en: "Authentication"
+  tab_basic:
+    zh-CN: "基本配置"
+    en: "General"
+  tls_hint:
+    zh-CN: "选择 mqtts:// 或 wss:// 后可配置 TLS 证书"
+    en: "Choose mqtts:// or wss:// to configure TLS certificates"
+  transport:
+    zh-CN: "传输协议"
+    en: "Transport"
+  updated:
+    zh-CN: "服务器已更新"
+    en: "Server updated"
+  username:
+    zh-CN: "用户名"
+    en: "Username"
+  ws_hint:
+    zh-CN: "WebSocket 默认路径为 /mqtt，可在主机后追加路径，例如 broker.emqx.io/mqtt"
+    en: "The default WebSocket path is /mqtt; append a path to the host for another one, e.g. broker.emqx.io/mqtt"
+settings:
+  appearance:
+    zh-CN: "外观"
+    en: "Appearance"
+  apply_restart:
+    zh-CN: "应用（重启后生效）"
+    en: "Apply (after a restart)"
+  change_location:
+    zh-CN: "更改位置"
+    en: "Change Location"
+  choose_folder:
+    zh-CN: "选择数据存储目录"
+    en: "Choose the data folder"
+  clear_logs:
+    zh-CN: "清空日志"
+    en: "Clear Logs"
+  clear_logs_confirm:
+    zh-CN: "确定要清空所有日志文件吗？"
+    en: "Delete all log files?"
+  clear_logs_failed:
+    zh-CN: "清空日志失败: %{error}"
+    en: "Failed to clear the logs: %{error}"
+  copy_path:
+    zh-CN: "复制路径"
+    en: "Copy Path"
+  dark:
+    zh-CN: "深色"
+    en: "Dark"
+  data_file:
+    zh-CN: "数据文件"
+    en: "Data file"
+  done:
+    zh-CN: "完成"
+    en: "Done"
+  follow_system:
+    zh-CN: "跟随系统"
+    en: "Follow System"
+  language:
+    zh-CN: "界面语言"
+    en: "Language"
+  light:
+    zh-CN: "浅色"
+    en: "Light"
+  log_dir:
+    zh-CN: "日志目录"
+    en: "Log folder"
+  logs:
+    zh-CN: "错误日志"
+    en: "Error Log"
+  logs_cleared:
+    zh-CN: "日志已清空"
+    en: "Logs cleared"
+  migrate_data:
+    zh-CN: "迁移现有数据到新位置"
+    en: "Move the current data to the new location"
+  migrated:
+    zh-CN: "数据迁移完成，请重启应用"
+    en: "Data migrated. Restart the application"
+  new_location:
+    zh-CN: "新的存储位置"
+    en: "New location"
+  no_logs:
+    zh-CN: "今日暂无错误日志"
+    en: "No errors logged today"
+  open_folder:
+    zh-CN: "打开目录"
+    en: "Open Folder"
+  open_log_dir:
+    zh-CN: "打开日志目录"
+    en: "Open Log Folder"
+  path_changed:
+    zh-CN: "存储位置已更改，请重启应用"
+    en: "Data location changed. Restart the application"
+  path_copied:
+    zh-CN: "路径已复制到剪贴板"
+    en: "Path copied to the clipboard"
+  recent_logs:
+    zh-CN: "最近日志"
+    en: "Recent log"
+  refresh:
+    zh-CN: "刷新"
+    en: "Refresh"
+  save_failed:
+    zh-CN: "保存设置失败: %{error}"
+    en: "Failed to save the settings: %{error}"
+  storage:
+    zh-CN: "数据存储"
+    en: "Data Storage"
+  title:
+    zh-CN: "系统设置"
+    en: "Settings"
+sidebar:
+  add_server:
+    zh-CN: "新增服务器"
+    en: "Add Server"
+  add_subscription:
+    zh-CN: "新增订阅"
+    en: "Add Subscription"
+  current:
+    zh-CN: "当前"
+    en: "current"
+  dark_mode:
+    zh-CN: "深色模式"
+    en: "Dark Mode"
+  delete_server_confirm:
+    zh-CN: "确定要删除服务器「%{name}」吗？其订阅、模板、脚本和环境变量也会一并删除。"
+    en: "Delete server \"%{name}\"? Its subscriptions, templates, scripts and environment variables are deleted as well."
+  delete_server_title:
+    zh-CN: "删除服务器"
+    en: "Delete Server"
+  delete_subscription:
+    zh-CN: "删除订阅"
+    en: "Delete subscription"
+  delete_subscription_of:
+    zh-CN: "删除订阅 %{topic}"
+    en: "Delete subscription %{topic}"
+  enable_subscription:
+    zh-CN: "启用订阅 %{topic}"
+    en: "Enable subscription %{topic}"
+  light_mode:
+    zh-CN: "浅色模式"
+    en: "Light Mode"
+  no_subscriptions:
+    zh-CN: "暂无订阅，点击 + 添加"
+    en: "No subscriptions. Click + to add one"
+  server:
+    zh-CN: "服务器"
+    en: "Server"
+  server_menu:
+    zh-CN: "服务器菜单 %{name}"
+    en: "Server menu %{name}"
+  servers:
+    zh-CN: "SERVER"
+    en: "SERVERS"
+  subscription:
+    zh-CN: "订阅"
+    en: "Subscription"
+  subscriptions:
+    zh-CN: "订阅"
+    en: "SUBSCRIPTIONS"
+status:
+  connected:
+    zh-CN: "已连接"
+    en: "Connected"
+  connecting:
+    zh-CN: "连接中..."
+    en: "Connecting..."
+  disconnected:
+    zh-CN: "未连接"
+    en: "Disconnected"
+  error:
+    zh-CN: "连接错误"
+    en: "Connection Error"
+storage:
+  backup_failed:
+    zh-CN: "数据文件无法解析，且备份失败: %{error}（%{reason}）"
+    en: "The data file is unreadable and could not be backed up: %{error} (%{reason})"
+  corrupt_backed_up:
+    zh-CN: "数据文件无法解析，已备份到 %{path}，本次以空数据启动"
+    en: "The data file could not be read. It was backed up to %{path}; starting with empty data"
+  json_parse_error:
+    zh-CN: "JSON解析错误: %{error}"
+    en: "Invalid JSON: %{error}"
+  open_failed:
+    zh-CN: "无法打开数据文件 %{path}"
+    en: "Cannot open the data file %{path}"
+  save_failed:
+    zh-CN: "保存数据失败: %{error}"
+    en: "Failed to save data: %{error}"
+  script_not_found:
+    zh-CN: "脚本不存在"
+    en: "Script not found"
+  server_not_found:
+    zh-CN: "服务器不存在"
+    en: "Server not found"
+  subscription_exists:
+    zh-CN: "已存在订阅: %{topic}"
+    en: "Already subscribed: %{topic}"
+  subscription_not_found:
+    zh-CN: "订阅不存在"
+    en: "Subscription not found"
+  template_not_found:
+    zh-CN: "模板不存在"
+    en: "Template not found"
+subscription:
+  add_title:
+    zh-CN: "添加订阅"
+    en: "Add Subscription"
+  added:
+    zh-CN: "订阅已添加"
+    en: "Subscription added"
+  qos:
+    zh-CN: "订阅 QoS"
+    en: "Subscription QoS"
+  subscribe:
+    zh-CN: "订阅"
+    en: "Subscribe"
+  topic:
+    zh-CN: "订阅 Topic"
+    en: "Subscription topic"
+  topic_placeholder:
+    zh-CN: "例如: device/+/status 或 test/#"
+    en: "e.g. device/+/status or test/#"
+  wildcard_hint:
+    zh-CN: "支持通配符：+ 匹配单个层级（如 sensor/+/temp），# 匹配多个层级（如 device/#）；可用 {{变量名}} 引用环境变量"
+    en: "Wildcards: + matches one level (e.g. sensor/+/temp), # matches all remaining levels (e.g. device/#). {{NAME}} inserts an environment variable"
+template:
+  basic_info:
+    zh-CN: "基本信息"
+    en: "General"
+  category:
+    zh-CN: "分类"
+    en: "Category"
+  category_aria:
+    zh-CN: "模板分类"
+    en: "Template category"
+  category_placeholder:
+    zh-CN: "输入新分类或点击下方已有分类"
+    en: "Type a new category or pick one below"
+  copy_name:
+    zh-CN: "%{name} - 副本"
+    en: "%{name} - Copy"
+  create:
+    zh-CN: "创建模板"
+    en: "Create Template"
+  created:
+    zh-CN: "模板已创建"
+    en: "Template created"
+  delete_confirm:
+    zh-CN: "确定要删除模板「%{name}」吗？"
+    en: "Delete template \"%{name}\"?"
+  delete_title:
+    zh-CN: "删除确认"
+    en: "Delete Template"
+  description_aria:
+    zh-CN: "模板描述"
+    en: "Template description"
+  description_placeholder:
+    zh-CN: "可选：描述模板的用途"
+    en: "Optional: what the template is for"
+  drawer_title:
+    zh-CN: "命令模板"
+    en: "Command Templates"
+  duplicated:
+    zh-CN: "模板已复制"
+    en: "Template duplicated"
+  edit_title:
+    zh-CN: "编辑模板"
+    en: "Edit Template"
+  empty:
+    zh-CN: "暂无模板，点击「新建」创建常用命令"
+    en: "No templates yet. Click \"New\" to save a command"
+  export:
+    zh-CN: "导出"
+    en: "Export"
+  export_failed:
+    zh-CN: "导出失败: %{error}"
+    en: "Export failed: %{error}"
+  exported:
+    zh-CN: "已导出到 %{path}"
+    en: "Exported to %{path}"
+  format:
+    zh-CN: "模板格式"
+    en: "Template format"
+  import:
+    zh-CN: "导入"
+    en: "Import"
+  import_failed:
+    zh-CN: "导入失败: %{error}"
+    en: "Import failed: %{error}"
+  import_prompt:
+    zh-CN: "导入模板"
+    en: "Import templates"
+  imported:
+    zh-CN: "成功导入 %{count} 个模板"
+    en: "Imported %{count} templates"
+  item:
+    zh-CN: "模板"
+    en: "Template"
+  loaded:
+    zh-CN: "已加载: %{name}"
+    en: "Loaded: %{name}"
+  menu:
+    zh-CN: "模板菜单 %{name}"
+    en: "Template menu %{name}"
+  minify:
+    zh-CN: "压缩"
+    en: "Minify"
+  mqtt_settings:
+    zh-CN: "MQTT 配置"
+    en: "MQTT"
+  name:
+    zh-CN: "模板名称"
+    en: "Template name"
+  name_placeholder:
+    zh-CN: "给模板起个容易识别的名称"
+    en: "A name that is easy to recognise"
+  name_required:
+    zh-CN: "请输入模板名称"
+    en: "Enter a template name"
+  new:
+    zh-CN: "新建"
+    en: "New"
+  new_title:
+    zh-CN: "新建模板"
+    en: "New Template"
+  no_match:
+    zh-CN: "没有匹配的模板"
+    en: "No matching templates"
+  payload:
+    zh-CN: "消息内容"
+    en: "Payload"
+  payload_aria:
+    zh-CN: "模板内容"
+    en: "Template payload"
+  qos:
+    zh-CN: "模板 QoS"
+    en: "Template QoS"
+  retain:
+    zh-CN: "Retain 保留消息"
+    en: "Retain"
+  search:
+    zh-CN: "搜索模板"
+    en: "Search templates"
+  search_placeholder:
+    zh-CN: "搜索名称 / Topic..."
+    en: "Search name / topic..."
+  topic:
+    zh-CN: "主题"
+    en: "Topic"
+  topic_aria:
+    zh-CN: "模板主题"
+    en: "Template topic"
+  topic_placeholder:
+    zh-CN: "例如: device/001/command"
+    en: "e.g. device/001/command"
+  total:
+    zh-CN: "共 %{count} 个模板"
+    en: "%{count} templates"
+  updated:
+    zh-CN: "模板已更新"
+    en: "Template updated"
+  use:
+    zh-CN: "使用"
+    en: "Use"
+  use_named:
+    zh-CN: "使用模板 %{name}"
+    en: "Use template %{name}"
+  used_times:
+    zh-CN: "使用 %{count} 次"
+    en: "Used %{count} times"
+tls:
+  ca_invalid:
+    zh-CN: "CA 证书无效: %{error}"
+    en: "Invalid CA certificate: %{error}"
+  ca_parse_failed:
+    zh-CN: "CA 证书解析失败: %{error}"
+    en: "Failed to parse the CA certificate: %{error}"
+  cert_and_key_required:
+    zh-CN: "客户端证书和私钥需要同时填写"
+    en: "Enter both the client certificate and the client key"
+  cert_invalid:
+    zh-CN: "客户端证书无效: %{error}"
+    en: "Invalid client certificate: %{error}"
+  cert_parse_failed:
+    zh-CN: "客户端证书解析失败: %{error}"
+    en: "Failed to parse the client certificate: %{error}"
+  key_parse_failed:
+    zh-CN: "客户端私钥解析失败: %{error}"
+    en: "Failed to parse the client key: %{error}"
+  no_pem_cert:
+    zh-CN: "未找到 PEM 证书"
+    en: "no PEM certificate found"
+  no_pem_key:
+    zh-CN: "未找到 PEM 私钥"
+    en: "no PEM private key found"
+  no_system_roots:
+    zh-CN: "未找到系统根证书，请在高级设置中填写 CA 证书"
+    en: "No system root certificates found. Enter a CA certificate in the advanced settings"
+toast:
+  auto_subscribe_failed:
+    zh-CN: "自动订阅失败: %{error}"
+    en: "Automatic subscription failed: %{error}"
+  connect_failed:
+    zh-CN: "连接失败: %{error}"
+    en: "Connection failed: %{error}"
+  connected_to:
+    zh-CN: "已连接到 %{name}"
+    en: "Connected to %{name}"
+topic:
+  empty:
+    zh-CN: "Topic 不能为空"
+    en: "The topic must not be empty"
+  hash_after_slash:
+    zh-CN: "# 通配符前必须是 /"
+    en: "The # wildcard must follow a /"
+  hash_last:
+    zh-CN: "# 通配符只能在主题末尾"
+    en: "The # wildcard must be the last character"
+  nul:
+    zh-CN: "Topic 不能包含空字符"
+    en: "The topic must not contain NUL characters"
+  plus_level:
+    zh-CN: "+ 通配符必须占据整个层级"
+    en: "The + wildcard must occupy a whole level"
+  publish_wildcard:
+    zh-CN: "发布主题不能包含通配符 (+ 或 #)"
+    en: "A publish topic must not contain wildcards (+ or #)"
+  too_long:
+    zh-CN: "Topic 长度超过限制"
+    en: "The topic is too long"

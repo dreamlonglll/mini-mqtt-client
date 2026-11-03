@@ -1,65 +1,67 @@
 //! Friendly descriptions for MQTT errors (ported from `mqttErrorHandler.ts`).
 
-const ERROR_MAP: &[(&str, &str, &str)] = &[
+use gpui_kit::SharedString;
+
+/// Lower-case fragment of a raw error -> entry under `mqtt_errors.` in the
+/// locale file (with a `message` and a `suggestion`).
+const ERROR_MAP: &[(&str, &str)] = &[
     // Specific CONNACK return codes first, they are more precise than the
     // generic "connection refused" wrapper text around them.
-    ("badusernamepassword", "用户名或密码错误", "请检查用户名和密码是否正确"),
-    (
-        "bad user name or password",
-        "用户名或密码错误",
-        "请检查用户名和密码是否正确",
-    ),
-    ("notauthorized", "未授权", "当前用户没有该操作权限"),
-    ("not authorized", "未授权", "当前用户没有该操作权限"),
-    ("badclientid", "Client ID 无效", "请检查 Client ID 格式是否正确"),
-    (
-        "client identifier not valid",
-        "Client ID 无效",
-        "请检查 Client ID 格式是否正确",
-    ),
-    ("serviceunavailable", "服务器不可用", "请检查服务器是否正常运行"),
-    ("broker unavailable", "服务器不可用", "请检查服务器是否正常运行"),
-    ("refusedprotocolversion", "协议版本不被支持", "请尝试切换 MQTT 协议版本"),
-    (
-        "unsupportedprotocolversion",
-        "协议版本不被支持",
-        "请尝试切换 MQTT 协议版本",
-    ),
-    ("authentication", "认证失败", "请检查用户名和密码是否正确"),
-    ("certificate", "证书错误", "请检查 TLS 证书配置"),
-    ("tls", "TLS 错误", "请检查 TLS/SSL 配置与端口"),
-    ("websocket", "WebSocket 错误", "请检查 WebSocket 地址与路径（如 /mqtt）"),
-    ("failed to lookup", "无法解析主机名", "请检查服务器地址是否正确"),
-    ("dns", "无法解析主机名", "请检查服务器地址是否正确"),
-    ("connection refused", "连接被拒绝", "请检查服务器地址和端口是否正确"),
-    ("connection_refused", "连接被拒绝", "请检查服务器地址和端口是否正确"),
-    ("refused", "连接被拒绝", "请检查服务器地址和端口是否正确"),
-    ("timed out", "连接超时", "请检查网络连接或服务器是否可用"),
-    ("timeout", "连接超时", "请检查网络连接或服务器是否可用"),
-    ("invalid topic", "主题格式无效", "请检查主题格式是否符合MQTT规范"),
-    ("packet too large", "消息包过大", "请减小消息体大小"),
-    ("payload size", "消息体过大", "请减小消息体大小"),
-    ("connection reset", "连接被重置", "请重新连接服务器"),
-    ("connection aborted", "连接已断开", "请重新连接服务器"),
-    ("disconnected", "连接已断开", "请重新连接服务器"),
-    ("protocol", "协议错误", "请检查 MQTT 协议版本是否匹配"),
-    ("io error", "IO错误", "请检查网络连接或重试"),
-    ("network", "网络错误", "请检查网络连接是否正常"),
+    ("badusernamepassword", "bad_credentials"),
+    ("bad user name or password", "bad_credentials"),
+    ("notauthorized", "not_authorized"),
+    ("not authorized", "not_authorized"),
+    ("badclientid", "invalid_client_id"),
+    ("client identifier not valid", "invalid_client_id"),
+    ("serviceunavailable", "broker_unavailable"),
+    ("broker unavailable", "broker_unavailable"),
+    ("refusedprotocolversion", "protocol_version"),
+    ("unsupportedprotocolversion", "protocol_version"),
+    ("authentication", "auth_failed"),
+    ("certificate", "certificate"),
+    ("tls", "tls"),
+    ("websocket", "websocket"),
+    ("failed to lookup", "dns"),
+    ("dns", "dns"),
+    ("connection refused", "connection_refused"),
+    ("connection_refused", "connection_refused"),
+    ("refused", "connection_refused"),
+    ("timed out", "timeout"),
+    ("timeout", "timeout"),
+    ("invalid topic", "topic_invalid"),
+    ("packet too large", "packet_too_large"),
+    ("payload size", "payload_too_large"),
+    ("connection reset", "connection_reset"),
+    ("connection aborted", "disconnected"),
+    ("disconnected", "disconnected"),
+    ("protocol", "protocol"),
+    ("io error", "io"),
+    ("network", "network"),
 ];
 
-/// Returns `(message, suggestion)` for a raw error string, if recognised.
-pub fn describe_mqtt_error(raw: &str) -> Option<(&'static str, &'static str)> {
+/// Locale entry for a raw error string, if recognised.
+pub fn error_key(raw: &str) -> Option<&'static str> {
     let lower = raw.to_lowercase();
     ERROR_MAP
         .iter()
-        .find(|(key, _, _)| lower.contains(key))
-        .map(|(_, message, suggestion)| (*message, *suggestion))
+        .find(|(fragment, _)| lower.contains(fragment))
+        .map(|(_, key)| *key)
 }
 
-/// Single-line user-facing text: "连接被拒绝: 请检查…" or the raw error.
+/// Returns `(message, suggestion)` for a raw error string, if recognised.
+pub fn describe_mqtt_error(raw: &str) -> Option<(SharedString, SharedString)> {
+    error_key(raw).map(|key| {
+        (
+            tr!(format!("mqtt_errors.{key}.message")),
+            tr!(format!("mqtt_errors.{key}.suggestion")),
+        )
+    })
+}
+
+/// Single-line user-facing text: "连接被拒绝：请检查…" or the raw error.
 pub fn friendly_mqtt_error(raw: &str) -> String {
     match describe_mqtt_error(raw) {
-        Some((message, suggestion)) => format!("{message}：{suggestion}"),
+        Some((message, suggestion)) => tr!("mqtt_errors.format", message = message, suggestion = suggestion).into(),
         None => raw.to_string(),
     }
 }
@@ -71,17 +73,31 @@ mod tests {
     #[test]
     fn maps_known_errors() {
         assert_eq!(
-            describe_mqtt_error("Failed to connect: I/O: Connection refused (os error 111)")
-                .unwrap()
-                .0,
-            "连接被拒绝"
+            error_key("Failed to connect: I/O: Connection refused (os error 111)"),
+            Some("connection_refused")
         );
         assert_eq!(
-            describe_mqtt_error("Connection refused, return code: `BadUserNamePassword`")
-                .unwrap()
-                .0,
-            "用户名或密码错误"
+            error_key("Connection refused, return code: `BadUserNamePassword`"),
+            Some("bad_credentials")
         );
-        assert!(describe_mqtt_error("something else").is_none());
+        assert!(error_key("something else").is_none());
+        assert_eq!(friendly_mqtt_error("something else"), "something else");
+    }
+
+    #[test]
+    fn every_mapped_error_has_texts() {
+        for (_, key) in ERROR_MAP {
+            for part in ["message", "suggestion"] {
+                let id = format!("mqtt_errors.{key}.{part}");
+                for locale in [crate::i18n::ZH_CN, crate::i18n::EN] {
+                    let text = rust_i18n::t!(&id, locale = locale);
+                    assert_ne!(text, id, "{id} missing for {locale}");
+                }
+            }
+        }
+        assert_eq!(
+            rust_i18n::t!("mqtt_errors.connection_refused.message", locale = crate::i18n::ZH_CN),
+            "连接被拒绝"
+        );
     }
 }
