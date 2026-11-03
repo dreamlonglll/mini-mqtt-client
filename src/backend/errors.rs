@@ -46,6 +46,25 @@ pub fn error_key(raw: &str) -> Option<&'static str> {
         .iter()
         .find(|(fragment, _)| lower.contains(fragment))
         .map(|(_, key)| *key)
+        .or_else(|| os_error_key(raw))
+}
+
+/// Windows words socket errors in the system language ("由于目标计算机积极拒绝，
+/// 无法连接。 (os error 10061)"), which the English fragments above miss; the
+/// OS error code at the end means the same whatever the language.
+fn os_error_key(raw: &str) -> Option<&'static str> {
+    let code: i32 = raw.rsplit_once("(os error ")?.1.split_once(')')?.0.parse().ok()?;
+    // getaddrinfo failures (WSAHOST_NOT_FOUND ..= WSANO_DATA) have no ErrorKind of their own.
+    if cfg!(windows) && (11001..=11004).contains(&code) {
+        return Some("dns");
+    }
+    match std::io::Error::from_raw_os_error(code).kind() {
+        std::io::ErrorKind::ConnectionRefused => Some("connection_refused"),
+        std::io::ErrorKind::TimedOut => Some("timeout"),
+        std::io::ErrorKind::ConnectionReset => Some("connection_reset"),
+        std::io::ErrorKind::ConnectionAborted => Some("disconnected"),
+        _ => None,
+    }
 }
 
 /// Returns `(message, suggestion)` for a raw error string, if recognised.
@@ -82,6 +101,45 @@ mod tests {
         );
         assert!(error_key("something else").is_none());
         assert_eq!(friendly_mqtt_error("something else"), "something else");
+    }
+
+    #[test]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    fn maps_localised_os_errors_by_code() {
+        // WSAECONNREFUSED / WSAETIMEDOUT and their errno counterparts.
+        let (refused, timed_out) = if cfg!(windows) {
+            (10061, 10060)
+        } else if cfg!(target_os = "linux") {
+            (111, 110)
+        } else {
+            (61, 60)
+        };
+        assert_eq!(
+            error_key(&format!(
+                "Failed to connect: I/O: 由于目标计算机积极拒绝，无法连接。 (os error {refused})"
+            )),
+            Some("connection_refused")
+        );
+        assert_eq!(
+            error_key(&format!(
+                "Failed to connect: I/O: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error {timed_out})"
+            )),
+            Some("timeout")
+        );
+        if cfg!(windows) {
+            assert_eq!(
+                error_key("Failed to connect: I/O: 不知道这样的主机。 (os error 11001)"),
+                Some("dns")
+            );
+        }
+        // Codes without a mapped kind stay unrecognised, and the text still wins when it matches.
+        assert_eq!(error_key("I/O: 拒绝访问。 (os error 5)"), None);
+        assert_eq!(
+            error_key(&format!(
+                "Websocket: I/O: 由于目标计算机积极拒绝，无法连接。 (os error {refused})"
+            )),
+            Some("websocket")
+        );
     }
 
     #[test]

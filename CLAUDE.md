@@ -38,7 +38,7 @@ src/
 │   ├── mqtt.rs            # MqttManager：tokio 运行时 + 事件通道 MqttEvent，断线退避重连
 │   ├── payload.rs         # 格式识别、HEX 编解码、JSON 格式化、换行标记
 │   ├── topic.rs           # 发布/订阅 Topic 校验、订阅通配符匹配
-│   ├── errors.rs          # MQTT 错误 → 友好提示（mqtt_errors.* 文案键）
+│   ├── errors.rs          # MQTT 错误 → 友好提示（mqtt_errors.* 文案键；英文片段 + OS 错误码，Windows 的系统错误是本地化文字）
 │   └── script/            # run_script / run_chain / validate + crypto.* / zlib.* / env.* 原生实现
 └── ui/
     ├── app_view.rs        # 根视图：侧边栏 | 头部 + 消息列表 + 发布面板 + 快捷命令栏
