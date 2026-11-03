@@ -115,9 +115,6 @@ impl Scheduler {
         let round_interval = Duration::from_millis(config.round_interval_ms);
         self.task = Some(cx.spawn(async move |this, cx| {
             let mut round: u32 = 1;
-            // Deadline-based pacing: time spent publishing counts towards the
-            // interval, while consecutive sends stay at least `interval` apart.
-            let mut next_at = std::time::Instant::now();
             'run: loop {
                 for (ix, command) in commands.iter().enumerate() {
                     let draft = PublishDraft::from(command);
@@ -143,15 +140,12 @@ impl Scheduler {
                     } else {
                         interval
                     };
-                    next_at += wait;
-                    let now = std::time::Instant::now();
-                    if next_at > now {
-                        cx.background_executor().timer(next_at - now).await;
-                    } else {
-                        // Late: send now, but never catch up with a burst —
-                        // the interval is a minimum spacing devices may rely on.
-                        next_at = now;
-                    }
+                    // The interval is a minimum spacing devices may rely on, so it
+                    // starts once the publish has completed (as in 1.x): a slow
+                    // publish (script, env, broker) never shortens the next gap.
+                    // Deadlines counted from the start of each publish let the gap
+                    // shrink by however much that publish's latency varied.
+                    cx.background_executor().timer(wait).await;
                 }
             }
             this.update(cx, |s, cx| {

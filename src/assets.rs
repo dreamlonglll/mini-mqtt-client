@@ -34,6 +34,7 @@ gpui_kit::assets::icon_assets!(
         Binary,
         KeyRound,
         Variable,
+        FileInput,
     ]
 );
 

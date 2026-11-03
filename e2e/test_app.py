@@ -160,14 +160,21 @@ def confirm(button: str):
 
 
 def close_dialogs():
-    """Close dialogs and the template / environment drawers (sheets without a dialog role)."""
+    """Close dialogs and the template / environment drawers (sheets without a dialog role).
+
+    Escape only reaches a dialog or drawer that holds focus, which is often not the case after
+    a scenario failed half-way; from the second attempt on, click a close control instead."""
     for attempt in range(6):
         dialogs = app.find_all(role="dialog")
         drawer = app.find_all(name="搜索模板") or app.find_all(name="搜索环境变量")
         if not dialogs and not drawer:
             break
-        if drawer and not dialogs and attempt >= 1:
-            # Escape only reaches the drawer when it holds focus: click its overlay.
+        closers = app.find_all(role="push button", name="Close") if dialogs and attempt >= 1 else []
+        if closers:
+            # The title-bar close button of the topmost dialog (overlays come last in the tree).
+            app.click(closers[-1])
+        elif drawer and not dialogs and attempt >= 1:
+            # Click the drawer's overlay.
             ox, oy = app.window_origin()
             app.xdo("mousemove", str(ox + 300), str(oy + 450), "click", "1")
             time.sleep(0.5)
